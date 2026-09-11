@@ -14,3 +14,6 @@ db/seed.sql
 
 # Bundled API server
 dist-server/
+
+# Prisma is a local viewing tool only; its generated client is not shipped
+prisma/generated/

@@ -1,13 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { Download, X, Filter, AlertTriangle } from 'lucide-react';
+import { Download, X, Filter, AlertTriangle, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
 import type { Capabilities } from '../../lib/permissions';
 import {
-  buildExport,
-  downloadCsv,
+  downloadExport,
   selectRows,
   dateRange,
   type ExportSpec,
   type ExportFilters,
+  type ExportFormat,
 } from '../../lib/export/exporter';
 
 /**
@@ -50,6 +50,7 @@ export function ExportPanel<T>({ rows, spec, caps, sites, renderSummary, extraWh
   const [custom, setCustom] = useState<{ from: string; to: string }>({ from: '', to: '' });
   const [site, setSite] = useState('ALL');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<ExportFormat | null>(null);
 
   const filters: ExportFilters = useMemo(() => {
     const range =
@@ -71,36 +72,49 @@ export function ExportPanel<T>({ rows, spec, caps, sites, renderSummary, extraWh
 
   if (!caps.canExport) return null;
 
-  const handleDownload = () => {
+  const handleDownload = async (format: ExportFormat) => {
     setError(null);
+    setBusy(format);
     try {
-      downloadCsv(buildExport(rows, spec, filters, caps));
+      await downloadExport(format, rows, spec, filters, caps);
       setOpen(false);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setBusy(null);
     }
   };
 
-  if (!open) {
-    return (
+  return (
+    <div className="relative inline-block">
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl transition cursor-pointer"
+        onClick={() => setOpen((o) => !o)}
+        className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl border transition cursor-pointer ${
+          open
+            ? 'border-slate-900 bg-slate-900 text-white'
+            : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+        }`}
       >
         <Download className="w-3.5 h-3.5" /> Export
       </button>
-    );
-  }
 
-  return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 space-y-4 max-w-xl">
+      {open && (
+        <>
+          {/* Click-away. A transparent layer beneath the panel is enough,
+              and unlike a document listener it cannot outlive the panel. */}
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden="true" />
+
+          {/* Anchored to the button and floated above the table, so opening
+              it never reflows the rows underneath. Right-aligned because
+              this usually sits at the right edge of a toolbar. */}
+          <div className="absolute right-0 z-50 mt-2 w-88 bg-white border border-slate-200 rounded-2xl shadow-lg p-4 space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <Filter className="w-4 h-4 text-slate-400" /> Export {spec.label}
           </h3>
-          <p className="text-xs text-slate-500 mt-0.5">Downloads a CSV. Excel and Google Sheets both open it.</p>
+          <p className="text-xs text-slate-500 mt-0.5">All {spec.columns.length} columns of the sheet.</p>
         </div>
         <button
           type="button"
@@ -192,21 +206,44 @@ export function ExportPanel<T>({ rows, spec, caps, sites, renderSummary, extraWh
         </p>
       )}
 
-      <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+      <div className="border-t border-slate-100 pt-3 space-y-2.5">
         <p className="text-xs text-slate-500">
           <strong className="text-slate-900">{selectedRows.length}</strong> record
-          {selectedRows.length === 1 ? '' : 's'}
+          {selectedRows.length === 1 ? '' : 's'} · {spec.columns.length} columns
           {filters.from && filters.to ? ` · ${filters.from} to ${filters.to}` : ' · all dates'}
         </p>
-        <button
-          type="button"
-          onClick={handleDownload}
-          disabled={selectedRows.length === 0}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-xl transition cursor-pointer"
-        >
-          <Download className="w-3.5 h-3.5" /> Download CSV
-        </button>
-      </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          {/* Excel first: it is what most recipients open, and it is the
+              one that will not reinterpret an invoice number as a date. */}
+          <button
+            type="button"
+            onClick={() => handleDownload('xlsx')}
+            disabled={selectedRows.length === 0 || busy !== null}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-xl transition cursor-pointer"
+          >
+            {busy === 'xlsx' ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+            )}
+            Excel (.xlsx)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleDownload('csv')}
+            disabled={selectedRows.length === 0 || busy !== null}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed rounded-xl transition cursor-pointer"
+          >
+            {busy === 'csv' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+            CSV
+          </button>
+            </div>
+          </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { Shift, FieldDefinition, User } from '../types';
 import { PageHeader } from './common/PageHeader';
+import { ExportPanel } from './common/ExportPanel';
 
 /**
  * Diesel & Fuel Procurement Sheet — column key order and display labels match the real
@@ -282,6 +283,35 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
     }
     return s;
   };
+
+  /**
+   * The export definition for whichever service is open.
+   *
+   * Built from `columns` — every field the sheet defines — so each service
+   * exports its own complete header without a hand-maintained list per
+   * service that would drift the moment someone adds a field.
+   */
+  const exportSpec = useMemo(
+    () => ({
+      label: currentSheetDef?.title ?? 'records',
+      serviceCode: currentSheetDef?.code ?? selectedSheetId ?? 'RECORDS',
+      dateOf: (r: Record<string, any>) => r.date as string | undefined,
+      siteOf: (r: Record<string, any>) => (r.site || r.warehouseId) as string | undefined,
+      columns: columns.map(key => ({
+        header: key,
+        value: (r: Record<string, any>) => r[key] ?? '',
+      })),
+    }),
+    [columns, currentSheetDef, selectedSheetId]
+  );
+
+  const exportSites = useMemo(
+    () =>
+      warehouses
+        .filter(w => canSeeSite(caps, w.id))
+        .map(w => ({ code: w.id, label: `${w.id} — ${w.name}` })),
+    [warehouses, caps]
+  );
 
   // Visible columns filter state
   const [hiddenCols, setHiddenCols] = useState<Record<string, boolean>>({});
@@ -668,6 +698,17 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
               </span>
             )}
             <span className="text-[11px] text-slate-400">Click any cell or row to inspect</span>
+
+            {/* Exports the COMPLETE header for whichever service is open —
+                `columns`, not `visibleColumns`. Hiding a column is a
+                viewing preference; it should not quietly decide what the
+                recipient of the file is allowed to see. */}
+            <ExportPanel
+              rows={filteredRows}
+              spec={exportSpec}
+              caps={caps}
+              sites={exportSites}
+            />
           </div>
         </div>
 

@@ -26,6 +26,13 @@ import { canSeeSite } from '../permissions';
 export interface ExportColumn<T> {
   header: string;
   value: (row: T) => string | number | null | undefined;
+  /**
+   * Write this as a real number in .xlsx so the recipient can sum it.
+   * Everything else is written as text — which is what stops Excel turning
+   * an invoice number like DL/25-26/999 into a date, or trimming the last
+   * digits off a long id.
+   */
+  numeric?: boolean;
 }
 
 export interface ExportSpec<T> {
@@ -195,17 +202,104 @@ export function buildExport<T>(
   };
 }
 
+export type ExportFormat = 'csv' | 'xlsx';
+
 /** Triggers the browser download. Separated so buildExport stays pure. */
 export function downloadCsv(result: ExportResult): void {
   const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8;' });
+  saveBlob(blob, result.filename);
+}
+
+function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = result.filename;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
   // Without this the blob is held for the life of the page. One export is
   // nothing; an admin pulling twenty reports in a session is not.
   URL.revokeObjectURL(url);
+}
+
+/**
+ * The same rows as an .xlsx workbook.
+ *
+ * Excel is what most recipients actually open, and a CSV forces a choice
+ * on them: double-clicking it can mangle things silently. `DL/25-26/999`
+ * becomes a date, a long numeric id loses its last digits to float
+ * precision, and a leading zero on a pincode disappears. In a workbook the
+ * type is declared per column, so none of that guesswork happens.
+ *
+ * Every column is written as text for exactly that reason, except the ones
+ * a spec marks numeric — where a real number is wanted so the recipient
+ * can sum it without converting a column first.
+ *
+ * The library is loaded on demand: it is only needed when someone actually
+ * exports, and it should not sit in the bundle every POC downloads to file
+ * a reading.
+ */
+export async function downloadXlsx<T>(
+  rows: T[],
+  spec: ExportSpec<T>,
+  filters: ExportFilters,
+  caps: Capabilities,
+): Promise<ExportResult> {
+  const result = buildExport(rows, spec, filters, caps);
+  const { selected } = selectRows(rows, spec, filters, caps);
+
+  // The '/browser' entry point specifically: the package has no bare
+  // export, and the node build pulls in fs/stream, which Vite would then
+  // try (and fail) to bundle for the browser.
+  const { default: writeXlsxFile } = await import('write-excel-file/browser');
+
+  // Built as raw sheet data rather than through the schema API: it keeps
+  // the per-cell type explicit, which is the whole reason for offering
+  // .xlsx in the first place.
+  const headerRow = spec.columns.map((col) => ({
+    value: col.header,
+    type: String,
+    fontWeight: 'bold' as const,
+    backgroundColor: '#0F172A',
+    color: '#FFFFFF',
+  }));
+
+  const dataRows = selected.map((row) =>
+    spec.columns.map((col) => {
+      const v = col.value(row);
+      // A blank stays an empty cell. Coercing '' to 0 in a numeric column
+      // would invent a zero-litre delivery, or a DG reading, that never
+      // happened — the same mistake the calculation engine avoids.
+      if (v === null || v === undefined || v === '') return {};
+      return col.numeric && Number.isFinite(Number(v))
+        ? { value: Number(v), type: Number }
+        : { value: String(v), type: String };
+    }),
+  );
+
+  const blob = await writeXlsxFile([headerRow, ...dataRows] as never, {
+    columns: spec.columns.map((col) => ({
+      width: Math.min(Math.max(col.header.length + 4, 12), 40),
+    })),
+    sheet: spec.serviceCode.slice(0, 31),   // Excel caps sheet names at 31 chars
+  } as never);
+
+  const filename = result.filename.replace(/\.csv$/, '.xlsx');
+  saveBlob(blob as unknown as Blob, filename);
+  return { ...result, filename };
+}
+
+/** One call for either format, so callers do not branch on it themselves. */
+export async function downloadExport<T>(
+  format: ExportFormat,
+  rows: T[],
+  spec: ExportSpec<T>,
+  filters: ExportFilters,
+  caps: Capabilities,
+): Promise<ExportResult> {
+  if (format === 'xlsx') return downloadXlsx(rows, spec, filters, caps);
+  const result = buildExport(rows, spec, filters, caps);
+  downloadCsv(result);
+  return result;
 }

@@ -59,6 +59,39 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
     .filter(w => caps.canViewAllSites || (caps.siteScope !== 'ALL' && caps.siteScope.includes(w.id)))
     .map(w => ({ code: w.id, label: `${w.id} — ${w.name}` }));
 
+  /** "By whom, how much", shown before the file leaves. */
+  const renderDieselSummary = (rows: DieselLog[]) => {
+    const s = summariseDiesel(rows);
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-slate-500"><strong className="text-slate-900">{s.requests}</strong> req</span>
+          <span className="text-slate-500"><strong className="text-slate-900">{s.litres.toLocaleString('en-IN')}</strong> L</span>
+          <span className="text-slate-500"><strong className="text-slate-900">₹{s.amount.toLocaleString('en-IN')}</strong></span>
+        </div>
+        {s.byPerson.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">By requestor</p>
+            {s.byPerson.slice(0, 4).map(p => (
+              <div key={p.email || p.name} className="flex items-center justify-between text-xs gap-2">
+                <span className="text-slate-700 truncate">{p.name}</span>
+                <span className="text-slate-500 shrink-0 tabular-nums">
+                  {p.litres.toLocaleString('en-IN')} L · ₹{p.amount.toLocaleString('en-IN')}
+                </span>
+              </div>
+            ))}
+            {s.byPerson.length > 4 && (
+              <p className="text-[11px] text-slate-400">+{s.byPerson.length - 4} more in the file</p>
+            )}
+          </div>
+        )}
+        {/* Rejected rows are in the file but not these totals — they were
+            never fulfilled, so counting them would overstate spend. */}
+        <p className="text-[11px] text-slate-400">Totals exclude rejected; those rows are still exported.</p>
+      </div>
+    );
+  };
+
   const [viewMode, setViewMode] = useState<'dashboard' | 'form' | 'pod' | 'approval' | 'mail-logs'>('dashboard');
   const [selectedLogIdForForm, setSelectedLogIdForForm] = useState<string | undefined>(undefined);
   const [filterValidation, setFilterValidation] = useState<'ALL' | DieselValidation>('ALL');
@@ -130,57 +163,6 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
               <Camera className="w-4 h-4 text-emerald-700" />
               Upload POD
             </button>
-
-            <ExportPanel
-              rows={dieselLogs}
-              spec={DIESEL_EXPORT}
-              caps={caps}
-              sites={exportSites}
-              renderSummary={(rows) => {
-                const s = summariseDiesel(rows);
-                return (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-4 text-xs">
-                      <span className="text-slate-500">
-                        <strong className="text-slate-900">{s.requests}</strong> requests
-                      </span>
-                      <span className="text-slate-500">
-                        <strong className="text-slate-900">{s.litres.toLocaleString('en-IN')}</strong> L
-                      </span>
-                      <span className="text-slate-500">
-                        <strong className="text-slate-900">₹{s.amount.toLocaleString('en-IN')}</strong>
-                      </span>
-                    </div>
-                    {s.byPerson.length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                          By requestor
-                        </p>
-                        {s.byPerson.slice(0, 5).map((p) => (
-                          <div key={p.email || p.name} className="flex items-center justify-between text-xs">
-                            <span className="text-slate-700 truncate pr-2">{p.name}</span>
-                            <span className="text-slate-500 shrink-0 tabular-nums">
-                              {p.litres.toLocaleString('en-IN')} L · ₹{p.amount.toLocaleString('en-IN')}
-                            </span>
-                          </div>
-                        ))}
-                        {s.byPerson.length > 5 && (
-                          <p className="text-[11px] text-slate-400">
-                            +{s.byPerson.length - 5} more in the file
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    {/* Rejected rows are in the CSV but not in these totals —
-                        they were never fulfilled, so counting them would
-                        overstate spend. Say so rather than let it surprise. */}
-                    <p className="text-[11px] text-slate-400">
-                      Totals exclude rejected requests. Rejected rows are still in the file.
-                    </p>
-                  </div>
-                );
-              }}
-            />
 
             <button
               id="btn-open-email-logs"
@@ -318,7 +300,19 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
               Procurement & Delivery Ledger
             </h3>
           </div>
-          <span className="text-xs text-slate-500">Select any record to view details</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-500">Select any record to view details</span>
+            {/* Sits with the table it exports, not in the page header —
+                the rows are right here, so the control that takes them
+                away should be too. */}
+            <ExportPanel
+              rows={dieselLogs}
+              spec={DIESEL_EXPORT}
+              caps={caps}
+              sites={exportSites}
+              renderSummary={renderDieselSummary}
+            />
+          </div>
         </div>
 
         <div className="overflow-x-auto">

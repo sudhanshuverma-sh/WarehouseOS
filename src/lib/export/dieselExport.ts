@@ -1,9 +1,13 @@
 /**
- * What a diesel export contains.
+ * What a diesel export contains: EVERY field on the record.
  *
- * Built around the question it actually gets asked — "a month of diesel:
- * by whom, how much" — so the answer is readable without a pivot table.
- * Requestor and quantity come early; ids and audit trail come last.
+ * Complete rather than curated. A subset always turns out to be missing
+ * the one column the recipient needed, and they cannot tell whether it was
+ * omitted deliberately or never captured — so they come back and ask, or
+ * worse, assume. Ordering is what makes it readable instead: the question
+ * it actually gets asked ("a month of diesel — by whom, how much") is
+ * answered by the first dozen columns, and ids, URLs and email plumbing
+ * sit at the end where they do not get in the way.
  */
 
 import type { DieselLog } from '../../types';
@@ -39,11 +43,11 @@ export const DIESEL_EXPORT: ExportSpec<DieselLog> = {
     // The "how much" half. Blank stays blank: a Payment Only row has no
     // ordered or delivered quantity, and writing 0 would understate
     // delivery performance when these are summed.
-    { header: 'Ordered_Litres', value: (r) => r.orderQuantityLitres ?? '' },
-    { header: 'Delivered_Litres', value: (r) => r.deliveredQuantityLitres ?? '' },
-    { header: 'Billed_Litres', value: (r) => r.quantity ?? '' },
-    { header: 'Rate_Per_Litre', value: (r) => r.ratePerLitre },
-    { header: 'Final_Amount', value: (r) => r.finalAmount },
+    { header: 'Ordered_Litres', value: (r) => r.orderQuantityLitres ?? '', numeric: true },
+    { header: 'Delivered_Litres', value: (r) => r.deliveredQuantityLitres ?? '', numeric: true },
+    { header: 'Billed_Litres', value: (r) => r.quantity ?? '', numeric: true },
+    { header: 'Rate_Per_Litre', value: (r) => r.ratePerLitre, numeric: true },
+    { header: 'Final_Amount', value: (r) => r.finalAmount, numeric: true },
 
     { header: 'Status', value: (r) => r.status },
     { header: 'Delivery_Validation', value: (r) => r.validation ?? '' },
@@ -54,9 +58,26 @@ export const DIESEL_EXPORT: ExportSpec<DieselLog> = {
     { header: 'Approved_By', value: (r) => r.adminApprovedBy ?? '' },
     { header: 'Approved_At', value: (r) => r.adminApprovedAt ?? '' },
 
-    { header: 'Request_ID', value: (r) => r.uniqueId },
+    { header: 'Approval_Notes', value: (r) => r.adminApprovalNotes ?? '' },
+
+    // Proof of delivery — who uploaded it and when, not just the link.
     { header: 'POD_URL', value: (r) => r.podUrl ?? '' },
+    { header: 'POD_Uploaded_By', value: (r) => r.podUploadedByName ?? '' },
+    { header: 'POD_Timestamp', value: (r) => r.podTimestamp ?? '' },
+    { header: 'QR_Invoice_URL', value: (r) => r.qrCodeImageUrl ?? '' },
+
     { header: 'Notes', value: (r) => r.notes ?? '' },
+
+    // Identifiers and plumbing last: needed for tracing a specific
+    // request, never the reason someone opened the file.
+    { header: 'Request_ID', value: (r) => r.uniqueId },
+    { header: 'Record_ID', value: (r) => r.id },
+    { header: 'Submitted_By_ID', value: (r) => r.submittedById },
+    { header: 'WH_Name_B2B', value: (r) => r.whNameB2B ?? '' },
+    { header: 'WH_Name_B2C', value: (r) => r.whNameB2C ?? '' },
+    { header: 'Email_Thread_ID', value: (r) => r.threadId ?? '' },
+    { header: 'Last_Email_Sent_At', value: (r) => r.lastEmailTriggeredAt ?? '' },
+    { header: 'Submitted_At', value: (r) => r.timestamp },
   ],
 };
 

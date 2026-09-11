@@ -3,6 +3,8 @@ import { buildExport, csvCell, dateRange, ExportNotPermittedError, type ExportSp
 import { capabilitiesFor } from '../permissions';
 import type { User, UserRole } from '../../types';
 import { DIESEL_EXPORT, summariseDiesel } from './dieselExport';
+import { EBDG_EXPORT } from './ebdgExport';
+import { EBDG_COLUMN_ORDER } from '../../types/ebdg';
 import type { DieselLog } from '../../types';
 
 const userWith = (role: UserRole, warehouseId?: string): User =>
@@ -205,6 +207,56 @@ describe('diesel export', () => {
     const cells = r.csv.split('\r\n')[1].split(',');
     const header = r.csv.split('\r\n')[0].split(',');
     expect(cells[header.indexOf('Delivered_Litres')]).toBe('');
+  });
+});
+
+describe('complete headers', () => {
+  it('diesel exports every field on the record', () => {
+    // "Complete header of the respective service" — a curated subset is
+    // always missing the one column the recipient needed, and they cannot
+    // tell whether it was omitted or never captured.
+    const headers = DIESEL_EXPORT.columns.map((c) => c.header);
+    for (const expected of [
+      'Requested_By', 'Requested_By_Email', 'Vendor', 'Ordered_Litres',
+      'Delivered_Litres', 'Billed_Litres', 'Rate_Per_Litre', 'Final_Amount',
+      'Status', 'Delivery_Validation', 'Rejection_Reason', 'Validated_By',
+      'Approved_By', 'Approval_Notes', 'POD_URL', 'POD_Uploaded_By',
+      'QR_Invoice_URL', 'Request_ID', 'Record_ID', 'Email_Thread_ID',
+    ]) {
+      expect(headers).toContain(expected);
+    }
+  });
+
+  it('has no duplicate diesel headers', () => {
+    const headers = DIESEL_EXPORT.columns.map((c) => c.header);
+    expect(new Set(headers).size).toBe(headers.length);
+  });
+
+  it('EB-DG exports all 109 columns in sheet order', () => {
+    expect(EBDG_EXPORT.columns.map((c) => c.header)).toEqual([...EBDG_COLUMN_ORDER]);
+  });
+
+  it('EB-DG keeps identifiers as text so Excel cannot reinterpret them', () => {
+    // EBDG-ZHPL-DL-01-20260903 must survive as written.
+    const byHeader = new Map(EBDG_EXPORT.columns.map((c) => [c.header, c]));
+    expect(byHeader.get('Record_ID')?.numeric).toBeFalsy();
+    expect(byHeader.get('Date')?.numeric).toBeFalsy();
+    expect(byHeader.get('DG1_B_Check_Status')?.numeric).toBeFalsy();
+    expect(byHeader.get('DG1_B_Check_Done_Today')?.numeric).toBeFalsy();
+    expect(byHeader.get('DG1_B_Check_Last_Date')?.numeric).toBeFalsy();
+  });
+
+  it('EB-DG marks readings numeric so they can be summed', () => {
+    const byHeader = new Map(EBDG_EXPORT.columns.map((c) => [c.header, c]));
+    expect(byHeader.get('DG1_Run_Hrs')?.numeric).toBe(true);
+    expect(byHeader.get('DG1_HSD_Consumption')?.numeric).toBe(true);
+  });
+
+  it('diesel money and volume columns are numeric', () => {
+    const byHeader = new Map(DIESEL_EXPORT.columns.map((c) => [c.header, c]));
+    expect(byHeader.get('Final_Amount')?.numeric).toBe(true);
+    expect(byHeader.get('Billed_Litres')?.numeric).toBe(true);
+    expect(byHeader.get('Request_ID')?.numeric).toBeFalsy();
   });
 });
 

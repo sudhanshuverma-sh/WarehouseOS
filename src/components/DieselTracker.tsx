@@ -31,7 +31,41 @@ import { PageHeader } from './common/PageHeader';
 import { DieselLogForm } from './forms/DieselLogForm';
 import { ExportPanel } from './common/ExportPanel';
 import { capabilitiesFor } from '../lib/permissions';
-import { DIESEL_EXPORT, summariseDiesel } from '../lib/export/dieselExport';
+import { DIESEL_EXPORT } from '../lib/export/dieselExport';
+import { ColumnFilter } from './common/ColumnFilter';
+import { applyColumnFilters, countActiveFilters, clearAllFilters, type ColumnFilters } from '../lib/table/columnFilters';
+
+/**
+ * The ledger's columns, in the order of the ZHPL Diesel master sheet, so
+ * this table and the connected Google Sheet read 1:1.
+ *
+ * Header cells are rendered from this rather than written out one by one —
+ * a filter control has to attach to each column's key, and twenty-one
+ * hand-written <th> elements have no key to attach it to.
+ */
+const LEDGER_COLUMNS: { key: string; label: string; align?: string }[] = [
+  { key: 'timestamp', label: 'Timestamp' },
+  { key: 'emailAddress', label: 'Email Address' },
+  { key: 'entity', label: 'Entity' },
+  { key: 'whNameB2B', label: 'WH NAME (B2B)' },
+  { key: 'whNameB2C', label: 'WH NAME (B2C)' },
+  { key: 'costCenter', label: 'COST CENTER' },
+  { key: 'zone', label: 'Zone' },
+  { key: 'fuel', label: 'Fuel' },
+  { key: 'type', label: 'Type' },
+  { key: 'vendorNamePayment', label: 'Vendor Name(Payment)' },
+  { key: 'quantity', label: 'Quantity', align: 'text-right' },
+  { key: 'ratePerLitre', label: 'Rate per Litres', align: 'text-right' },
+  { key: 'finalAmount', label: 'Final Amount', align: 'text-right' },
+  { key: 'qrCodeImageUrl', label: 'QR Code Image', align: 'text-center' },
+  { key: 'vendorNameDelivery', label: 'Vendor Name(Delivery)' },
+  { key: 'orderQuantityLitres', label: 'Order Quantity', align: 'text-right' },
+  { key: 'uniqueId', label: 'Unique ID' },
+  { key: 'status', label: 'Status', align: 'text-center' },
+  { key: 'validation', label: 'Validation', align: 'text-center' },
+  { key: 'deliveredQuantityLitres', label: 'Delivered Quantity', align: 'text-right' },
+  { key: 'podUrl', label: "POD's", align: 'text-center' },
+];
 
 interface DieselTrackerProps {
   onBack?: () => void;
@@ -52,52 +86,13 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
 
   const caps = capabilitiesFor(currentUser);
 
-  // Offered in the export's site picker. Only sites this user may see —
-  // buildExport enforces scope again regardless, but a picker listing 120
-  // sites to someone who can export two is misleading before it is wrong.
-  const exportSites = warehouses
-    .filter(w => caps.canViewAllSites || (caps.siteScope !== 'ALL' && caps.siteScope.includes(w.id)))
-    .map(w => ({ code: w.id, label: `${w.id} — ${w.name}` }));
-
-  /** "By whom, how much", shown before the file leaves. */
-  const renderDieselSummary = (rows: DieselLog[]) => {
-    const s = summariseDiesel(rows);
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-3 text-xs">
-          <span className="text-slate-500"><strong className="text-slate-900">{s.requests}</strong> req</span>
-          <span className="text-slate-500"><strong className="text-slate-900">{s.litres.toLocaleString('en-IN')}</strong> L</span>
-          <span className="text-slate-500"><strong className="text-slate-900">₹{s.amount.toLocaleString('en-IN')}</strong></span>
-        </div>
-        {s.byPerson.length > 0 && (
-          <div className="space-y-1">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">By requestor</p>
-            {s.byPerson.slice(0, 4).map(p => (
-              <div key={p.email || p.name} className="flex items-center justify-between text-xs gap-2">
-                <span className="text-slate-700 truncate">{p.name}</span>
-                <span className="text-slate-500 shrink-0 tabular-nums">
-                  {p.litres.toLocaleString('en-IN')} L · ₹{p.amount.toLocaleString('en-IN')}
-                </span>
-              </div>
-            ))}
-            {s.byPerson.length > 4 && (
-              <p className="text-[11px] text-slate-400">+{s.byPerson.length - 4} more in the file</p>
-            )}
-          </div>
-        )}
-        {/* Rejected rows are in the file but not these totals — they were
-            never fulfilled, so counting them would overstate spend. */}
-        <p className="text-[11px] text-slate-400">Totals exclude rejected; those rows are still exported.</p>
-      </div>
-    );
-  };
-
   const [viewMode, setViewMode] = useState<'dashboard' | 'form' | 'pod' | 'approval' | 'mail-logs'>('dashboard');
   const [selectedLogIdForForm, setSelectedLogIdForForm] = useState<string | undefined>(undefined);
   const [filterValidation, setFilterValidation] = useState<'ALL' | DieselValidation>('ALL');
   const [filterStatus, setFilterStatus] = useState<'ALL' | DieselStatus>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedLogForInspection, setSelectedLogForInspection] = useState<DieselLog | null>(null);
+  const [columnFilters, setColumnFilters] = useState<ColumnFilters>({});
 
   // If viewMode is not dashboard, render DieselLogForm
   if (viewMode !== 'dashboard') {
@@ -112,7 +107,7 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
   }
 
   // Filter logs by warehouse, search query, status and validation
-  const filteredLogs = dieselLogs.filter(log => {
+  const scopedLogs = dieselLogs.filter(log => {
     const isWhMatched = selectedWarehouseId === 'ALL' || log.warehouseId === selectedWarehouseId;
     const isValMatched = filterValidation === 'ALL' || log.validation === filterValidation;
     const isStatusMatched = filterStatus === 'ALL' || log.status === filterStatus;
@@ -125,6 +120,13 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
 
     return isWhMatched && isValMatched && isStatusMatched && matchesSearch;
   });
+
+  // Per-column filters on top of the toolbar's own. What the table shows
+  // is what Export writes, because both read this list.
+  const filteredLogs = applyColumnFilters(
+    scopedLogs as unknown as Record<string, unknown>[],
+    columnFilters
+  ) as unknown as DieselLog[];
 
   // KPI Calculations
   const totalSpend = filteredLogs.reduce((acc, log) => acc + (log.finalAmount || 0), 0);
@@ -301,7 +303,28 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
             </h3>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-500">Select any record to view details</span>
+            {/* A table narrowed by a header filter looks identical to one
+                with no matching data. Saying so, with one click to undo,
+                is what stops "the ledger is empty" being reported as a bug. */}
+            {countActiveFilters(columnFilters) > 0 ? (
+              <span className="inline-flex items-center gap-2 text-xs">
+                <span className="text-indigo-700 font-semibold">
+                  {filteredLogs.length} of {scopedLogs.length} rows
+                  {' · '}
+                  {countActiveFilters(columnFilters)} filter
+                  {countActiveFilters(columnFilters) === 1 ? '' : 's'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setColumnFilters(clearAllFilters())}
+                  className="text-slate-500 hover:text-slate-900 underline cursor-pointer"
+                >
+                  Clear
+                </button>
+              </span>
+            ) : (
+              <span className="text-xs text-slate-500">Select any record to view details</span>
+            )}
             {/* Sits with the table it exports, not in the page header —
                 the rows are right here, so the control that takes them
                 away should be too. */}
@@ -309,8 +332,6 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
               rows={dieselLogs}
               spec={DIESEL_EXPORT}
               caps={caps}
-              sites={exportSites}
-              renderSummary={renderDieselSummary}
             />
           </div>
         </div>
@@ -321,27 +342,24 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
               <tr className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px] whitespace-nowrap">
                 {/* Column names & order match the ZHPL Diesel master sheet exactly, so this ledger
                     lines up 1:1 with the connected Google Sheet once live sync is on. */}
-                <th className="py-3 px-4">Timestamp</th>
-                <th className="py-3 px-4">Email Address</th>
-                <th className="py-3 px-4">Entity</th>
-                <th className="py-3 px-4">WH NAME (B2B)</th>
-                <th className="py-3 px-4">WH NAME (B2C)</th>
-                <th className="py-3 px-4">COST CENTER</th>
-                <th className="py-3 px-4">Zone</th>
-                <th className="py-3 px-4">Fuel</th>
-                <th className="py-3 px-4">Type</th>
-                <th className="py-3 px-4">Vendor Name(Payment)</th>
-                <th className="py-3 px-4 text-right">Quantity</th>
-                <th className="py-3 px-4 text-right">Rate per Litres</th>
-                <th className="py-3 px-4 text-right">Final Amount</th>
-                <th className="py-3 px-4 text-center">QR Code Image</th>
-                <th className="py-3 px-4">Vendor Name(Delivery)</th>
-                <th className="py-3 px-4 text-right">Order Quantity</th>
-                <th className="py-3 px-4">Unique ID</th>
-                <th className="py-3 px-4 text-center">Status</th>
-                <th className="py-3 px-4 text-center">Validation</th>
-                <th className="py-3 px-4 text-right">Delivered Quantity</th>
-                <th className="py-3 px-4 text-center">POD's</th>
+                {LEDGER_COLUMNS.map(({ key, label, align }) => (
+                  <th key={key} className={`py-3 px-4 ${align ?? ''}`}>
+                    <span className="inline-flex items-center">
+                      {label}
+                      {/* Built from scopedLogs, so a column's value list is
+                          the same whichever order the columns are filtered
+                          in — narrowing Status should not hide vendors that
+                          would reappear once Status is cleared. */}
+                      <ColumnFilter
+                        columnKey={key}
+                        label={label}
+                        rows={scopedLogs as unknown as Record<string, unknown>[]}
+                        filters={columnFilters}
+                        onChange={setColumnFilters}
+                      />
+                    </span>
+                  </th>
+                ))}
                 <th className="py-3 px-4 text-center">Actions</th>
               </tr>
             </thead>

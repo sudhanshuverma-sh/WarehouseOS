@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { canSeeSite, capabilitiesFor, resolveSiteFilter } from '../lib/permissions';
 import {
@@ -39,6 +39,8 @@ import {
 import { Shift, FieldDefinition, User } from '../types';
 import { PageHeader } from './common/PageHeader';
 import { ExportPanel } from './common/ExportPanel';
+import { ColumnFilter } from './common/ColumnFilter';
+import { applyColumnFilters, countActiveFilters, clearAllFilters, type ColumnFilters } from '../lib/table/columnFilters';
 
 /**
  * Diesel & Fuel Procurement Sheet — column key order and display labels match the real
@@ -188,7 +190,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
   }, [selectedSheetId, dailySiteLogs, dieselLogs, sheetRecords]);
 
   // Filtered rows based on View Mode (Day-Wise vs Total Cumulative), Warehouse, Shift, Search
-  const filteredRows = useMemo(() => {
+  const scopedRows = useMemo(() => {
     let list = rawRecords.filter((row: any) => {
       // Day-Wise Filter
       if (logViewMode === 'DAY_WISE') {
@@ -243,6 +245,23 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
 
     return list;
   }, [rawRecords, logViewMode, filterDate, filterShift, effectiveWarehouseFilter, caps, searchQuery, sortColumn, sortDirection]);
+
+  /**
+   * Excel-style per-column filters, applied on top of scope, date, shift
+   * and search. Kept separate from scopedRows so a column's value list can
+   * be built from everything the user may see, not from what the other
+   * filters have already removed.
+   */
+  const [columnFilters, setColumnFilters] = useState<ColumnFilters>({});
+
+  // Reset when switching service: a filter on a column the next service
+  // does not have would silently empty the table with no visible cause.
+  useEffect(() => { setColumnFilters({}); }, [selectedSheetId]);
+
+  const filteredRows = useMemo(
+    () => applyColumnFilters(scopedRows as Record<string, unknown>[], columnFilters),
+    [scopedRows, columnFilters]
+  ) as any[];
 
   // Extract columns
   const columns = useMemo(() => {
@@ -697,7 +716,23 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
                 Step 2 Active: Click Approve/Reject in table to trigger Mail #2
               </span>
             )}
-            <span className="text-[11px] text-slate-400">Click any cell or row to inspect</span>
+            {countActiveFilters(columnFilters) > 0 ? (
+              <span className="inline-flex items-center gap-2 text-[11px]">
+                <span className="text-indigo-700 font-bold">
+                  {countActiveFilters(columnFilters)} column filter
+                  {countActiveFilters(columnFilters) === 1 ? '' : 's'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setColumnFilters(clearAllFilters())}
+                  className="text-slate-500 hover:text-slate-900 underline cursor-pointer"
+                >
+                  Clear
+                </button>
+              </span>
+            ) : (
+              <span className="text-[11px] text-slate-400">Click any cell or row to inspect</span>
+            )}
 
             {/* Exports the COMPLETE header for whichever service is open —
                 `columns`, not `visibleColumns`. Hiding a column is a
@@ -707,7 +742,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
               rows={filteredRows}
               spec={exportSpec}
               caps={caps}
-              sites={exportSites}
+              totalCount={scopedRows.length}
             />
           </div>
         </div>
@@ -750,9 +785,21 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
                     >
                       <div className="flex items-center justify-between gap-1.5">
                         <span className="truncate">{selectedSheetId === 'SHEET_DIESEL' ? (DIESEL_COLUMN_LABELS[col] || col) : col}</span>
-                        <ArrowUpDown
-                          className={`w-3 h-3 ${isSorted ? 'text-teal-700 font-black' : 'text-slate-400'}`}
-                        />
+                        <span className="flex items-center shrink-0">
+                          <ArrowUpDown
+                            className={`w-3 h-3 ${isSorted ? 'text-teal-700 font-black' : 'text-slate-400'}`}
+                          />
+                          {/* Filters against scopedRows — everything this
+                              user may see — so the value list is the same
+                              whichever order columns are filtered in. */}
+                          <ColumnFilter
+                            columnKey={col}
+                            label={selectedSheetId === 'SHEET_DIESEL' ? (DIESEL_COLUMN_LABELS[col] || col) : col}
+                            rows={scopedRows}
+                            filters={columnFilters}
+                            onChange={setColumnFilters}
+                          />
+                        </span>
                       </div>
                     </th>
                   );

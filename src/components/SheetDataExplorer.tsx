@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
+import { canSeeSite, capabilitiesFor, resolveSiteFilter } from '../lib/permissions';
 import {
   Database,
   Search,
@@ -114,8 +115,9 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
   } = useApp();
 
   // Role Scoping: Determine which sheets this user can access
-  const isSuperAdmin = currentUser.role === 'SUPER_ADMIN';
-  const isPoc = currentUser.role === 'SITE_POC';
+  const caps = useMemo(() => capabilitiesFor(currentUser), [currentUser]);
+  const isSuperAdmin = caps.isSuperAdmin;
+  const isPoc = caps.isPoc;
   const assignedServiceIds = useMemo(() => {
     return getAssignedServicesForUser(currentUser);
   }, [currentUser, getAssignedServicesForUser]);
@@ -140,6 +142,14 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
   const [filterDate, setFilterDate] = useState<string>(currentDate);
   const [filterShift, setFilterShift] = useState<string>('ALL');
   const [filterWarehouse, setFilterWarehouse] = useState<string>('ALL');
+
+  // Everything below reads the SCOPED filter, never the raw one. A POC's
+  // "My Site Records" is filtered to their assigned hub, which is what the
+  // sidebar has always claimed it did.
+  const effectiveWarehouseFilter = useMemo(
+    () => resolveSiteFilter(caps, filterWarehouse),
+    [caps, filterWarehouse]
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -187,9 +197,16 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
         }
       }
 
-      // Warehouse filter
+      // Warehouse filter. `effectiveWarehouseFilter` has already been forced
+      // back inside the user's own scope, so a POC cannot widen this to 'ALL'
+      // via a stale filter value. The row-level canSeeSite() check below is the
+      // belt to that braces: it holds even for rows whose site never appears in
+      // the dropdown.
       const whId = row.site || row.warehouseId;
-      if (filterWarehouse !== 'ALL' && whId !== filterWarehouse) {
+      if (!canSeeSite(caps, whId)) {
+        return false;
+      }
+      if (effectiveWarehouseFilter !== 'ALL' && whId !== effectiveWarehouseFilter) {
         return false;
       }
 
@@ -224,7 +241,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
     }
 
     return list;
-  }, [rawRecords, logViewMode, filterDate, filterShift, filterWarehouse, searchQuery, sortColumn, sortDirection]);
+  }, [rawRecords, logViewMode, filterDate, filterShift, effectiveWarehouseFilter, caps, searchQuery, sortColumn, sortDirection]);
 
   // Extract columns
   const columns = useMemo(() => {
@@ -562,21 +579,30 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
               </div>
             )}
 
-            {/* Warehouse Filter */}
+            {/* Warehouse filter — a picker for whoever spans sites, a locked
+                label for anyone pinned to one. Offering a POC a site they
+                cannot see would be a control that does nothing. */}
             <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-xl text-xs">
               <Building2 className="w-3.5 h-3.5 text-slate-500" />
-              <select
-                value={filterWarehouse}
-                onChange={e => setFilterWarehouse(e.target.value)}
-                className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer text-xs"
-              >
-                <option value="ALL">All Warehouses (12 Hubs)</option>
-                {warehouses.map(w => (
-                  <option key={w.id} value={w.id}>
-                    {w.code} - {w.city}
-                  </option>
-                ))}
-              </select>
+              {caps.canViewAllSites ? (
+                <select
+                  value={filterWarehouse}
+                  onChange={e => setFilterWarehouse(e.target.value)}
+                  className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer text-xs"
+                >
+                  <option value="ALL">All Warehouses ({warehouses.length} Hubs)</option>
+                  {warehouses.map(w => (
+                    <option key={w.id} value={w.id}>
+                      {w.code} - {w.city}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="font-bold text-slate-800 inline-flex items-center gap-1">
+                  {warehouses.find(w => w.id === effectiveWarehouseFilter)?.code || effectiveWarehouseFilter}
+                  <Lock className="w-3 h-3 text-slate-400" />
+                </span>
+              )}
             </div>
 
             {/* Shift Filter */}

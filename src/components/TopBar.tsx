@@ -96,7 +96,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     (currentUser.role === 'SITE_POC' && currentView === 'pocFiling');
 
   return (
-    <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-xs font-sans">
+    <header className="soft-glass rounded-[var(--r-panel)] sticky top-4 z-20 font-sans mx-3 sm:mx-5 lg:mx-7 mt-4">
       {/* 1. Mobile Phone View Header (< md) */}
       <div className="md:hidden px-3.5 pt-2.5 pb-2 space-y-2">
         <div className="flex items-center justify-between gap-2">

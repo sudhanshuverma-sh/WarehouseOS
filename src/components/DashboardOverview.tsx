@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { DailySiteLog, SiteHealthStatus, Warehouse } from '../types';
 import { PageHeader } from './common/PageHeader';
+import { DayBar } from './DayBar';
 
 interface DashboardOverviewProps {
   onNavigateTab: (tab: string) => void;
@@ -136,29 +137,27 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
   return (
     <div className="space-y-6">
       {/* Top Admin Controls & View Switcher */}
+      {/* Kept deliberately quiet: the Day Bar below is the hero of this screen,
+          and two competing headline blocks made neither one read. */}
       <PageHeader
-        title="Multi-Facility Control Room & Executive Dashboard"
-        subtitle="Nationwide pulse, compliance matrix, equipment availability radar, and operational briefing."
-        categoryBadge="Executive Control Room"
-        categoryColor="bg-purple-50 text-purple-700 border-purple-200"
+        title="Control Room"
         onBack={onBack}
         backLabel="Back"
         breadcrumbs={[
           { label: 'Portal' },
-          { label: 'Nationwide Network' },
           { label: activeAdminTab === 'today' ? "Today's Pulse" : activeAdminTab === 'compliance' ? 'Compliance Matrix' : 'Director Briefing' }
         ]}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex p-1 bg-slate-100 rounded-xl">
+            <div className="inline-flex p-1 bg-[var(--bg-subtle)] rounded-[var(--r-chip)]">
               {(['today', 'compliance', 'brief'] as const).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveAdminTab(tab)}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                     activeAdminTab === tab
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-900'
+                      ? 'bg-white text-[var(--color-ink)] elevate-1'
+                      : 'text-[var(--text-muted)] hover:text-[var(--color-ink)]'
                   }`}
                 >
                   {tab === 'today' ? "Today's Pulse" : tab === 'compliance' ? 'Compliance' : 'Director Brief'}
@@ -168,26 +167,26 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
 
             <button
               onClick={() => onNavigateTab('adminDashboard')}
-              className="px-3.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-xs rounded-xl border border-amber-300 shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+              className="px-3.5 py-1.5 bg-[var(--bg-subtle)] hover:bg-[var(--color-frost)] text-[var(--text-secondary)] font-semibold text-xs rounded-[var(--r-chip)] transition flex items-center gap-1.5 cursor-pointer"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-amber-700" />
-              <span>Admin Service Hub</span>
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Service hub</span>
             </button>
 
             <button
               onClick={() => onNavigateTab('serviceAssignments')}
-              className="px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl border border-blue-200 shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+              className="px-3.5 py-1.5 bg-[var(--bg-subtle)] hover:bg-[var(--color-frost)] text-[var(--text-secondary)] font-semibold text-xs rounded-[var(--r-chip)] transition flex items-center gap-1.5 cursor-pointer"
             >
-              <Users className="w-3.5 h-3.5 text-blue-600" />
-              <span>Service Matrix</span>
+              <Users className="w-3.5 h-3.5" />
+              <span>Assignments</span>
             </button>
 
             <button
               onClick={() => onNavigateTab('dailyForm')}
-              className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+              className="px-3.5 py-1.5 bg-[var(--color-ink)] hover:bg-[var(--color-ink-soft)] text-white font-semibold text-xs rounded-[var(--r-chip)] transition flex items-center gap-1.5 cursor-pointer"
             >
               <FileText className="w-3.5 h-3.5" />
-              <span>File Report</span>
+              <span>File report</span>
             </button>
           </div>
         }
@@ -196,76 +195,64 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
       {/* TAB 1: TODAY'S REPORTING CONTROL ROOM */}
       {activeAdminTab === 'today' && (
         <div className="space-y-6">
-          {/* Big Number Reporting Hero */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-              <div className="flex items-baseline gap-4">
-                <div className="text-6xl font-black font-mono text-slate-900 tracking-tight">
-                  {totalFiled}<span className="text-2xl font-normal text-slate-400 font-sans"> / {totalExpected}</span>
-                </div>
-                <div className="text-xs uppercase font-bold tracking-widest text-slate-400">
-                  Facilities<br />Reported Today
-                  {usingMasterData ? (
-                    <span className="mt-1 inline-block normal-case tracking-normal font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2 py-0.5 text-[10px]">
-                      {totalExpected} active sites — Master Data
+          {/* The day, as a track: cutoffs notched, filings landing, now marked. */}
+          <DayBar totalExpected={totalExpected} />
+
+          {/* Zone board — the five zones in Site_Master, each carrying its own
+              accent so the network reads as a map rather than a list. Colour
+              here is categorical (which zone), never status. */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            {(['North', 'South', 'East', 'West', 'Central'] as const).map(zone => {
+              const zoneSites = warehouses.filter(w => w.zone === zone);
+              if (zoneSites.length === 0) return null;
+              const zoneFiled = zoneSites.filter(w => filedSitesMap.has(w.id)).length;
+              const allIn = zoneFiled === zoneSites.length;
+
+              return (
+                <div
+                  key={zone}
+                  className="soft-card p-4 lift-on-hover"
+                  style={{ background: `var(--color-zone-${zone.toLowerCase()}-tint)` }}
+                >
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className="text-xs font-bold text-[var(--color-ink)]">{zone}</span>
+                    <span
+                      className="w-2 h-2 rounded-full"
+                      style={{ background: `var(--color-zone-${zone.toLowerCase()})` }}
+                    />
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-display font-bold text-2xl text-[var(--color-ink)] tabular">
+                      {zoneFiled}
                     </span>
-                  ) : (
-                    <span className="mt-1 inline-block normal-case tracking-normal font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-[10px]">
-                      Legacy seed list — paste Master Data to switch over
-                    </span>
-                  )}
+                    <span className="text-sm text-[var(--text-muted)] tabular">/ {zoneSites.length}</span>
+                  </div>
+                  <p className="text-[0.6875rem] text-[var(--text-secondary)] mt-0.5">
+                    {allIn ? 'all in' : `${zoneSites.length - zoneFiled} outstanding`}
+                  </p>
                 </div>
-              </div>
-
-              <div className="text-right text-xs">
-                <div className="font-bold text-slate-800 text-sm">
-                  {new Date(currentDate).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                </div>
-                <div className="text-slate-500 mt-0.5">
-                  {totalMissing === 0 ? 'Every site reported' : `${totalMissing} still to report`}
-                </div>
-              </div>
-            </div>
-
-            {/* Segment Bar */}
-            <div className="h-3 rounded-full bg-slate-100 flex overflow-hidden gap-1 p-0.5">
-              {Array.from({ length: criticalCount }).map((_, i) => (
-                <div key={`crit-${i}`} className="flex-1 bg-rose-600 rounded-full" title="Critical deviation" />
-              ))}
-              {Array.from({ length: partialCount }).map((_, i) => (
-                <div key={`part-${i}`} className="flex-1 bg-amber-500 rounded-full" title="Partial deviation" />
-              ))}
-              {Array.from({ length: clearCount }).map((_, i) => (
-                <div key={`clear-${i}`} className="flex-1 bg-teal-600 rounded-full" title="All clear" />
-              ))}
-              {Array.from({ length: totalMissing }).map((_, i) => (
-                <div key={`miss-${i}`} className="flex-1 bg-slate-300 rounded-full" title="Not reported" />
-              ))}
-            </div>
-
-            {/* Legend */}
-            <div className="flex flex-wrap gap-4 text-xs font-bold uppercase tracking-wider text-slate-500 pt-1">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded bg-rose-600" />
-                <strong className="text-slate-900">{criticalCount}</strong> Critical
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded bg-amber-500" />
-                <strong className="text-slate-900">{partialCount}</strong> Partial
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded bg-teal-600" />
-                <strong className="text-slate-900">{clearCount}</strong> All Clear
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded bg-slate-300" />
-                <strong className="text-slate-900">{totalMissing}</strong> Not Reported
-              </span>
-              <span className="ml-auto text-slate-700">
-                <strong>{openActivities.length}</strong> Open Activities {overdueActivities.length > 0 && <span className="text-rose-600 font-bold">({overdueActivities.length} Past ETA)</span>}
-              </span>
-            </div>
+              );
+            })}
           </div>
+
+          {/* Where the roster is coming from — worth stating plainly, because
+              the count above means something different in each case. */}
+          <p className="text-xs text-[var(--text-muted)] flex items-center gap-2">
+            <span className={`chip ${usingMasterData ? 'chip-filed' : 'chip-neutral'}`}>
+              {usingMasterData ? `${totalExpected} active sites` : 'Legacy seed list'}
+            </span>
+            {usingMasterData
+              ? 'Roster from Site_Master.'
+              : 'Load master data to count against the real network.'}
+            <span className="ml-auto">
+              <strong className="text-[var(--color-ink)] tabular">{openActivities.length}</strong> open activities
+              {overdueActivities.length > 0 && (
+                <span className="text-[var(--color-missing)] font-semibold">
+                  {' '}· {overdueActivities.length} past ETA
+                </span>
+              )}
+            </span>
+          </p>
 
           {/* Site Status Grid */}
           <div className="space-y-3">

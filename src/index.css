@@ -12,283 +12,493 @@
 @import "@fontsource/jetbrains-mono/500.css";
 @import "@fontsource/jetbrains-mono/600.css";
 
-/* Tailwind v4 theme keys — this is what actually makes existing font-mono / font-sans
-   utility classes (already used all over the codebase) resolve to the real faces above,
-   instead of Tailwind's own default stacks silently winning in the utilities layer. */
+/* =========================================================================
+   COLD FLOOR — the design system for WarehouseOS.
+
+   These are cold-chain food warehouses: chilled air, pale concrete, steel
+   racking, blue crates. So the ground is cool and desaturated, and warmth
+   appears ONLY where someone has to act. That makes colour the status
+   system rather than decoration — cool reads as fine, warm reads as
+   yours to deal with. Every accent below earns its place that way.
+   ========================================================================= */
+
 @theme {
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --font-display: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  /* Ground + structure */
+  --color-ink: #0e1a16;
+  --color-ink-soft: #1b2b25;
+  --color-floor: #e9f0ec;
+  --color-surface: #ffffff;
+  --color-frost: #d5e3dc;
+
+  /* Status — the warm/cool logic. Cool = done, warm = act. */
+  --color-filed: #4f9377;
+  --color-filed-tint: #e4f1ea;
+  --color-due: #c99a34;
+  --color-due-tint: #fbf2dc;
+  --color-late: #cf7841;
+  --color-late-tint: #fbeadc;
+  --color-missing: #ca5a75;
+  --color-missing-tint: #fbe6eb;
+
+  /* ---------------------------------------------------------------------
+     Remapping Tailwind's stock scales onto Cold Floor.
+
+     The app was built against slate/teal/amber/rose/purple utilities spread
+     across two dozen components. Rather than hand-repaint every one of them
+     — which would guarantee drift the moment a screen was missed — the
+     scales themselves are retuned here. Existing markup keeps working and
+     inherits the palette, and anything written later lands in the same
+     world automatically.
+
+     Hues collapse deliberately: teal and emerald both mean "done", amber
+     means "due", orange means "late", rose and red mean "missing", and the
+     blue/indigo/purple family flattens into one cool accent instead of
+     three competing ones.
+     --------------------------------------------------------------------- */
+
+  /* Neutrals — a green-cast grey, so nothing on the page reads as blue-grey
+     against the mint ground. Contrast steps match Tailwind's originals. */
+  --color-slate-50:  #f4f8f6;
+  --color-slate-100: #e9f0ec;
+  --color-slate-200: #d5e3dc;
+  --color-slate-300: #b9cec4;
+  --color-slate-400: #8fa89d;
+  --color-slate-500: #6b8378;
+  --color-slate-600: #55695f;
+  --color-slate-700: #3f524a;
+  --color-slate-800: #26352e;
+  --color-slate-900: #0e1a16;
+  --color-slate-950: #071009;
+
+  /* "Done" */
+  --color-teal-50:  #e4f1ea;  --color-emerald-50:  #e4f1ea;
+  --color-teal-100: #cbe5d8;  --color-emerald-100: #cbe5d8;
+  --color-teal-200: #b6d9c8;  --color-emerald-200: #b6d9c8;
+  --color-teal-300: #8ec4ab;  --color-emerald-300: #8ec4ab;
+  --color-teal-400: #6cb193;  --color-emerald-400: #6cb193;
+  --color-teal-500: #4f9377;  --color-emerald-500: #4f9377;
+  --color-teal-600: #2f7d5f;  --color-emerald-600: #2f7d5f;
+  --color-teal-700: #26654d;  --color-emerald-700: #26654d;
+  --color-teal-800: #1d4d3b;  --color-emerald-800: #1d4d3b;
+  --color-teal-900: #143529;  --color-emerald-900: #143529;
+
+  /* "Due" */
+  --color-amber-50:  #fbf2dc;  --color-yellow-50:  #fbf2dc;
+  --color-amber-100: #f7e6bf;  --color-yellow-100: #f7e6bf;
+  --color-amber-200: #ecd49a;  --color-yellow-200: #ecd49a;
+  --color-amber-300: #e0c072;  --color-yellow-300: #e0c072;
+  --color-amber-400: #d5ad51;  --color-yellow-400: #d5ad51;
+  --color-amber-500: #c99a34;  --color-yellow-500: #c99a34;
+  --color-amber-600: #a87f26;  --color-yellow-600: #a87f26;
+  --color-amber-700: #8a6716;  --color-yellow-700: #8a6716;
+  --color-amber-800: #6b4f11;  --color-yellow-800: #6b4f11;
+  --color-amber-900: #4d390c;  --color-yellow-900: #4d390c;
+
+  /* "Late" */
+  --color-orange-50:  #fbeadc;
+  --color-orange-100: #f7d9c1;
+  --color-orange-200: #f0c0a0;
+  --color-orange-300: #e5a880;
+  --color-orange-400: #db8f5f;
+  --color-orange-500: #cf7841;
+  --color-orange-600: #b26232;
+  --color-orange-700: #9a5220;
+  --color-orange-800: #763e18;
+  --color-orange-900: #522b11;
+
+  /* "Missing" */
+  --color-rose-50:  #fbe6eb;  --color-red-50:  #fbe6eb;
+  --color-rose-100: #f7d2db;  --color-red-100: #f7d2db;
+  --color-rose-200: #f0c0cd;  --color-red-200: #f0c0cd;
+  --color-rose-300: #e69fb2;  --color-red-300: #e69fb2;
+  --color-rose-400: #db7d94;  --color-red-400: #db7d94;
+  --color-rose-500: #ca5a75;  --color-red-500: #ca5a75;
+  --color-rose-600: #b04760;  --color-red-600: #b04760;
+  --color-rose-700: #973b53;  --color-red-700: #973b53;
+  --color-rose-800: #742d40;  --color-red-800: #742d40;
+  --color-rose-900: #511f2d;  --color-red-900: #511f2d;
+
+  /* One cool accent, replacing three. */
+  --color-blue-50:  #e8eff8;  --color-indigo-50:  #e8eff8;  --color-purple-50:  #e5e0f6;  --color-violet-50:  #e5e0f6;
+  --color-blue-100: #d5e2f2;  --color-indigo-100: #d5e2f2;  --color-purple-100: #d7cff0;  --color-violet-100: #d7cff0;
+  --color-blue-200: #c2d5ec;  --color-indigo-200: #c2d5ec;  --color-purple-200: #c4b9e9;  --color-violet-200: #c4b9e9;
+  --color-blue-300: #9dbbdf;  --color-indigo-300: #9dbbdf;  --color-purple-300: #a89ade;  --color-violet-300: #a89ade;
+  --color-blue-400: #7ba9d8;  --color-indigo-400: #7ba9d8;  --color-purple-400: #a08fd6;  --color-violet-400: #a08fd6;
+  --color-blue-500: #5b7fb9;  --color-indigo-500: #5b7fb9;  --color-purple-500: #8674c9;  --color-violet-500: #8674c9;
+  --color-blue-600: #4a6b9f;  --color-indigo-600: #4a6b9f;  --color-purple-600: #6f5cb0;  --color-violet-600: #6f5cb0;
+  --color-blue-700: #3b5580;  --color-indigo-700: #3b5580;  --color-purple-700: #5a4991;  --color-violet-700: #5a4991;
+  --color-blue-800: #2c4062;  --color-indigo-800: #2c4062;  --color-purple-800: #453872;  --color-violet-800: #453872;
+  --color-blue-900: #1e2c44;  --color-indigo-900: #1e2c44;  --color-purple-900: #302753;  --color-violet-900: #302753;
 }
 
 @layer base {
   :root {
-    --bg-main: #f8fafc;
-    --bg-surface: #ffffff;
-    --bg-subtle: #f1f5f9;
-    --border-subtle: #e2e8f0;
-    --border-strong: #cbd5e1;
-    --text-primary: #0f172a;
-    --text-secondary: #475569;
-    --text-muted: #64748b;
-    --primary-accent: #0d9488;
-    --shadow-soft: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
-    --shadow-panel: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.03);
-    --shadow-float: 0 10px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.04);
+    /* Zones — categorical, matching the five real zones in Site_Master. Each
+       has a saturated marker and a card tint, set as literal values rather
+       than mixed at runtime so they stay predictable against the elevation
+       shadows.
 
-    /* Status tokens — the semantic colors already used ad-hoc throughout the app (emerald/amber/rose/indigo),
-       named once so every screen means the same thing by "critical" or "compliant". */
-    --status-success: #059669;
-    --status-success-bg: #ecfdf5;
-    --status-success-border: #a7f3d0;
-    --status-warning: #d97706;
-    --status-warning-bg: #fffbeb;
-    --status-warning-border: #fde68a;
-    --status-critical: #e11d48;
-    --status-critical-bg: #fff1f2;
-    --status-critical-border: #fecdd3;
-    --status-info: #4f46e5;
-    --status-info-bg: #eef2ff;
-    --status-info-border: #c7d2fe;
+       These live here rather than in @theme on purpose: Tailwind v4 drops a
+       theme variable no CSS rule references, and these are read from an
+       inline style in the zone board, which it doesn't scan. In @theme they
+       silently resolved to nothing and the cards rendered white. */
+    --color-zone-north: #7ba9d8;
+    --color-zone-south: #a08fd6;
+    --color-zone-east: #e8a86f;
+    --color-zone-west: #63c19f;
+    --color-zone-central: #e590a4;
+
+    --color-zone-north-tint: #dce9f6;
+    --color-zone-south-tint: #e5e0f6;
+    --color-zone-east-tint: #fae6d2;
+    --color-zone-west-tint: #d5f0e6;
+    --color-zone-central-tint: #f9dfe5;
+
+    --bg-main: #e9f0ec;
+    --bg-surface: #ffffff;
+    --bg-subtle: #f2f7f4;
+    --border-subtle: #d5e3dc;
+    --border-strong: #b9cec4;
+    --text-primary: #0e1a16;
+    --text-secondary: #486057;
+    --text-muted: #6b8378;
+    --primary-accent: #2f7d5f;
+
+    /* Elevation — a light source upper-left, like an instrument panel.
+       Each step pairs a tight contact shadow with a soft ambient one, so a
+       raised surface reads as physically lit rather than blurred. */
+    --elevation-1: 0 1px 2px 0 rgb(14 26 22 / 0.04), 0 1px 1px 0 rgb(14 26 22 / 0.03);
+    --elevation-2: 0 2px 4px -1px rgb(14 26 22 / 0.05), 0 4px 10px -2px rgb(14 26 22 / 0.05);
+    --elevation-3: 0 4px 10px -2px rgb(14 26 22 / 0.07), 0 14px 28px -10px rgb(14 26 22 / 0.10);
+    --elevation-4: 0 10px 20px -6px rgb(14 26 22 / 0.10), 0 28px 56px -16px rgb(14 26 22 / 0.18);
+    --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+
+    /* Radii — generous, consistent. The references all read soft; this is where that comes from. */
+    --r-chip: 0.625rem;
+    --r-card: 1.25rem;
+    --r-panel: 1.75rem;
+
+    /* Status tokens, kept under their original names so existing screens
+       inherit the new palette without being rewritten one by one. */
+    --status-success: #4f9377;
+    --status-success-bg: #e4f1ea;
+    --status-success-border: #b6d9c8;
+    --status-warning: #c99a34;
+    --status-warning-bg: #fbf2dc;
+    --status-warning-border: #ecd49a;
+    --status-critical: #ca5a75;
+    --status-critical-bg: #fbe6eb;
+    --status-critical-border: #f0c0cd;
+    --status-info: #5b7fb9;
+    --status-info-bg: #e8eff8;
+    --status-info-border: #c2d5ec;
   }
 
   body {
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: var(--color-floor);
+    color: var(--text-primary);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    letter-spacing: -0.012em;
+    letter-spacing: -0.011em;
     min-height: 100vh;
   }
 
-  /* Bare heading tags default to the display face; components that build headings out of
-     styled <div>/<span> (common in this codebase) opt in with the font-display utility class. */
   h1, h2, h3, h4 {
     font-family: var(--font-display);
-    letter-spacing: -0.02em;
+    letter-spacing: -0.028em;
   }
 
-  code, pre {
+  /* Codes, times and quantities are the vernacular of this domain — site
+     codes, SAP codes, cutoffs, litres. Tabular figures so columns of them
+     line up and a changing clock doesn't make the layout twitch. */
+  code, pre, .tabular {
     font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
 
-  /* Custom Smooth Scrollbars for Modern Dashboard & Soft UI */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: #f1f5f9;
-    border-radius: 9999px;
-  }
-
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
+    background: var(--border-strong);
     border-radius: 9999px;
-    transition: background 0.2s ease;
   }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
-  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 }
 
 /* =========================================================================
-   Modern Dashboard & Soft-UI Component System
+   Surfaces
    ========================================================================= */
 
-/* Soft Card: Primary container for dashboard widgets, KPI blocks, and form sections */
 .soft-card {
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.75rem; /* rounded-xl */
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.03); /* shadow-sm */
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background-color: var(--bg-surface);
+  border: 1px solid transparent;
+  border-radius: var(--r-card);
+  box-shadow: var(--elevation-1);
+  transition: box-shadow 0.2s var(--ease-out-soft), transform 0.2s var(--ease-out-soft);
 }
+.soft-card:hover { box-shadow: var(--elevation-2); }
 
-.soft-card:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.04);
-}
-
-/* Soft Panel: Structural navigation panels, sidebars, headers, and major containers */
 .soft-panel {
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.75rem; /* rounded-xl */
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04); /* shadow-sm */
+  background-color: var(--bg-surface);
+  border-radius: var(--r-panel);
+  box-shadow: var(--elevation-1);
 }
 
-/* Soft Navigation Panel & Tabs */
-.soft-nav {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.75rem; /* rounded-xl */
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.04);
-  padding: 0.5rem;
-}
-
+.soft-nav { background: var(--bg-surface); border-radius: var(--r-card); padding: 0.375rem; }
 .soft-nav-item {
-  border-radius: 0.75rem;
+  border-radius: var(--r-chip);
   font-weight: 600;
   font-size: 0.8125rem;
-  transition: all 0.15s ease-in-out;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
+.soft-nav-item:hover { background-color: var(--bg-subtle); color: var(--text-primary); }
+.soft-nav-item.active { background-color: var(--color-ink); color: #fff; }
 
-.soft-nav-item:hover {
-  background-color: #f1f5f9;
-  color: #0f172a;
+.soft-input, .soft-select {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-chip);
+  background-color: var(--bg-surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-
-.soft-nav-item.active {
-  background-color: #0f172a;
-  color: #ffffff;
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.1);
-}
-
-/* Soft Input & Form Controls with high-legibility POC styling */
-.soft-input,
-.soft-select {
-  border: 1px solid #e2e8f0;
-  border-radius: 0.75rem; /* rounded-xl */
-  background-color: #ffffff;
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.02);
-  transition: all 0.15s ease-in-out;
-}
-
-.soft-input:focus,
-.soft-select:focus {
+.soft-input:focus, .soft-select:focus {
   outline: none;
-  border-color: #0d9488;
-  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
+  border-color: var(--primary-accent);
+  box-shadow: 0 0 0 3px rgb(47 125 95 / 0.14);
 }
 
-/* Soft KPI Card Component */
 .soft-kpi {
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.75rem; /* rounded-xl */
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  background-color: var(--bg-surface);
+  border-radius: var(--r-card);
+  box-shadow: var(--elevation-1);
   padding: 1rem;
   display: flex;
   align-items: center;
   gap: 0.875rem;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  transition: transform 0.18s var(--ease-out-soft), box-shadow 0.18s var(--ease-out-soft);
 }
+.soft-kpi:hover { transform: translateY(-1px); box-shadow: var(--elevation-2); }
 
-.soft-kpi:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.06);
-}
-
-/* Soft Action Button */
 .soft-button {
-  border-radius: 0.75rem; /* rounded-xl */
+  border-radius: var(--r-chip);
   font-weight: 700;
   font-size: 0.75rem;
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   transition: all 0.15s ease;
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
   cursor: pointer;
 }
+.soft-button:active { transform: scale(0.98); }
 
-.soft-button:active {
-  transform: scale(0.98);
-}
-
-/* Soft Glass Container for Sticky Floating Headers & Overlays */
 .soft-glass {
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.85);
-  box-shadow: 0 4px 12px 0 rgb(0 0 0 / 0.05);
+  background: rgb(255 255 255 / 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--elevation-1);
 }
 
-/* Modern Dashboard Tables */
-.soft-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  border-radius: 0.75rem;
-}
-
+.soft-table { width: 100%; border-collapse: separate; border-spacing: 0; }
 .soft-table thead tr th {
-  background-color: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  background-color: var(--bg-subtle);
   font-weight: 700;
   font-size: 0.6875rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #475569;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
   padding: 0.75rem 1rem;
 }
-
 .soft-table tbody tr td {
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--bg-subtle);
   padding: 0.875rem 1rem;
   font-size: 0.8125rem;
-  color: #1e293b;
+  color: var(--text-primary);
 }
-
-.soft-table tbody tr:hover td {
-  background-color: #f8fafc;
-}
-
-/* Accessible focus ring for interactive elements */
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid #0d9488;
-  outline-offset: 2px;
-}
-
-/* =========================================================================
-   Depth & Motion System — "control room" polish, not decoration.
-   Real elevation (a light source, upper-left, like an instrument panel) instead
-   of flat drop-shadows; motion used only where it confirms an action happened.
-   ========================================================================= */
-
-:root {
-  /* Elevation scale — each step stacks a tight contact shadow with a soft ambient one,
-     so raised surfaces read as physically lit, not just "blurred rectangle." */
-  --elevation-1: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 1px 0 rgb(15 23 42 / 0.03);
-  --elevation-2: 0 2px 4px -1px rgb(15 23 42 / 0.06), 0 4px 8px -2px rgb(15 23 42 / 0.05);
-  --elevation-3: 0 4px 8px -2px rgb(15 23 42 / 0.08), 0 12px 24px -8px rgb(15 23 42 / 0.10);
-  --elevation-4: 0 8px 16px -4px rgb(15 23 42 / 0.10), 0 24px 48px -12px rgb(15 23 42 / 0.16);
-  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
-}
+.soft-table tbody tr:hover td { background-color: var(--bg-subtle); }
 
 .elevate-1 { box-shadow: var(--elevation-1); }
 .elevate-2 { box-shadow: var(--elevation-2); }
 .elevate-3 { box-shadow: var(--elevation-3); }
 .elevate-4 { box-shadow: var(--elevation-4); }
 
-/* Lift-on-hover: the one tactile response every card in the app can share */
-.lift-on-hover {
-  transition: transform 0.2s var(--ease-out-soft), box-shadow 0.2s var(--ease-out-soft);
+.lift-on-hover { transition: transform 0.2s var(--ease-out-soft), box-shadow 0.2s var(--ease-out-soft); }
+.lift-on-hover:hover { transform: translateY(-2px); box-shadow: var(--elevation-3); }
+
+button:focus-visible, a:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--primary-accent);
+  outline-offset: 2px;
 }
-.lift-on-hover:hover {
-  transform: translateY(-2px);
+
+/* =========================================================================
+   THE DAY BAR — the signature.
+
+   MASTERDATA.md §4: every service has a Submission_Window, and "filed after
+   this = late, not missing." That three-state distinction is the real
+   heartbeat of this product and was previously invisible — the dashboard
+   just counted rows. This renders the working day as a track, notches each
+   service's cutoff onto it, and marks where "now" sits against them.
+   ========================================================================= */
+
+.daybar {
+  position: relative;
+  height: 4.5rem;
+  border-radius: var(--r-card);
+  background: linear-gradient(90deg, #f4f8f6 0%, #eef5f1 55%, #fdf6ec 100%);
+  overflow: hidden;
+}
+
+/* Elapsed portion of the day, so "how much runway is left" is legible at a glance. */
+.daybar-elapsed {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  background: linear-gradient(90deg, rgb(79 147 119 / 0.10), rgb(79 147 119 / 0.16));
+  border-right: 1px solid rgb(79 147 119 / 0.28);
+}
+
+.daybar-cut {
+  position: absolute;
+  inset-block: 0;
+  width: 0;
+  border-left: 1px dashed rgb(14 26 22 / 0.18);
+}
+.daybar-cut[data-passed="true"] { border-left-color: rgb(207 120 65 / 0.55); }
+
+.daybar-cut-label {
+  position: absolute;
+  top: 0.4rem;
+  left: 0.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.daybar-now {
+  position: absolute;
+  inset-block: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-ink);
+  border-radius: 9999px;
+}
+.daybar-now::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 9999px;
+  background: var(--color-ink);
+}
+
+/* Filings landing along the track. */
+.daybar-tick {
+  position: absolute;
+  bottom: 0.55rem;
+  width: 3px;
+  height: 0.875rem;
+  margin-left: -1.5px;
+  border-radius: 9999px;
+  background: var(--color-filed);
+  opacity: 0.75;
+}
+.daybar-tick[data-late="true"] { background: var(--color-late); opacity: 0.9; }
+
+/* =========================================================================
+   The rail — a floating column, with the active item notching out of it so
+   "you are here" is readable at icon size without a label.
+   ========================================================================= */
+
+.rail {
+  background: var(--color-ink);
+  border-radius: var(--r-panel);
   box-shadow: var(--elevation-3);
 }
 
-/* Signature element: Instrument Dial — a radial gauge used everywhere a % reading
-   appears (compliance, uptime, deployment). Reads as a real physical dial via a
-   conic-gradient face + inset bevel, not a flat Recharts donut. */
+.rail-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.9rem;
+  color: rgb(255 255 255 / 0.55);
+  transition: color 0.18s var(--ease-out-soft), background-color 0.18s var(--ease-out-soft);
+}
+.rail-item:hover { color: #fff; background-color: rgb(255 255 255 / 0.08); }
+
+.rail-item[data-active="true"] {
+  color: var(--color-ink);
+  background: var(--color-surface);
+  box-shadow: var(--elevation-2);
+}
+
+/* Status dot used on rail items carrying a live count. */
+.rail-dot {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 9999px;
+  background: var(--color-missing);
+  box-shadow: 0 0 0 2px var(--color-ink);
+}
+
+/* =========================================================================
+   Status chips + zone swatches
+   ========================================================================= */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.chip-filed   { background: var(--color-filed-tint);   color: #2f6b52; }
+.chip-due     { background: var(--color-due-tint);     color: #8a6716; }
+.chip-late    { background: var(--color-late-tint);    color: #9a5220; }
+.chip-missing { background: var(--color-missing-tint); color: #973b53; }
+.chip-neutral { background: var(--bg-subtle);          color: var(--text-secondary); }
+
+/* Codes get a quiet monospace treatment wherever they appear. */
+.code-chip {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up { animation: fade-in-up 0.35s var(--ease-out-soft) both; }
+
+/* Instrument dial — retained for the % readings already using it, retuned. */
 .instrument-dial {
   position: relative;
   border-radius: 9999px;
   display: grid;
   place-items: center;
-  background: conic-gradient(var(--dial-color, #0d9488) calc(var(--dial-value, 0) * 1%), #e2e8f0 0);
+  background: conic-gradient(var(--dial-color, #4f9377) calc(var(--dial-value, 0) * 1%), var(--border-subtle) 0);
   transition: background 0.6s var(--ease-out-soft);
 }
 .instrument-dial::before {
@@ -296,33 +506,16 @@ textarea:focus-visible {
   position: absolute;
   inset: 12%;
   border-radius: 9999px;
-  background: #ffffff;
-  box-shadow:
-    inset 0 1px 2px rgb(15 23 42 / 0.08),
-    0 1px 0 rgb(255 255 255 / 0.6);
+  background: var(--color-surface);
+  box-shadow: inset 0 1px 2px rgb(14 26 22 / 0.07);
 }
-.instrument-dial > * {
-  position: relative;
-  z-index: 1;
-}
+.instrument-dial > * { position: relative; z-index: 1; }
 
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-fade-in-up {
-  animation: fade-in-up 0.35s var(--ease-out-soft) both;
-}
-
-/* Respect reduced-motion — a real accessibility floor, not optional */
 @media (prefers-reduced-motion: reduce) {
-  .lift-on-hover,
-  .instrument-dial,
-  .animate-fade-in-up {
+  .lift-on-hover, .instrument-dial, .animate-fade-in-up,
+  .soft-card, .rail-item {
     animation: none !important;
     transition: none !important;
   }
-  .lift-on-hover:hover {
-    transform: none;
-  }
+  .lift-on-hover:hover { transform: none; }
 }

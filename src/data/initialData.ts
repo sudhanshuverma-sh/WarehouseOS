@@ -67,7 +67,7 @@ export const OPERATIONAL_SHEETS: OperationalSheetDef[] = [
     category: 'Energy & Fuel',
     iconName: 'Zap',
     frequency: 'DAILY (Shift Handover)',
-    description: 'Dual 500 KVA DG sets (HSD opening/received/consumed/closing, Run hrs, KWH, B-Check due), DEF stock, EB Grid KWH/KVAH, Power Factor (PF), and Water KL.',
+    description: 'Superseded by EB-DG Daily Entry — this card now opens that form. The old version asked the POC to type HSD Consumption and derived HSD Closing from it, which is the reverse of the sheet contract. Historical records filed here are still readable in the dashboards.',
     fieldsCount: 28,
     tableTarget: 'AS_DG_PowerWater_Log',
     defaultShift: 'EVENING',
@@ -85,6 +85,19 @@ export const OPERATIONAL_SHEETS: OperationalSheetDef[] = [
       { key: 'govtSupplyHours', label: 'Govt Grid Supply Hours', type: 'number', required: true, unit: 'hrs', defaultValue: 22 },
       { key: 'waterConsumptionKl', label: 'Daily Water Consumption (KL)', type: 'number', required: true, unit: 'KL', defaultValue: 18.5 }
     ]
+  },
+  {
+    id: 'SHEET_EB_DG',
+    code: 'OPS_03B_EB_DG',
+    title: 'EB-DG Daily Entry (109-column)',
+    category: 'Energy & Fuel',
+    iconName: 'Zap',
+    frequency: 'DAILY',
+    description: 'Replaces ~100 per-site Google Sheets with one form per site, routed by Channel to EB_DG_B2B (68 sites) or EB_DG_B2C (52 sites). Carries every opening balance forward from the site’s own previous day, and tracks each DG’s 500-hr / 365-day B-Check.',
+    fieldsCount: 109,
+    tableTarget: 'EB_DG_B2B / EB_DG_B2C',
+    defaultShift: 'EVENING',
+    fieldsConfig: []
   },
   {
     id: 'SHEET_DIESEL',

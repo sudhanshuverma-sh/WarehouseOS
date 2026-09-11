@@ -6,3 +6,11 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Master data exports — real names, emails and phone numbers. Not in git.
+data/*
+!data/README.md
+db/seed.sql
+
+# Bundled API server
+dist-server/

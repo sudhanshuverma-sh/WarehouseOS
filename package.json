@@ -7,15 +7,23 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "clean": "rm -rf dist dist-server server.js",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "api": "npm run api:build && node dist-server/index.js",
+    "api:dev": "tsx watch server/index.ts",
+    "db:import": "node scripts/html-to-json.mjs data/sheets data/master-data.json && node scripts/validate-master-data.mjs data/master-data.json && node scripts/json-to-sql.mjs data/master-data.json db/seed.sql",
+    "api:build": "esbuild server/index.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outfile=dist-server/index.js"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/space-grotesk": "^5.3.0",
     "@google/genai": "^2.4.0",
+    "@supabase/supabase-js": "^2.115.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/pg": "^8.23.1",
     "@vitejs/plugin-react": "^5.0.4",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
@@ -23,6 +31,7 @@
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pg": "^8.23.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.10.1",
@@ -41,6 +50,7 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "vitest": "^5.0.0"
   }
 }

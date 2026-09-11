@@ -6,7 +6,10 @@ import { POCFilingView } from './components/POCFilingView';
 import { DashboardOverview } from './components/DashboardOverview';
 import { DailySiteActivityForm } from './components/DailySiteActivityForm';
 import { HousekeepingForm } from './components/forms/HousekeepingForm';
-import { DGPowerWaterForm } from './components/forms/DGPowerWaterForm';
+// DGPowerWaterForm is intentionally not imported: it inverted HSD Closing and
+// HSD Consumption, so every route that used to reach it now renders
+// EbDgDailyEntryForm instead. The file is kept for reference/history only.
+import { EbDgDailyEntryForm } from './components/forms/EbDgDailyEntryForm';
 import { WashingAdhocForm } from './components/forms/WashingAdhocForm';
 import { OperationalSheetsHub } from './components/OperationalSheetsHub';
 import { SheetDataExplorer } from './components/SheetDataExplorer';
@@ -22,6 +25,8 @@ import { ToastNotification } from './components/ToastNotification';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { NotificationCenterModal } from './components/NotificationCenterModal';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { AccessDenied } from './components/common/AccessDenied';
+import { capabilitiesFor } from './lib/permissions';
 
 const MainContent: React.FC = () => {
   const {
@@ -35,6 +40,8 @@ const MainContent: React.FC = () => {
     sheetRecords,
     dieselLogs
   } = useApp();
+
+  const caps = useMemo(() => capabilitiesFor(currentUser), [currentUser]);
 
   // Role-based initial view: Super Admin lands on Control Room (dashboard), POC lands on Site Filing Desk (pocFiling)
   const [currentView, setCurrentView] = useState<string>(() => {
@@ -90,8 +97,14 @@ const MainContent: React.FC = () => {
       navigateTo('dailyForm');
     } else if (sheetId === 'SHEET_HOUSEKEEPING') {
       navigateTo('housekeeping');
-    } else if (sheetId === 'SHEET_DG_POWER_WATER') {
-      navigateTo('dgPower');
+    } else if (sheetId === 'SHEET_DG_POWER_WATER' || sheetId === 'SHEET_EB_DG') {
+      // Both power/water cards open the EB-DG form. The legacy DG/EB/Water
+      // form asked the POC to type HSD *Consumption* and showed HSD *Closing*
+      // as a derived tile — the inverse of the sheet contract, where Closing
+      // is the dip reading the POC takes and Consumption is derived from it.
+      // Filing through it produced wrong consumption and broke the next day's
+      // opening, so no route reaches it any more.
+      navigateTo('ebDg');
     } else if (sheetId === 'SHEET_WASHING' || sheetId === 'SHEET_ADHOC') {
       navigateTo('washing');
     } else if (sheetId === 'SHEET_DIESEL') {
@@ -142,7 +155,7 @@ const MainContent: React.FC = () => {
     (currentUser.role === 'SITE_POC' && currentView === 'pocFiling');
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex font-sans selection:bg-teal-600 selection:text-white antialiased">
+    <div className="min-h-screen bg-[var(--color-floor)] text-[var(--color-ink)] flex font-sans selection:bg-[var(--color-ink)] selection:text-white antialiased">
       {/* Modern Clean Auto-Hiding / Hover-Expandable Side Panel */}
       <Sidebar
         currentView={currentView}
@@ -205,8 +218,13 @@ const MainContent: React.FC = () => {
               />
             )}
 
-            {currentView === 'dgPower' && (
-              <DGPowerWaterForm
+            {/* 'dgPower' is kept as an alias so existing links/back-history still
+                resolve, but it renders the EB-DG form — see the note in
+                handleSelectSheetFromHub. DGPowerWaterForm is left in the tree
+                unused; the admin dashboards still read its historical
+                dgPowerLogs, which this change does not touch. */}
+            {(currentView === 'dgPower' || currentView === 'ebDg') && (
+              <EbDgDailyEntryForm
                 onBack={handleGoBack}
                 onSuccess={() => navigateTo('database')}
               />
@@ -247,22 +265,25 @@ const MainContent: React.FC = () => {
             )}
 
             {currentView === 'templates' && (
-              <TemplateManager
-                onBack={handleGoBack}
-              />
+              caps.canEditSchema
+                ? <TemplateManager onBack={handleGoBack} />
+                : <AccessDenied what="form templates" onBack={handleGoBack} />
             )}
 
             {currentView === 'serviceAssignments' && (
-              <ServiceAssignmentManager
-                onNavigateTab={navigateTo}
-                onBack={handleGoBack}
-              />
+              caps.canManageMasterData
+                ? <ServiceAssignmentManager onNavigateTab={navigateTo} onBack={handleGoBack} />
+                : <AccessDenied what="service assignments" onBack={handleGoBack} />
             )}
 
+            {/* Master data and schema editing are gated at the ROUTE, not just
+                hidden from the sidebar. Navigation state survives a persona
+                switch and back-history, so a POC could otherwise land on the
+                spreadsheet/Apps-Script wiring without ever seeing a link to it. */}
             {currentView === 'masterData' && (
-              <GoogleSheetsMasterConnector
-                onBack={handleGoBack}
-              />
+              caps.canManageMasterData
+                ? <GoogleSheetsMasterConnector onBack={handleGoBack} />
+                : <AccessDenied what="master data and sheet connections" onBack={handleGoBack} />
             )}
 
             {currentView === 'adminDashboard' && (
@@ -275,9 +296,9 @@ const MainContent: React.FC = () => {
         </main>
 
         {/* Minimal Footer */}
-        <footer className="bg-white border-t border-slate-200 py-3 px-6 text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2 mt-auto mb-14 md:mb-0">
+        <footer className="py-4 px-6 text-xs text-[var(--text-muted)] flex flex-col sm:flex-row items-center justify-between gap-2 mt-auto mb-14 md:mb-0">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-800">Warehouse Management Portal</span>
+            <span className="font-bold text-[var(--text-secondary)]">Warehouse Management Portal</span>
             <span>•</span>
             <span>AS_DailyLog + 15-Sheet Digital Operations Ecosystem</span>
           </div>

@@ -21,6 +21,9 @@ import {
 } from '../types';
 import { PocMaster, SiteMaster, ServiceRegistry, MasterAudit } from '../types/masterData';
 import { fetchMasterData, fetchMasterDataFromAppsScript, parseMasterDataJson, diffRows, formatRowDiff } from '../lib/masterDataSync';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { servicesForSite } from '../lib/permissions';
+import { fetchMasterDataFromDb, upsertPocMasterRow } from '../lib/masterDataDb';
 import {
   INITIAL_WAREHOUSES,
   INITIAL_USERS,
@@ -260,7 +263,7 @@ interface AppContextType {
   importMasterDataFromJson: (jsonText: string) => { ok: boolean; message: string; counts?: { poc: number; site: number; service: number } };
   masterDataAppsScriptUrl: string;
   setMasterDataAppsScriptUrl: (url: string) => void;
-  assignPocMasterRow: (row: Partial<PocMaster>) => { success: boolean; message: string };
+  assignPocMasterRow: (row: Partial<PocMaster>) => Promise<{ success: boolean; message: string }>;
 
   // Reset & Notifications
   resetToDefaultData: () => void;
@@ -388,6 +391,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    * "Paste Master Data JSON" in the UI), not either of these.
    */
   const syncMasterData = async (idOrAppsScriptUrl?: string) => {
+    // Postgres wins whenever it's configured: it's a live, reliable read with
+    // no sharing/CORS caveats, so none of the sheet fallbacks below apply.
+    if (isSupabaseConfigured) {
+      try {
+        const { pocMaster, siteMaster, serviceRegistry, masterAudit, dropdowns, errors } =
+          await fetchMasterDataFromDb();
+
+        const failed = Object.entries(errors).filter(([, msg]) => msg);
+        if (failed.length) {
+          return { ok: false, message: failed.map(([t, msg]) => `${t}: ${msg}`).join(' | ') };
+        }
+
+        setPocMasterRows(pocMaster);
+        setSiteMasterRows(siteMaster);
+        setServiceRegistryRows(serviceRegistry);
+        setMasterAuditRows(masterAudit);
+        setDropdownLists(dropdowns);
+        setLastMasterDataSyncAt(new Date().toISOString());
+
+        return {
+          ok: true,
+          message: `Loaded ${pocMaster.length} POC_Master, ${siteMaster.length} Site_Master, ${serviceRegistry.length} Service_Registry rows from Postgres.`,
+          counts: { poc: pocMaster.length, site: siteMaster.length, service: serviceRegistry.length }
+        };
+      } catch (err: any) {
+        return { ok: false, message: err?.message || 'Could not read master data from Postgres.' };
+      }
+    }
+
     const input = (idOrAppsScriptUrl || masterDataAppsScriptUrl || masterDataSpreadsheetId).trim();
     if (!input) {
       return { ok: false, message: 'Paste the WarehouseOS_MasterData Spreadsheet ID or Apps Script Web App URL first.' };
@@ -474,10 +506,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    * masterDataAppsScriptUrl to be set (the gviz-only read path has no write
    * counterpart — Google Sheets doesn't expose one without Apps Script).
    */
-  const assignPocMasterRow = (row: Partial<PocMaster>) => {
+  const assignPocMasterRow = async (row: Partial<PocMaster>) => {
+    // Postgres path: a real write with a real answer. The permission check
+    // happens inside the database (RLS), so a non-SUPER_ADMIN is refused
+    // there rather than merely being shown fewer buttons here.
+    if (isSupabaseConfigured) {
+      try {
+        const res = await upsertPocMasterRow(row);
+        if (res.success) await syncMasterData(); // read back, so the tables show the truth
+        return { success: res.success, message: res.message };
+      } catch (err: any) {
+        return { success: false, message: err?.message || 'Could not save that POC row.' };
+      }
+    }
+
     if (!masterDataAppsScriptUrl) {
       return { success: false, message: 'Deploy the Master Data Apps Script bridge first — writes need it even though reads alone don’t.' };
     }
+    // Sheets path: fire-and-forget. The hidden-form POST can't read a response,
+    // so this reports "sent", never "saved" — the two are not the same thing.
     submitViaHiddenForm(masterDataAppsScriptUrl, { action: 'upsertPocMaster', row, actorEmail: currentUser.email });
     return { success: true, message: `Sent to the sheet. Re-sync or re-paste in a few seconds to confirm it landed and see it in the tables.` };
   };
@@ -1667,8 +1714,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    * Service Admins access their assigned services across ALL nationwide warehouses.
    */
   const getAssignedServicesForUser = (user: User = currentUser): string[] => {
-    if (user.role === 'SUPER_ADMIN' || user.role === 'SITE_POC') {
+    if (user.role === 'SUPER_ADMIN') {
       return operationalSheets.map(s => s.id);
+    }
+    // A site POC files the services actually enabled at THEIR site, not every
+    // service in the catalogue (MASTERDATA.md §6: a POC's effective services
+    // are their own codes intersected with the site's Services_Enabled).
+    // servicesForSite falls back to the full list when a site has no
+    // assignment rows at all, so the 115 sites still missing assignments are
+    // not locked out by a data gap.
+    if (user.role === 'SITE_POC') {
+      return servicesForSite(user.warehouseId, serviceAssignments, operationalSheets.map(s => s.id));
     }
     const set = new Set<string>();
     if (user.assignedServiceIds) {
@@ -1692,7 +1748,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const isServiceAccessible = (sheetId: string, user: User = currentUser): boolean => {
     if (user.role === 'SUPER_ADMIN') return true;
-    if (user.role === 'SITE_POC') return true; // POC can file all sheets for their site
+    // Every other role, POC included, is checked against their own service
+    // scope. A POC used to short-circuit to `true` here, which is what let a
+    // service that isn't enabled at their site show up on their filing desk.
     const allowed = getAssignedServicesForUser(user);
     return allowed.includes(sheetId);
   };

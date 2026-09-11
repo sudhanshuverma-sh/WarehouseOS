@@ -136,17 +136,22 @@ export const GoogleSheetsMasterConnector: React.FC<{ onBack?: () => void }> = ({
     setShowAssignPocModal(true);
   };
 
-  const handleAssignPocSubmit = () => {
+  const handleAssignPocSubmit = async () => {
     if (!assignPocForm.POC_Email.trim() || !assignPocForm.POC_Name.trim() || !assignPocForm.Site_Code.trim()) {
       setAssignPocResult({ success: false, message: 'POC_Email, POC_Name and Site_Code are required.' });
       return;
     }
-    const res = assignPocMasterRow(assignPocForm as any);
-    setAssignPocResult(res);
-    notify(res.success ? 'success' : 'error', res.success ? 'POC Allocation Sent' : 'Allocation Failed', res.message);
-    if (res.success) {
-      setShowAssignPocModal(false);
-      setAssignPocForm(emptyPocForm);
+    setIsAssigningPoc(true);
+    try {
+      const res = await assignPocMasterRow(assignPocForm as any);
+      setAssignPocResult(res);
+      notify(res.success ? 'success' : 'error', res.success ? 'POC Allocation Saved' : 'Allocation Failed', res.message);
+      if (res.success) {
+        setShowAssignPocModal(false);
+        setAssignPocForm(emptyPocForm);
+      }
+    } finally {
+      setIsAssigningPoc(false);
     }
   };
 
@@ -172,6 +177,7 @@ export const GoogleSheetsMasterConnector: React.FC<{ onBack?: () => void }> = ({
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string; added?: number; updated?: number } | null>(null);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
+  const [isAssigningPoc, setIsAssigningPoc] = useState<boolean>(false);
   const [showMasterDataCode, setShowMasterDataCode] = useState<boolean>(false);
   const [copiedMasterDataCode, setCopiedMasterDataCode] = useState<boolean>(false);
   const [searchFilter, setSearchFilter] = useState<string>('');
@@ -1918,9 +1924,10 @@ function jsonResponse(data) {
               <button
                 type="button"
                 onClick={handleAssignPocSubmit}
-                className="px-4 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-xs"
+                disabled={isAssigningPoc}
+                className="px-4 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-xs disabled:opacity-60"
               >
-                {assignPocForm.Access_ID ? 'Save Changes' : 'Assign POC'}
+                {isAssigningPoc ? 'Saving…' : assignPocForm.Access_ID ? 'Save Changes' : 'Assign POC'}
               </button>
             </div>
           </div>

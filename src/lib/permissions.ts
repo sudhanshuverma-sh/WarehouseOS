@@ -40,6 +40,20 @@ export interface Capabilities {
   /** May approve or reject another person's submission. */
   canApprove: boolean;
 
+  /**
+   * May download records as a file.
+   *
+   * Deliberately narrower than "can see it on screen". An export leaves the
+   * app: once a month of diesel spend across 120 sites is a CSV in someone's
+   * downloads folder, the app's scoping no longer applies to it and there is
+   * no way to recall it. Reading a row and extracting the whole table are
+   * different acts, so they get different permissions.
+   *
+   * Super Admin and Service Admin only. A POC files; they do not take the
+   * data away with them.
+   */
+  canExport: boolean;
+
   /** 'ALL', or the warehouse ids this user may see. */
   siteScope: 'ALL' | string[];
 
@@ -75,6 +89,10 @@ export function capabilitiesFor(user: User): Capabilities {
     // No self-approval (MASTERDATA.md §6) is enforced per-record elsewhere;
     // this is only "may this role ever approve".
     canApprove: isAdmin,
+    // Not `isAdmin`: a WAREHOUSE_ADMIN runs one site and has no reason to
+    // take a file away. Widening this is one clause, if that turns out to
+    // be wrong in practice.
+    canExport: role === 'SUPER_ADMIN' || role === 'SERVICE_ADMIN',
     siteScope,
     canViewAllSites: spansAllSites
   };

@@ -34,11 +34,25 @@ function required(name: string): string {
   return value;
 }
 
+/**
+ * Managed Postgres almost always requires TLS; a local install almost
+ * never offers it. Decide from the host so neither case needs a flag —
+ * and getting this wrong fails at connect time with a message ("server
+ * does not support SSL") that reads like the database is broken.
+ * DB_SSL still overrides, for the deployment that defies the pattern.
+ */
+function useSsl(connectionString: string): boolean {
+  if (process.env.DB_SSL === 'true') return true;
+  if (process.env.DB_SSL === 'false') return false;
+  return !/@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(connectionString);
+}
+
 async function main() {
+  const connectionString = required('DATABASE_URL');
   const db = new Db({
-    connectionString: required('DATABASE_URL'),
+    connectionString,
     max: Number(process.env.DB_POOL_MAX) || 10,
-    ssl: process.env.DB_SSL === 'true',
+    ssl: useSsl(connectionString),
   });
 
   const identity = createIdentityResolver({

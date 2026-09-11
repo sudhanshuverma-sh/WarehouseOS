@@ -30,6 +30,7 @@ import { DieselLog, DieselValidation, DieselStatus } from '../types';
 import { PageHeader } from './common/PageHeader';
 import { DieselLogForm } from './forms/DieselLogForm';
 import { ExportPanel } from './common/ExportPanel';
+import { SheetSyncPanel } from './common/SheetSyncPanel';
 import { capabilitiesFor } from '../lib/permissions';
 import { DIESEL_EXPORT } from '../lib/export/dieselExport';
 import { ColumnFilter } from './common/ColumnFilter';

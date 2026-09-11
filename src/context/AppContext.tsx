@@ -23,6 +23,7 @@ import { PocMaster, SiteMaster, ServiceRegistry, MasterAudit } from '../types/ma
 import { fetchMasterData, fetchMasterDataFromAppsScript, parseMasterDataJson, diffRows, formatRowDiff } from '../lib/masterDataSync';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { servicesForSite } from '../lib/permissions';
+import { buildDieselSheetPayload } from '../lib/sheetSync/dieselSheet';
 import { fetchMasterDataFromDb, upsertPocMasterRow } from '../lib/masterDataDb';
 import {
   INITIAL_WAREHOUSES,
@@ -1447,6 +1448,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { subject, html, plain, composeUrl, to, cc };
   };
 
+  /**
+   * Pushes one diesel request into the linked Google Sheet.
+   *
+   * Best-effort by design: no linked sheet is the normal state, and a
+   * push that fails must not disturb the submission that already saved.
+   * The script upserts on Unique ID, so calling this again after an
+   * approval or a delivery validation edits that request's own row.
+   */
+  const mirrorDieselToSheet = (log: DieselLog) => {
+    try {
+      // Same registry and same transport as every other service.
+      const url = sheetWebhookUrls['SHEET_DIESEL'];
+      if (!url) return;
+      submitViaHiddenForm(url, buildDieselSheetPayload(log));
+    } catch {
+      /* the sheet is a mirror; the record is already saved locally */
+    }
+  };
+
   const createDieselLog = (
     data: Omit<DieselLog, 'id' | 'timestamp' | 'submittedById' | 'submittedByName' | 'finalAmount' | 'validation'> & {
       uniqueId?: string;
@@ -1472,6 +1492,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setDieselLogs(prev => [newLog, ...prev]);
+
+    // Mirror into the Google Sheet, if one is linked. Deliberately after
+    // the local write and deliberately not awaited: the sheet is a copy,
+    // and Google being slow must never look like a failed submission to
+    // the person who just filed it.
+    mirrorDieselToSheet(newLog);
 
     if (isDiscrepancy) {
       setNotification({

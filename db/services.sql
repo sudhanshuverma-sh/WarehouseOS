@@ -274,9 +274,20 @@ begin
       using errcode = '42501';
   end if;
 
-  if new.status is distinct from old.status and new.status in ('Approved', 'Rejected') then
-    if old.status <> 'Pending Admin Approval' then
-      raise exception 'Only a pending request can be approved or rejected — this one is %', old.status
+  -- Deciding a pending request is an admin act. The app never writes
+  -- 'Approved': approving routes the request straight onto its type's
+  -- track — 'Payment Processing' or 'Ready for Delivery' — so the check is
+  -- "any move OUT of pending", not "a move to Approved". Guarding only the
+  -- word 'Approved' would let a POC approve themselves by writing
+  -- 'Payment Processing' directly.
+  if old.status = 'Pending Admin Approval' and new.status <> old.status then
+    if new.status not in ('Rejected', 'Approved', 'Payment Processing', 'Ready for Delivery') then
+      raise exception 'A pending request can only be approved or rejected, not moved to %', new.status
+        using errcode = '22023';
+    end if;
+    if (new.procurement_type = 'Payment Only'  and new.status = 'Ready for Delivery')
+    or (new.procurement_type = 'Delivery Only' and new.status = 'Payment Processing') then
+      raise exception '% requests do not use the % track', new.procurement_type, new.status
         using errcode = '22023';
     end if;
     if not fn_is_admin() then
@@ -285,6 +296,10 @@ begin
     -- Stamped here, not taken from the payload, so it cannot be spoofed.
     new.approved_by := actor;
     new.approved_at := now();
+  elsif new.status is distinct from old.status
+        and new.status in ('Rejected', 'Approved', 'Payment Processing', 'Ready for Delivery') then
+    raise exception 'Only a pending request can be approved or rejected — this one is %', old.status
+      using errcode = '22023';
   end if;
 
   if new.validation is distinct from old.validation
@@ -319,9 +334,11 @@ begin
     return new;
   end if;
 
-  if new.status is distinct from old.status and new.status in ('Approved', 'Rejected') then
+  if old.status = 'Pending Admin Approval' and new.status <> old.status then
     insert into diesel_event (request_id, action, details)
-    values (new.request_id, upper(new.status), coalesce(new.rejection_reason, new.approval_notes));
+    values (new.request_id,
+            case when new.status = 'Rejected' then 'REJECTED' else 'APPROVED' end,
+            coalesce(new.rejection_reason, new.approval_notes));
   end if;
   if new.pod_attachment_id is distinct from old.pod_attachment_id and new.pod_attachment_id is not null then
     insert into diesel_event (request_id, action) values (new.request_id, 'POD_UPLOADED');

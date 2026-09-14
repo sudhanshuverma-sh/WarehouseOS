@@ -118,12 +118,19 @@ try {
   const seenByB = await as(POC_B, () => q('select request_id from diesel_request where site_code = $1', [SITE_A]));
   check("another site's POC cannot see it", seenByB.length === 0, `saw ${seenByB.length}`);
 
+  // Approving never writes 'Approved' — it moves the request onto its
+  // track. So the guard must hold for the track statuses too.
   await refused('POC cannot approve (even their own)', '42501', POC_A, () =>
-    q(`update diesel_request set status = 'Approved' where request_id = $1`, [reqA.request_id]),
+    q(`update diesel_request set status = 'Payment Processing' where request_id = $1`, [reqA.request_id]),
+  );
+  await refused('approval must follow the request type’s track', '22023', ADMIN_A, () =>
+    q(`update diesel_request set status = 'Ready for Delivery' where request_id = $1`, [reqA.request_id]),
   );
 
   const [approved] = await as(ADMIN_A, () =>
-    q(`update diesel_request set status = 'Approved' where request_id = $1 returning approved_by`, [reqA.request_id]),
+    q(`update diesel_request set status = 'Payment Processing' where request_id = $1 returning approved_by`, [
+      reqA.request_id,
+    ]),
   );
   check('site admin approves; approver is stamped', approved?.approved_by === ADMIN_A, approved?.approved_by);
 
@@ -135,7 +142,7 @@ try {
   const [ownReq] = await as(ADMIN_A, () => q(...dieselRow(SITE_A, 'Delivery Only')));
   check('delivery requests get a DZHPL ID', /^DZHPL\d+$/.test(ownReq.request_id), ownReq.request_id);
   await refused('admin cannot approve their own request', '23514', ADMIN_A, () =>
-    q(`update diesel_request set status = 'Approved' where request_id = $1`, [ownReq.request_id]),
+    q(`update diesel_request set status = 'Ready for Delivery' where request_id = $1`, [ownReq.request_id]),
   );
   await refused('an approved request cannot be re-decided', '22023', ADMIN_A, () =>
     q(`update diesel_request set status = 'Rejected', rejection_reason = 'late' where request_id = $1`, [

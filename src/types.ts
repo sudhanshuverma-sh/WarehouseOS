@@ -59,7 +59,9 @@ export interface User {
   phone?: string;
 }
 
-export type FieldType = 'text' | 'number' | 'percentage' | 'boolean' | 'select' | 'temperature' | 'textarea' | 'time' | 'date';
+/** `evidence` holds an attachment id: an uploaded photo or a Google Drive link. */
+export type FieldType =
+  | 'text' | 'number' | 'percentage' | 'boolean' | 'select' | 'temperature' | 'textarea' | 'time' | 'date' | 'evidence';
 
 export interface FieldDefinition {
   key: string;

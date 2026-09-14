@@ -174,8 +174,10 @@ $$;
 
 -- One audit row per changed field (I3). Generic across all three tables —
 -- the PK column name comes in as a trigger argument.
+-- security definer: the caller (wos_app) has no insert on master_audit —
+-- deliberately — so the trigger writes as the owner.
 create or replace function fn_audit_master() returns trigger
-language plpgsql as $$
+language plpgsql security definer set search_path = public as $$
 declare
   actor  text  := fn_actor_email();
   pk_col text  := tg_argv[0];
@@ -260,8 +262,6 @@ begin
 end;
 $$;
 
-grant execute on function next_access_id() to authenticated;
-
 -- ---------------------------------------------------------------------
 -- 7. Effective access — MASTERDATA.md §6, as one view.
 -- This replaces computeEffectiveAccess() in src/lib/masterDataSync.ts:
@@ -308,7 +308,21 @@ where p.is_active
 -- trusted. This block is what actually holds.
 -- ---------------------------------------------------------------------
 
-create role wos_app login;   -- password is set at deploy time, never here
+-- wos_app is never logged in as, so it has no password. The API connects
+-- as the migrating user and runs `set local role wos_app` at the start of
+-- every request transaction (server/db.ts). That user owns the tables, and
+-- Postgres exempts owners from RLS — the role switch is what makes every
+-- policy below actually apply.
+--
+-- `if not exists` because roles are cluster-wide: a second database on the
+-- same server, or a re-run, must not fail here.
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'wos_app') then
+    create role wos_app nologin;
+  end if;
+  execute format('grant wos_app to %I', current_user);
+end $$;
 
 create or replace function current_user_email() returns text
 language sql stable as $$ select fn_actor_email() $$;
@@ -347,6 +361,32 @@ language sql stable security definer as $$
   )
 $$;
 
+-- May this caller work with this service AT this site? Both conditions on
+-- the SAME grant. fn_has_service() and fn_visible_sites() checked apart
+-- would let a person holding DIESEL at site A and EB_DG at site B file
+-- diesel at B. Every service-record policy uses this instead.
+create or replace function fn_can_access(code text, site text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from v_effective_access a
+     where a.poc_email = current_user_email()
+       and (a.site_code = 'ALL' or a.site_code = site)
+       and (a.service_codes = 'ALL'
+            or code = any (string_to_array(replace(a.service_codes, ' ', ''), ',')))
+  )
+$$;
+
+-- Any admin flavour — the roles that may approve and review. Which
+-- records they may touch is still decided by fn_can_access.
+create or replace function fn_is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from v_effective_access
+     where poc_email = current_user_email()
+       and role in ('SUPER_ADMIN', 'SERVICE_ADMIN', 'WAREHOUSE_ADMIN')
+  )
+$$;
+
 alter table poc_master       enable row level security;
 alter table site_master      enable row level security;
 alter table service_registry enable row level security;
@@ -375,6 +415,7 @@ grant select                         on site_master, service_registry, master_au
 grant select, insert, update         on poc_master, site_master, service_registry   to wos_app;
 grant select                         on v_effective_access                          to wos_app;
 grant execute on function next_access_id(), fn_visible_sites(), fn_has_service(text),
+                          fn_can_access(text, text), fn_is_admin(),
                           is_super_admin(), current_user_email()                    to wos_app;
 
 -- Audit rows are written by triggers only — nobody edits them by hand.

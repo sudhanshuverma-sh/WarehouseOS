@@ -17,7 +17,8 @@
     "api:build": "esbuild server/index.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outfile=dist-server/index.js",
     "start": "node dist-server/index.js",
     "db:migrate": "node scripts/migrate.mjs",
-    "db:migrate:seed": "node scripts/migrate.mjs --seed"
+    "db:migrate:seed": "node scripts/migrate.mjs --seed",
+    "db:smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

@@ -300,22 +300,23 @@ on conflict (site_code) do nothing;
 alter table ebdg_daily     enable row level security;
 alter table site_dg_config enable row level security;
 
--- Read: any site in your grant, provided you hold the EB_DG service.
+-- Read: a site you hold EB_DG for — both on the SAME grant (fn_can_access),
+-- so EB_DG at one site plus Diesel at another does not open EB-DG at both.
 create policy read_ebdg on ebdg_daily for select to wos_app
-  using (fn_has_service('EB_DG') and site_code in (select fn_visible_sites()));
+  using (fn_can_access('EB_DG', site_code));
 
 -- Write: same scope. `with check` is what stops a POC from filing a row
 -- against somebody else's site by editing the payload — without it, the
 -- using clause would let the insert through and only block reading it
 -- back, which is a silent corruption rather than an error.
 create policy write_ebdg on ebdg_daily for insert to wos_app
-  with check (fn_has_service('EB_DG') and site_code in (select fn_visible_sites()));
+  with check (fn_can_access('EB_DG', site_code));
 
 -- Update exists for the duplicate-entry case: same day, same site, the
 -- POC corrects a reading. Still their own site, still their own service.
 create policy update_ebdg on ebdg_daily for update to wos_app
-  using      (fn_has_service('EB_DG') and site_code in (select fn_visible_sites()))
-  with check (fn_has_service('EB_DG') and site_code in (select fn_visible_sites()));
+  using      (fn_can_access('EB_DG', site_code))
+  with check (fn_can_access('EB_DG', site_code));
 
 -- I1 again: a filed reading is history. Corrections are updates.
 create trigger trg_nodelete_ebdg before delete on ebdg_daily

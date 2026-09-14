@@ -38,6 +38,9 @@ pg.types.setTypeParser(pg.types.builtins.NUMERIC, (v) => (v === null ? null : Nu
  *  breaks it. */
 pg.types.setTypeParser(pg.types.builtins.DATE, (v) => v);
 
+/** The restricted role every request runs as. Created by db/schema.sql. */
+export const APP_ROLE = 'wos_app';
+
 export interface DbConfig {
   connectionString: string;
   max?: number;
@@ -77,6 +80,13 @@ export class Db {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
+      // Drop to the restricted role for this transaction. DATABASE_URL
+      // connects as the user that ran the migrations, which OWNS the
+      // tables — and Postgres does not apply RLS to a table's owner. Without
+      // this line every policy in db/*.sql is decoration and every POC sees
+      // every site. `local` ends it with the transaction, like the setting
+      // below.
+      await client.query(`set local role ${APP_ROLE}`);
       await client.query('select set_config($1, $2, true)', ['app.actor_email', actorEmail]);
       const result = await fn(client);
       await client.query('commit');

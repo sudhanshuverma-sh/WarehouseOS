@@ -163,11 +163,19 @@ language sql stable as $$
 $$;
 
 -- Stamp last_updated_* on every write, so it can't be forgotten.
+--
+-- A bulk write sets app.write_source (the master-data import sets
+-- 'import'), which lands as 'import:<email>'. That is how a later
+-- re-import tells a row still in its imported state — safe to refresh —
+-- from one a person has since edited, which it must leave alone. Keying
+-- on the email alone cannot: the admin who imports is usually the admin
+-- who edits.
 create or replace function fn_touch_updated() returns trigger
 language plpgsql as $$
 begin
   new.last_updated_at := now();
-  new.last_updated_by := fn_actor_email();
+  new.last_updated_by := coalesce(nullif(current_setting('app.write_source', true), '') || ':', '')
+                         || fn_actor_email();
   return new;
 end;
 $$;

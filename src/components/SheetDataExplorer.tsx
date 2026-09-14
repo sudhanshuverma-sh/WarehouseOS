@@ -419,13 +419,15 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
       status: newRowData.status || 'Verified'
     };
 
-    addSheetRecord(selectedSheetId, payload);
-    setNotification({
-      type: 'success',
-      message: `Row added to ${currentSheetDef.title} successfully.`
+    void addSheetRecord(selectedSheetId, payload).then(res => {
+      if (!res.ok) return; // the reason is already on screen; the row stays open to fix
+      setNotification({
+        type: 'success',
+        message: `Row added to ${currentSheetDef.title} successfully.`
+      });
+      setIsAddRowOpen(false);
+      setNewRowData({});
     });
-    setIsAddRowOpen(false);
-    setNewRowData({});
   };
 
   // Handle Add Custom Column

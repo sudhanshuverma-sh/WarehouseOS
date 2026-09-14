@@ -75,11 +75,12 @@ export const WashingAdhocForm: React.FC<WashingAdhocFormProps> = ({
       remarks: washingRemarks || `${cratesWashed} crates washed (${chemicalPpm} PPM sanitizing solution). Ready for morning pick lines.`
     };
 
-    addSheetRecord('SHEET_WASHING', payload);
-    notify('success', 'Crate Washing Record Saved', `Logged ${cratesWashed} sanitized crates for ${activeWh.code}`);
-
-    setIsSubmitting(false);
-    if (onSuccess) onSuccess();
+    void addSheetRecord('SHEET_WASHING', { ...payload, warehouseId: activeWh.id }).then(res => {
+      setIsSubmitting(false);
+      if (!res.ok) return; // the reason is already on screen
+      notify('success', 'Crate Washing Record Saved', `Logged ${cratesWashed} sanitized crates for ${activeWh.code}`);
+      if (onSuccess) onSuccess();
+    });
   };
 
   const handleAdhocSubmit = (e: React.FormEvent) => {
@@ -101,11 +102,12 @@ export const WashingAdhocForm: React.FC<WashingAdhocFormProps> = ({
       remarks: adhocRemarks || `Permit ${workPermitNo}: ${taskDescription} - Cost: ₹${actualCost}`
     };
 
-    addSheetRecord('SHEET_ADHOC', payload);
-    notify('success', 'Adhoc Task Logged', `Logged ${workPermitNo} (₹${actualCost})`);
-
-    setIsSubmitting(false);
-    if (onSuccess) onSuccess();
+    void addSheetRecord('SHEET_ADHOC', { ...payload, warehouseId: activeWh.id }).then(res => {
+      setIsSubmitting(false);
+      if (!res.ok) return; // the reason is already on screen
+      notify('success', 'Adhoc Task Logged', `Logged ${workPermitNo} (₹${actualCost})`);
+      if (onSuccess) onSuccess();
+    });
   };
 
   return (

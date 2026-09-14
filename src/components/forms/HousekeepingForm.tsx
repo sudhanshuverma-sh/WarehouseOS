@@ -87,13 +87,14 @@ export const HousekeepingForm: React.FC<HousekeepingFormProps> = ({ onBack, onSu
       remarks: remarks || `${ongroundCount} on-ground deployed out of ${hkRequiredOnGround} required (${deploymentPct}%).`
     };
 
-    addSheetRecord('SHEET_HOUSEKEEPING', newRecord);
-    notify('success', 'Housekeeping Roster Saved', `Logged ${ongroundCount} headcount for ${agency} (${deploymentPct}% deployment)`);
-
-    setIsSubmitting(false);
-    if (onSuccess) {
-      onSuccess();
-    }
+    void addSheetRecord('SHEET_HOUSEKEEPING', newRecord).then(res => {
+      setIsSubmitting(false);
+      if (!res.ok) return; // the reason is already on screen
+      notify('success', 'Housekeeping Roster Saved', `Logged ${ongroundCount} headcount for ${agency} (${deploymentPct}% deployment)`);
+      if (onSuccess) {
+        onSuccess();
+      }
+    });
   };
 
   return (

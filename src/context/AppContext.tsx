@@ -40,7 +40,20 @@ import {
   POD_CC_EMAILS
 } from '../data/initialData';
 import { api, ApiError, detectDataMode, type DataMode } from '../lib/api/client';
-import { userFromMe, warehouseFromSite, type MeResponse, type MySiteRow } from '../lib/api/adapters';
+import {
+  cadenceFor,
+  DEDICATED_SERVICES,
+  recordFromSubmission,
+  sheetFromService,
+  submissionBody,
+  taskSubmissionFrom,
+  userFromMe,
+  warehouseFromSite,
+  type MeResponse,
+  type MySiteRow,
+  type SubmissionRow
+} from '../lib/api/adapters';
+import { serviceCodeFor, SHEET_TO_SERVICE, sheetIdFor } from '../lib/services/serviceCodes';
 
 export interface ComplianceMatrixResult {
   ok: boolean;
@@ -117,14 +130,14 @@ interface AppContextType {
   
   // Generic Sheet Records Database
   sheetRecords: Record<string, any[]>;
-  addSheetRecord: (sheetId: string, recordData: Record<string, any>) => { ok: boolean; id: string; message: string };
-  addOperationalSheet: (sheetDef: OperationalSheetDef) => { ok: boolean; message: string };
+  addSheetRecord: (sheetId: string, recordData: Record<string, any>) => Promise<{ ok: boolean; id: string; message: string }>;
+  addOperationalSheet: (sheetDef: OperationalSheetDef) => Promise<{ ok: boolean; message: string }>;
   exportSheetData: (sheetId: string, format: 'csv' | 'json') => void;
 
   // Sheet Column & Schema Customization
-  updateSheetColumns: (sheetId: string, fields: FieldDefinition[]) => void;
-  addColumnToSheet: (sheetId: string, field: FieldDefinition) => void;
-  removeColumnFromSheet: (sheetId: string, fieldKey: string) => void;
+  updateSheetColumns: (sheetId: string, fields: FieldDefinition[]) => Promise<void>;
+  addColumnToSheet: (sheetId: string, field: FieldDefinition) => Promise<void>;
+  removeColumnFromSheet: (sheetId: string, fieldKey: string) => Promise<void>;
 
   // Service Responsibility Matrix (Admin & Site POC Master Table)
   serviceAssignments: ServiceAssignment[];
@@ -152,7 +165,7 @@ interface AppContextType {
     date: string;
     dataPayload: Record<string, any>;
     notes?: string;
-  }) => { success: boolean; message: string; submissionId?: string };
+  }) => Promise<{ success: boolean; message: string; submissionId?: string }>;
   
   // Diesel Procurement — Role-Based Requisition Lifecycle
   emailLogs: EmailLogEntry[];
@@ -227,7 +240,7 @@ interface AppContextType {
       cost?: number;
       manhours?: number;
     }[];
-  }) => { ok: boolean; logId: string; message: string };
+  }) => Promise<{ ok: boolean; logId: string; message: string }>;
 
   getExistingDailyReport: (site: string, date: string) => DailySiteLog | undefined;
   getComplianceMatrix: (endDateStr: string, days?: number) => ComplianceMatrixResult;
@@ -759,7 +772,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [templates]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_PREFIX + 'submissions', JSON.stringify(submissions));
+    if (dataMode === 'demo') localStorage.setItem(STORAGE_KEY_PREFIX + 'submissions', JSON.stringify(submissions));
   }, [submissions]);
 
   useEffect(() => {
@@ -769,15 +782,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [dieselLogs]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_PREFIX + 'dailySiteLogs', JSON.stringify(dailySiteLogs));
+    if (dataMode === 'demo') localStorage.setItem(STORAGE_KEY_PREFIX + 'dailySiteLogs', JSON.stringify(dailySiteLogs));
   }, [dailySiteLogs]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_PREFIX + 'operationalSheets', JSON.stringify(operationalSheets));
+    if (dataMode === 'demo') localStorage.setItem(STORAGE_KEY_PREFIX + 'operationalSheets', JSON.stringify(operationalSheets));
   }, [operationalSheets]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_PREFIX + 'sheetRecords', JSON.stringify(sheetRecords));
+    if (dataMode === 'demo') localStorage.setItem(STORAGE_KEY_PREFIX + 'sheetRecords', JSON.stringify(sheetRecords));
   }, [sheetRecords]);
 
   useEffect(() => {
@@ -817,7 +830,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return submissions.find(s => s.id === subId);
   };
 
-  const submitTask = ({
+  const submitTaskLocal = ({
     templateId,
     warehouseId,
     shift,
@@ -1579,7 +1592,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   /**
    * Generic Sheet Records Engine
    */
-  const addSheetRecord = (sheetId: string, recordData: Record<string, any>) => {
+  const addSheetRecordLocal = (sheetId: string, recordData: Record<string, any>) => {
     const id = `REC_${sheetId.replace('SHEET_', '')}_${Date.now().toString().slice(-6)}`;
     const newRecord = {
       id,
@@ -1608,7 +1621,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { ok: true, id, message: 'Record saved successfully.' };
   };
 
-  const addOperationalSheet = (sheetDef: OperationalSheetDef) => {
+  const addOperationalSheetLocal = (sheetDef: OperationalSheetDef) => {
     setOperationalSheets(prev => [...prev, sheetDef]);
     setNotification({
       type: 'success',
@@ -1669,7 +1682,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   /**
    * Column & Schema Customization Engine for ANY Sheet
    */
-  const updateSheetColumns = (sheetId: string, fields: FieldDefinition[]) => {
+  const updateSheetColumnsLocal = (sheetId: string, fields: FieldDefinition[]) => {
     setOperationalSheets(prev =>
       prev.map(sheet => {
         if (sheet.id === sheetId) {
@@ -1688,7 +1701,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const addColumnToSheet = (sheetId: string, field: FieldDefinition) => {
+  const addColumnToSheetLocal = (sheetId: string, field: FieldDefinition) => {
     setOperationalSheets(prev =>
       prev.map(sheet => {
         if (sheet.id === sheetId) {
@@ -1711,7 +1724,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const removeColumnFromSheet = (sheetId: string, fieldKey: string) => {
+  const removeColumnFromSheetLocal = (sheetId: string, fieldKey: string) => {
     setOperationalSheets(prev =>
       prev.map(sheet => {
         if (sheet.id === sheetId) {
@@ -2022,7 +2035,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     submitViaHiddenForm(url, { action: 'updateDiesel', uniqueId, updates });
   };
 
-  const submitDailySiteLog = (payload: {
+  const submitDailySiteLogLocal = (payload: {
     site: string;
     date: string;
     values: Record<string, any>;
@@ -2941,15 +2954,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (dataMode !== 'api' || accessProblem) return;
     let cancelled = false;
-    Promise.all([api.get<DieselLog[]>('/diesel?limit=2000'), api.get<Vendor[]>('/vendors')])
-      .then(([logs, vendorRows]) => {
-        if (cancelled) return;
-        setDieselLogs(logs);
-        setVendors(vendorRows);
-      })
-      .catch(err => {
-        if (!cancelled) notify('error', 'Could not load diesel requests', errorText(err));
-      });
+    // Loaded independently, so one failing list does not blank the others.
+    const load = <T,>(path: string, apply: (rows: T) => void, what: string) =>
+      api
+        .get<T>(path)
+        .then(rows => {
+          if (!cancelled) apply(rows);
+        })
+        .catch(err => {
+          if (!cancelled) notify('error', `Could not load ${what}`, errorText(err));
+        });
+    void load<DieselLog[]>('/diesel?limit=2000', setDieselLogs, 'diesel requests');
+    void load<Vendor[]>('/vendors', setVendors, 'vendors');
+    void load<DailySiteLog[]>('/daily-site?limit=2000', setDailySiteLogs, 'daily site reports');
     return () => {
       cancelled = true;
     };
@@ -3023,6 +3040,182 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: true, message: `Delivery validated as ${saved.validation}.`, log: saved };
     } catch (err) {
       notify('error', 'Could not validate delivery', errorText(err));
+      return { success: false, message: errorText(err) };
+    }
+  };
+
+  // The server scores the report and enforces one per site per day, so a
+  // second POC at the same site gets "already filed" even from another phone.
+  const submitDailySiteLog: AppContextType['submitDailySiteLog'] = async payload => {
+    if (dataMode !== 'api') return submitDailySiteLogLocal(payload);
+    try {
+      const saved = await api.post<DailySiteLog>('/daily-site', { ...payload, pocName: currentUser.fullName });
+      setDailySiteLogs(prev => [saved, ...prev.filter(l => l.logId !== saved.logId)]);
+      return { ok: true, logId: saved.logId, message: `Report filed for ${saved.site} on ${saved.date}.` };
+    } catch (err) {
+      notify('error', 'Report not filed', errorText(err));
+      return { ok: false, logId: '', message: errorText(err) };
+    }
+  };
+
+  // ---------------------------------------------------------------------
+  // Every other service through the API: entries, forms, columns, and
+  // checklists. A service is a Service_Code in the registry; its columns
+  // are its service_form; its entries are service_submission rows.
+  // ---------------------------------------------------------------------
+
+  /** The site to file against when a form does not say: the POC's own, else the one selected. */
+  const fallbackSiteCode = () =>
+    currentUser.warehouseId || (selectedWarehouseId !== 'ALL' ? selectedWarehouseId : warehouses[0]?.id);
+
+  useEffect(() => {
+    if (dataMode !== 'api' || accessProblem) return;
+    let cancelled = false;
+
+    (async () => {
+      // Forms: the built-in sheets, with their columns as stored (if an admin
+      // changed them), plus every service created in the app since.
+      let sheets: OperationalSheetDef[] = OPERATIONAL_SHEETS;
+      try {
+        const services = await api.get<ServiceRegistry[]>('/master/services');
+        const builtInCodes = new Set([...Object.values(SHEET_TO_SERVICE), 'CHECKLIST']);
+        const formFor = (code: string) =>
+          api.get<{ fields: FieldDefinition[] }>(`/services/${code}/form`).then(f => f.fields).catch(() => [] as FieldDefinition[]);
+
+        const builtIn = await Promise.all(
+          OPERATIONAL_SHEETS.map(async sheet => {
+            const code = serviceCodeFor(sheet.id);
+            if (DEDICATED_SERVICES.has(code)) return sheet;
+            const fields = await formFor(code);
+            return fields.length ? { ...sheet, fieldsConfig: fields, fieldsCount: fields.length } : sheet;
+          })
+        );
+        const custom = await Promise.all(
+          services
+            .filter(s => s.Active === 'Yes' && !builtInCodes.has(s.Service_Code))
+            .map(async s => sheetFromService(s, sheetIdFor(s.Service_Code), await formFor(s.Service_Code)))
+        );
+        sheets = [...builtIn, ...custom];
+        if (!cancelled) setOperationalSheets(sheets);
+      } catch (err) {
+        if (!cancelled) notify('error', 'Could not load forms', errorText(err));
+      }
+
+      // Entries, per service. One service failing leaves the rest loaded.
+      const entries = await Promise.all(
+        sheets
+          .filter(sheet => !DEDICATED_SERVICES.has(serviceCodeFor(sheet.id)))
+          .map(async sheet => {
+            try {
+              const rows = await api.get<SubmissionRow[]>(`/services/${serviceCodeFor(sheet.id)}/submissions?limit=1000`);
+              return [sheet.id, rows.map(r => recordFromSubmission(r, sheet.id))] as const;
+            } catch {
+              return [sheet.id, [] as Record<string, any>[]] as const;
+            }
+          })
+      );
+      if (!cancelled) setSheetRecords(Object.fromEntries(entries));
+
+      try {
+        const checklist = await api.get<SubmissionRow[]>('/services/CHECKLIST/submissions?limit=2000');
+        if (!cancelled) setSubmissions(checklist.map(s => taskSubmissionFrom(s, computeSubmissionId)));
+      } catch (err) {
+        if (!cancelled) notify('error', 'Could not load checklists', errorText(err));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dataMode, accessProblem]);
+
+  const addSheetRecord: AppContextType['addSheetRecord'] = async (sheetId, recordData) => {
+    const code = serviceCodeFor(sheetId);
+    if (dataMode !== 'api' || DEDICATED_SERVICES.has(code)) return addSheetRecordLocal(sheetId, recordData);
+    try {
+      const saved = await api.post<SubmissionRow>(
+        `/services/${code}/submissions`,
+        submissionBody(recordData, { siteCode: fallbackSiteCode(), date: currentDate, submittedByName: currentUser.fullName })
+      );
+      const record = recordFromSubmission(saved, sheetId);
+      setSheetRecords(prev => ({ ...prev, [sheetId]: [record, ...(prev[sheetId] || [])] }));
+      return { ok: true, id: saved.id, message: 'Record saved.' };
+    } catch (err) {
+      notify('error', 'Record not saved', errorText(err));
+      return { ok: false, id: '', message: errorText(err) };
+    }
+  };
+
+  /** A new form is a new service: a registry row plus its columns. Super Admin only, on the server too. */
+  const addOperationalSheet: AppContextType['addOperationalSheet'] = async sheetDef => {
+    if (dataMode !== 'api') return addOperationalSheetLocal(sheetDef);
+    const code = serviceCodeFor(sheetDef.id);
+    try {
+      await api.post('/master/services', {
+        Service_Code: code,
+        Service_Name: sheetDef.title,
+        Cadence: cadenceFor(sheetDef.frequency),
+        Needs_Approval: 'No',
+        Needs_Delivery_Validation: 'No',
+        Requires_Evidence: 'No',
+        Active: 'Yes'
+      });
+      await api.put(`/services/${code}/form`, { fields: sheetDef.fieldsConfig ?? [] });
+      return addOperationalSheetLocal(sheetDef);
+    } catch (err) {
+      notify('error', 'Form not created', errorText(err));
+      return { ok: false, message: errorText(err) };
+    }
+  };
+
+  /** Saves a sheet's full column list, then updates the screen — never the other way round. */
+  const saveSheetFields = async (sheetId: string, fields: FieldDefinition[], applyOnScreen: () => void) => {
+    if (dataMode !== 'api') return applyOnScreen();
+    try {
+      await api.put(`/services/${serviceCodeFor(sheetId)}/form`, { fields });
+      applyOnScreen();
+    } catch (err) {
+      notify('error', 'Columns not saved', errorText(err));
+    }
+  };
+
+  const fieldsOf = (sheetId: string) => operationalSheets.find(s => s.id === sheetId)?.fieldsConfig ?? [];
+
+  const updateSheetColumns: AppContextType['updateSheetColumns'] = (sheetId, fields) =>
+    saveSheetFields(sheetId, fields, () => updateSheetColumnsLocal(sheetId, fields));
+
+  const addColumnToSheet: AppContextType['addColumnToSheet'] = (sheetId, field) =>
+    saveSheetFields(sheetId, [...fieldsOf(sheetId).filter(f => f.key !== field.key), field], () =>
+      addColumnToSheetLocal(sheetId, field)
+    );
+
+  const removeColumnFromSheet: AppContextType['removeColumnFromSheet'] = (sheetId, fieldKey) =>
+    saveSheetFields(sheetId, fieldsOf(sheetId).filter(f => f.key !== fieldKey), () =>
+      removeColumnFromSheetLocal(sheetId, fieldKey)
+    );
+
+  const submitTask: AppContextType['submitTask'] = async task => {
+    if (dataMode !== 'api') return submitTaskLocal(task);
+    const submissionId = computeSubmissionId(task.date, task.warehouseId, task.templateId, task.shift);
+    if (submissions.some(s => s.id === submissionId && s.status === 'COMPLETED')) {
+      const message = `Duplicate blocked: this checklist was already filed for ${task.date} (${task.shift}).`;
+      notify('error', message);
+      return { success: false, message };
+    }
+    try {
+      const saved = await api.post<SubmissionRow>('/services/CHECKLIST/submissions', {
+        siteCode: task.warehouseId,
+        date: task.date,
+        shift: task.shift,
+        data: { templateId: task.templateId, ...task.dataPayload },
+        remarks: task.notes,
+        submittedByName: currentUser.fullName
+      });
+      const submission = taskSubmissionFrom(saved, computeSubmissionId);
+      setSubmissions(prev => [submission, ...prev.filter(s => s.id !== submission.id)]);
+      return { success: true, message: 'Checklist submitted.', submissionId: submission.id };
+    } catch (err) {
+      notify('error', 'Checklist not submitted', errorText(err));
       return { success: false, message: errorText(err) };
     }
   };

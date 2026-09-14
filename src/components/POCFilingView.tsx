@@ -526,7 +526,8 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({
     e.preventDefault();
     if (!activeFilingModal) return;
 
-    addSheetRecord(activeFilingModal.sheetKey, {
+    const filing = activeFilingModal;
+    void addSheetRecord(filing.sheetKey, {
       warehouseId: activeWh.id,
       warehouseCode: activeWh.code,
       warehouseName: activeWh.name,
@@ -535,15 +536,17 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({
       submittedBy: currentUser.fullName,
       timestamp: new Date().toISOString(),
       ...modalFormData
+    }).then(res => {
+      // On failure the reason is already on screen and the modal stays open,
+      // so what the POC typed is not lost.
+      if (!res.ok) return;
+      notify(
+        'success',
+        `${filing.code} Logged Successfully!`,
+        `Record updated for ${activeWh.name}. Synced to ${filing.adminName}.`
+      );
+      setActiveFilingModal(null);
     });
-
-    notify(
-      'success',
-      `${activeFilingModal.code} Logged Successfully!`,
-      `Record updated for ${activeWh.name}. Synced to ${activeFilingModal.adminName}.`
-    );
-
-    setActiveFilingModal(null);
   };
 
   // Pending validation items for today

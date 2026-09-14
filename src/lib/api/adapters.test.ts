@@ -1,6 +1,101 @@
 import { describe, expect, it } from 'vitest';
 import { capabilitiesFor, canSeeSite, resolveSiteFilter } from '../permissions';
-import { userFromMe, warehouseFromSite, type MeResponse, type MySiteRow } from './adapters';
+import {
+  cadenceFor,
+  recordFromSubmission,
+  sheetFromService,
+  submissionBody,
+  taskSubmissionFrom,
+  userFromMe,
+  warehouseFromSite,
+  type MeResponse,
+  type MySiteRow,
+  type SubmissionRow,
+} from './adapters';
+
+const row = (over: Partial<SubmissionRow> = {}): SubmissionRow => ({
+  id: '41',
+  serviceCode: 'HOUSEKEEPING',
+  siteCode: 'ZHPL-HR-03',
+  warehouseId: 'ZHPL-HR-03',
+  date: '2026-09-14',
+  shift: 'MORNING',
+  status: 'Submitted',
+  data: { agency: 'SMS', ongroundCount: 12 },
+  remarks: 'all good',
+  submittedBy: 'poc@zomato.com',
+  submittedByName: 'Poc',
+  submittedAt: '2026-09-14T04:00:00.000Z',
+  ...over,
+});
+
+describe('submissionBody', () => {
+  it('separates the values from the bookkeeping the server records itself', () => {
+    const body = submissionBody(
+      { warehouseId: 'ZHPL-HR-03', warehouseCode: 'GGN3', date: '2026-09-13', shift: 'Daily Log', submittedBy: 'x', agency: 'SMS', remarks: 'ok', status: 'Compliant' },
+      { siteCode: 'ZHPL-DL-01', date: '2026-09-14', submittedByName: 'Poc' },
+    );
+    expect(body).toEqual({
+      siteCode: 'ZHPL-HR-03',
+      date: '2026-09-13',
+      shift: undefined, // 'Daily Log' is not a shift
+      data: { agency: 'SMS', status: 'Compliant' },
+      remarks: 'ok',
+      submittedByName: 'Poc',
+    });
+  });
+
+  it('falls back to the current site and date when the form sends none', () => {
+    const body = submissionBody({ cratesWashed: 40 }, { siteCode: 'ZHPL-DL-01', date: '2026-09-14', submittedByName: 'Poc' });
+    expect(body).toMatchObject({ siteCode: 'ZHPL-DL-01', date: '2026-09-14', data: { cratesWashed: 40 } });
+  });
+});
+
+describe('recordFromSubmission', () => {
+  it('flattens an entry and prefers the form’s own outcome as its status', () => {
+    expect(recordFromSubmission(row({ data: { agency: 'SMS', status: 'Compliant' } }), 'SHEET_HOUSEKEEPING')).toMatchObject({
+      id: '41',
+      sheetId: 'SHEET_HOUSEKEEPING',
+      agency: 'SMS',
+      warehouseId: 'ZHPL-HR-03',
+      status: 'Compliant',
+      reviewStatus: 'Submitted',
+    });
+    expect(recordFromSubmission(row(), 'SHEET_HOUSEKEEPING').status).toBe('Submitted');
+  });
+});
+
+describe('taskSubmissionFrom', () => {
+  it('rebuilds the id the checklist screen looks up, and lifts the template out of the values', () => {
+    const sub = taskSubmissionFrom(row({ data: { templateId: 'CHK_GEN_01', temp: 4 } }), (d, w, t, s) => `SUB_${d}_${w}_${t}_${s}`);
+    expect(sub).toMatchObject({
+      id: 'SUB_2026-09-14_ZHPL-HR-03_CHK_GEN_01_MORNING',
+      templateId: 'CHK_GEN_01',
+      dataPayload: { temp: 4 },
+      status: 'COMPLETED',
+      notes: 'all good',
+    });
+  });
+});
+
+describe('forms created in the app', () => {
+  it('maps a frequency label to a cadence', () => {
+    expect(cadenceFor('DAILY (Every Shift)')).toBe('DAILY');
+    expect(cadenceFor('Weekly')).toBe('WEEKLY');
+    expect(cadenceFor('Monthly audit')).toBe('MONTHLY');
+    expect(cadenceFor('Adhoc')).toBe('EVENT_DRIVEN');
+    expect(cadenceFor(undefined)).toBe('DAILY');
+  });
+
+  it('turns a stored service back into a sheet card with its columns', () => {
+    const sheet = sheetFromService(
+      { Service_Code: 'PEST_CONTROL', Service_Name: 'Pest Control', Cadence: 'WEEKLY' } as any,
+      'SHEET_PEST_CONTROL',
+      [{ key: 'bait', label: 'Bait stations', type: 'number', required: true }],
+    );
+    expect(sheet).toMatchObject({ id: 'SHEET_PEST_CONTROL', code: 'PEST_CONTROL', title: 'Pest Control', isCustom: true, fieldsCount: 1 });
+  });
+});
 
 const me = (over: Partial<MeResponse>): MeResponse => ({
   email: 'poc@zomato.com',

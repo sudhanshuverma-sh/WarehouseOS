@@ -136,23 +136,22 @@ export const TaskChecklists: React.FC<TaskChecklistsProps> = ({ onBack }) => {
       return;
     }
 
-    const res = submitTask({
+    void submitTask({
       templateId: selectedTemplate.id,
       warehouseId: activeWarehouseId,
       shift: selectedShift,
       date: currentDate,
       dataPayload: formData,
       notes
-    });
-
-    if (res.success) {
+    }).then(res => {
+      if (!res.success) return; // the reason is already on screen; the checklist stays open
       confetti({
         particleCount: 80,
         spread: 60,
         origin: { y: 0.7 }
       });
       setSelectedTemplate(null);
-    }
+    });
   };
 
   return (

@@ -129,15 +129,15 @@ export const CreateNewFormModal: React.FC<CreateNewFormModalProps> = ({ isOpen =
       fieldsConfig: fields
     };
 
-    const res = addOperationalSheet(newSheet);
-    if (res.ok) {
+    void addOperationalSheet(newSheet).then(res => {
+      if (!res.ok) return; // the reason is already on screen; the builder stays open
       if (onFormCreated) {
         onFormCreated(sheetId);
       }
       if (onClose) {
         onClose();
       }
-    }
+    });
   };
 
   const loadPresetTemplate = (preset: 'cold' | 'battery' | 'safety' | 'audit') => {

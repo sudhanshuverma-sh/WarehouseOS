@@ -203,30 +203,27 @@ export const DailySiteActivityForm: React.FC<{
 
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      const res = submitDailySiteLog({
-        site: selectedSite,
-        date: selectedDate,
-        values,
-        remarks,
-        pmPlanned,
-        pmCompleted,
-        pmRemark,
-        highlights,
-        activities: activities.filter(a => (a.work || '').trim().length > 0)
-      });
-
+    // Waits for the real save. On failure the form stays as typed and the
+    // reason is shown, so nothing is lost and nothing is claimed.
+    void submitDailySiteLog({
+      site: selectedSite,
+      date: selectedDate,
+      values,
+      remarks,
+      pmPlanned,
+      pmCompleted,
+      pmRemark,
+      highlights,
+      activities: activities.filter(a => (a.work || '').trim().length > 0)
+    }).then(res => {
       setIsSubmitting(false);
-
-      if (res.ok) {
-        if (thenShare) {
-          const share = buildShareMailHtml(res.logId);
-          setShareData(share);
-        } else if (onNavigateToDashboard) {
-          onNavigateToDashboard();
-        }
+      if (!res.ok) return;
+      if (thenShare) {
+        setShareData(buildShareMailHtml(res.logId));
+      } else if (onNavigateToDashboard) {
+        onNavigateToDashboard();
       }
-    }, 400);
+    });
   };
 
   const handleCopyRichHtml = () => {

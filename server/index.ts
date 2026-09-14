@@ -18,6 +18,7 @@ import { Db } from './db';
 import { createIdentityResolver } from './identity';
 import { createRoutes } from './routes';
 import { assertHeaderMap } from './ebdgColumns';
+import { ensureSuperAdmins, parseEmailList } from './bootstrap';
 
 const PORT = Number(process.env.PORT) || 8080;
 const isProduction = process.env.NODE_ENV === 'production';
@@ -77,9 +78,23 @@ async function main() {
     process.exit(1);
   }
 
+  // A fresh database has no Super Admin, and only a Super Admin can import
+  // master data — so without this nobody could get in. Does nothing once
+  // any live Super Admin exists.
+  const { emails: superAdmins, invalid } = parseEmailList(process.env.SUPER_ADMIN_EMAILS);
+  if (invalid.length) console.warn(`[boot] ignoring SUPER_ADMIN_EMAILS entries that are not addresses: ${invalid.join(', ')}`);
+  const granted = await db.unscoped((c) => ensureSuperAdmins(c, superAdmins));
+  if (granted.length) {
+    console.log(`[boot] no Super Admin existed; granted ${granted.length} from SUPER_ADMIN_EMAILS`);
+  } else if (superAdmins.length === 0) {
+    console.warn('[boot] SUPER_ADMIN_EMAILS is empty. On a fresh database nobody will be able to import master data.');
+  }
+
   const app = express();
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '1mb' }));
+  // Photos are sent raw to /api/attachments, never as JSON, so this limit is
+  // only for form data and the master-data import (~400 rows).
+  app.use(express.json({ limit: '5mb' }));
 
   app.use('/api', createRoutes({ db, identity }));
 

@@ -15,7 +15,7 @@
     "api:dev": "tsx watch server/index.ts",
     "db:import": "node scripts/html-to-json.mjs data/sheets data/master-data.json && node scripts/validate-master-data.mjs data/master-data.json && node scripts/json-to-sql.mjs data/master-data.json db/seed.sql",
     "api:build": "esbuild server/index.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outfile=dist-server/index.js",
-    "start": "node dist-server/index.js",
+    "start": "node scripts/migrate.mjs && node dist-server/index.js",
     "db:migrate": "node scripts/migrate.mjs",
     "db:migrate:seed": "node scripts/migrate.mjs --seed",
     "db:smoke": "node scripts/smoke.mjs"

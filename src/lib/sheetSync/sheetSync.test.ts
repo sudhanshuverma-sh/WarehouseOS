@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { validateSheetUrl } from './sheetSync';
-import { DIESEL_SHEET_HEADER, buildDieselSheetPayload } from './dieselSheet';
+import { DIESEL_SHEET_HEADER, buildDieselSheetBatch, buildDieselSheetPayload } from './dieselSheet';
 import type { DieselLog } from '../../types';
 
 const log = (over: Partial<DieselLog> = {}): DieselLog =>
@@ -46,6 +46,10 @@ describe('validateSheetUrl', () => {
     expect(validateSheetUrl('   ').ok).toBe(false);
   });
 
+  it('accepts a Zomato Workspace link, which is what "Anyone within Zomato" deployments give', () => {
+    expect(validateSheetUrl('https://script.google.com/a/macros/zomato.com/s/AKfycbx-9_z/exec').ok).toBe(true);
+  });
+
   it('tolerates surrounding whitespace from a copy-paste', () => {
     expect(validateSheetUrl('  https://script.google.com/macros/s/AK1/exec  ').ok).toBe(true);
   });
@@ -85,6 +89,28 @@ describe('diesel sheet payload', () => {
     const p = buildDieselSheetPayload(log({ deliveredQuantityLitres: 0 }));
     expect(p.values[p.header.indexOf('Delivered Quantity')]).toBe(0);
   });
+
+  it('gives the sheet a photo link it can open', () => {
+    const origin = 'https://warehouseos.apps.blinkit.in';
+    const p = buildDieselSheetPayload(
+      log({ qrCodeImageUrl: '/api/attachments/abc', podUrl: 'https://drive.google.com/file/d/x/view' }),
+      origin,
+    );
+    expect(p.values[p.header.indexOf('QR Code Image')]).toBe(`${origin}/api/attachments/abc`);
+    expect(p.values[p.header.indexOf("POD's")]).toBe('https://drive.google.com/file/d/x/view');
+  });
+
+  it('never pastes a whole photo into a cell', () => {
+    const p = buildDieselSheetPayload(log({ qrCodeImageUrl: 'data:image/jpeg;base64,/9j/4AAQ' }));
+    expect(p.values[p.header.indexOf('QR Code Image')]).toBe('(photo attached in app)');
+  });
+
+  it('batches every request, each aligned to the header', () => {
+    const b = buildDieselSheetBatch([log({ uniqueId: 'PZHPL1001' }), log({ uniqueId: 'DZHPL1001' }), log({ uniqueId: '' })]);
+    expect(b.action).toBe('upsertDieselRows');
+    expect(b.rows.map((r) => r.key)).toEqual(['PZHPL1001', 'DZHPL1001']);
+    for (const r of b.rows) expect(r.values).toHaveLength(b.header.length);
+  });
 });
 
 /**
@@ -110,6 +136,11 @@ describe('app and Apps Script agree on the header', () => {
     expect(gs).toContain("var KEY_COLUMN = 'Unique ID'");
     expect(buildDieselSheetPayload(log()).action).toBe('upsertDieselRow');
     expect(gs).toContain("payload.action === 'upsertDieselRow'");
+  });
+
+  it('accepts the batch the "Send all to sheet" button posts', () => {
+    expect(gs).toContain("payload.action === 'upsertDieselRows'");
+    expect(buildDieselSheetBatch([]).action).toBe('upsertDieselRows');
   });
 
   it('also accepts the partial update the app sends on approve and reject', () => {

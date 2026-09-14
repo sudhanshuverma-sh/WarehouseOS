@@ -40,8 +40,21 @@ export const DIESEL_SHEET_HEADER = [
   "POD's",
 ] as const;
 
+/**
+ * A photo link someone can open from the sheet. The app stores uploads at
+ * /api/attachments/…, which means nothing inside a spreadsheet, so it gets
+ * the app's own address in front. Drive links are already complete. A demo
+ * data: URL is hundreds of KB — more than a cell holds — so it is described
+ * instead of copied.
+ */
+const photoLink = (v: string | undefined, origin?: string): string => {
+  if (!v) return '';
+  if (v.startsWith('data:')) return '(photo attached in app)';
+  return origin && v.startsWith('/') ? origin + v : v;
+};
+
 /** Sheet header → the value for that column. */
-const VALUE_FOR: Record<string, (r: DieselLog) => string | number> = {
+const VALUE_FOR: Record<string, (r: DieselLog, origin?: string) => string | number> = {
   Timestamp: (r) => r.timestamp ?? '',
   'Email Address': (r) => r.emailAddress ?? '',
   Entity: (r) => r.entity ?? '',
@@ -58,17 +71,18 @@ const VALUE_FOR: Record<string, (r: DieselLog) => string | number> = {
   Quantity: (r) => r.quantity ?? '',
   'Rate per Litres': (r) => r.ratePerLitre ?? '',
   'Final Amount': (r) => r.finalAmount ?? '',
-  'QR Code Image': (r) => r.qrCodeImageUrl ?? '',
+  'QR Code Image': (r, origin) => photoLink(r.qrCodeImageUrl, origin),
   'Vendor Name(Delivery)': (r) => r.vendorNameDelivery ?? '',
   'Order Quantity': (r) => r.orderQuantityLitres ?? '',
   'Unique ID': (r) => r.uniqueId ?? '',
   Status: (r) => r.status ?? '',
   Validation: (r) => r.validation ?? '',
   'Delivered Quantity': (r) => r.deliveredQuantityLitres ?? '',
-  "POD's": (r) => r.podUrl ?? '',
+  "POD's": (r, origin) => photoLink(r.podUrl, origin),
 };
 
-export function buildDieselSheetPayload(log: DieselLog): SheetPayload {
+/** One request → one row. `origin` (e.g. https://warehouseos.apps.blinkit.in) completes photo links. */
+export function buildDieselSheetPayload(log: DieselLog, origin?: string): SheetPayload {
   const header = [...DIESEL_SHEET_HEADER];
   return {
     action: 'upsertDieselRow',
@@ -77,6 +91,30 @@ export function buildDieselSheetPayload(log: DieselLog): SheetPayload {
     key: log.uniqueId,
     tab: 'Records',
     header,
-    values: header.map((h) => VALUE_FOR[h](log)),
+    values: header.map((h) => VALUE_FOR[h](log, origin)),
+  };
+}
+
+export interface SheetBatchPayload {
+  action: 'upsertDieselRows';
+  tab: string;
+  header: string[];
+  rows: { key: string; values: (string | number)[] }[];
+}
+
+/**
+ * Every request in one post — the "Send all to sheet" catch-up. Rows the
+ * sheet already has are updated in place, missing ones are added, so it is
+ * safe to press as often as you like.
+ */
+export function buildDieselSheetBatch(logs: DieselLog[], origin?: string): SheetBatchPayload {
+  const header = [...DIESEL_SHEET_HEADER];
+  return {
+    action: 'upsertDieselRows',
+    tab: 'Records',
+    header,
+    rows: logs
+      .filter((l) => l.uniqueId)
+      .map((l) => ({ key: l.uniqueId, values: header.map((h) => VALUE_FOR[h](l, origin)) })),
   };
 }

@@ -109,7 +109,7 @@ describe('POST /api/diesel', () => {
     expect(db.calls).toHaveLength(0);
   });
 
-  it('computes the amount, files as the caller, and queues the sheet copy in the same transaction', async () => {
+  it('computes the amount and files as the caller', async () => {
     const { db, call } = await api((text, values) =>
       text.includes('insert into diesel_request') ? { rows: [dieselRow({ final_amount: values[13] })] } : undefined,
     );
@@ -118,7 +118,8 @@ describe('POST /api/diesel', () => {
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ uniqueId: 'PZHPL1001', finalAmount: 17900, siteCode: 'ZHPL-HR-03' });
     expect(db.sql('insert into diesel_request')[0].values[13]).toBe(17900);
-    expect(db.sql('fn_enqueue_sheet_copy')[0].values[0]).toBe('DIESEL');
+    // Sheet copies go from the browser (Zomato Workspace sharing), never queued here.
+    expect(db.sql('fn_enqueue_sheet_copy')).toHaveLength(0);
     expect(new Set(db.calls.map((c) => c.actor))).toEqual(new Set(['poc@zomato.com']));
   });
 
@@ -332,6 +333,18 @@ describe('master data', () => {
     const res = await call('PATCH', '/master/pocs/AC-0001', { Access_ID: 'AC-0002' });
     expect(res.status).toBe(400);
     expect(db.calls).toHaveLength(0);
+  });
+
+  it('links a sheet deployed "Anyone within Zomato", and refuses anything else', async () => {
+    const { call } = await api((text) => {
+      if (text.includes('is_super_admin()')) return { rows: [{ ok: true }] };
+      if (text.startsWith('update service_registry')) return { rows: [{ service_code: 'DIESEL', sheet_mirror_url: 'x' }] };
+    });
+    const zomato = await call('PUT', '/master/services/DIESEL/sheet-mirror', {
+      url: 'https://script.google.com/a/macros/zomato.com/s/AKfycbx-9_z/exec',
+    });
+    expect(zomato.status).toBe(200);
+    expect((await call('PUT', '/master/services/DIESEL/sheet-mirror', { url: 'https://evil.example/exec' })).status).toBe(400);
   });
 });
 

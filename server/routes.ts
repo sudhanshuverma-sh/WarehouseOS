@@ -277,10 +277,6 @@ export function createRoutes(deps: RouteDeps): Router {
       const saved = await run(req, async (c) => {
         const plan = buildUpsert(row);
         const { rows } = await c.query(plan.text, plan.values);
-        await c.query('select fn_enqueue_sheet_copy($1, $2::jsonb)', [
-          'EB_DG',
-          JSON.stringify({ service: 'EB_DG', event: 'UPSERTED', record: rowFromDb(rows[0]) }),
-        ]);
         return rows[0];
       });
 

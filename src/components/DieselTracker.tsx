@@ -334,6 +334,9 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
               spec={DIESEL_EXPORT}
               caps={caps}
             />
+            {/* Super Admin only (the panel hides itself otherwise): link the
+                Diesel Google Sheet, and re-send every request if rows are missing. */}
+            <SheetSyncPanel sheetId="SHEET_DIESEL" serviceLabel="Diesel" caps={caps} />
           </div>
         </div>
 

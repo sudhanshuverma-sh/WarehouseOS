@@ -22,7 +22,7 @@ import {
 import { PocMaster, SiteMaster, ServiceRegistry, MasterAudit } from '../types/masterData';
 import { fetchMasterData, fetchMasterDataFromAppsScript, parseMasterDataJson, diffRows, formatRowDiff } from '../lib/masterDataSync';
 import { servicesForSite } from '../lib/permissions';
-import { buildDieselSheetPayload } from '../lib/sheetSync/dieselSheet';
+import { buildDieselSheetBatch, buildDieselSheetPayload } from '../lib/sheetSync/dieselSheet';
 import { validateSite, validateService, type EditMode, type MasterWriteResult } from '../lib/masterData/validate';
 import {
   INITIAL_WAREHOUSES,
@@ -267,7 +267,10 @@ interface AppContextType {
 
   // Per-service Google Sheet webhook URLs (each service gets its own dedicated Sheet + Apps Script Web App)
   sheetWebhookUrls: Record<string, string>;
-  setSheetWebhookUrl: (sheetId: string, url: string) => void;
+  /** In API mode the link is saved in the database, so every POC's browser uses it. */
+  setSheetWebhookUrl: (sheetId: string, url: string) => Promise<{ ok: boolean; message?: string }>;
+  /** Re-sends every record of a service to its sheet in one post (Diesel so far). Must be called from a click. */
+  syncSheetNow: (sheetId: string) => { ok: boolean; message: string };
 
   // Master Data — live read from WarehouseOS_MasterData (POC_Master / Site_Master / Service_Registry),
   // per MASTERDATA.md. Raw rows only; not yet the source of truth for `warehouses`/`users` above.
@@ -386,8 +389,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : {};
   });
 
-  const setSheetWebhookUrl = (sheetId: string, url: string) => {
+  const setSheetWebhookUrl = async (sheetId: string, url: string): Promise<{ ok: boolean; message?: string }> => {
+    // With the API the link belongs to the service, not to this browser —
+    // otherwise only the admin who pasted it would ever send rows.
+    if (dataMode === 'api') {
+      try {
+        await api.put(`/master/services/${serviceCodeFor(sheetId)}/sheet-mirror`, { url });
+      } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : 'Could not save the link.' };
+      }
+    }
     setSheetWebhookUrls(prev => ({ ...prev, [sheetId]: url }));
+    return { ok: true };
   };
 
   // Master Data — raw rows read live from WarehouseOS_MasterData (MASTERDATA.md).
@@ -1994,33 +2007,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const pushDieselLogToSheet = (log: DieselLog) => {
     const url = sheetWebhookUrls['SHEET_DIESEL'];
     if (!url) return;
+    // 'upsertDieselRow' is the action Diesel_Code.gs handles. This used to
+    // send 'submitDiesel', which the script refuses as unknown — so new
+    // requests never reached the sheet and approvals found no row to update.
+    submitViaHiddenForm(url, buildDieselSheetPayload(log, window.location.origin));
+  };
 
-    submitViaHiddenForm(url, {
-      action: 'submitDiesel',
-      row: {
-        timestamp: log.timestamp,
-        emailAddress: log.emailAddress || '',
-        entity: log.entity || '',
-        whNameB2B: log.whNameB2B || '',
-        whNameB2C: log.whNameB2C || '',
-        costCenter: log.costCenter || '',
-        zone: log.zone || '',
-        fuel: log.fuel,
-        type: log.type,
-        vendorNamePayment: log.vendorNamePayment || '',
-        quantity: log.quantity ?? '',
-        ratePerLitre: log.ratePerLitre,
-        finalAmount: log.finalAmount,
-        qrCodeImageUrl: log.qrCodeImageUrl || '',
-        vendorNameDelivery: log.vendorNameDelivery || '',
-        orderQuantityLitres: log.orderQuantityLitres ?? '',
-        uniqueId: log.uniqueId,
-        status: log.status,
-        validation: log.validation || '',
-        deliveredQuantityLitres: log.deliveredQuantityLitres ?? '',
-        podUrl: log.podUrl || ''
-      }
-    });
+  // ---------------------------------------------------------------------
+  // Sheet copies from the browser.
+  //
+  // Zomato's Google Workspace only allows a Web App to be shared "Anyone
+  // within Zomato", so the copy must come from a browser signed in to a
+  // Zomato Google account — the server cannot send it. And a browser only
+  // allows a popup during a click: once the database has answered, that
+  // permission is gone. So the window is opened NOW, and the row is posted
+  // into it only after the save succeeds (or the window closes if it fails).
+  // ---------------------------------------------------------------------
+  type SheetWindow = { url: string; name: string; popup: Window };
+
+  const reserveSheetWindow = (sheetId: string): SheetWindow | null => {
+    const url = sheetWebhookUrls[sheetId];
+    if (!url) return null;
+    const name = `sheet_sync_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const left = Math.max(0, window.screen.width - 440);
+    const popup = window.open('about:blank', name, `width=420,height=280,left=${left},top=80`);
+    if (!popup) {
+      notify('warning', 'Sheet copy blocked', 'Allow pop-ups for this site so records reach the Google Sheet. The record itself is saved.');
+      return null;
+    }
+    return { url, name, popup };
+  };
+
+  const sendIntoSheetWindow = (win: SheetWindow, payload: unknown, closeAfterMs = 8000) => {
+    try {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = win.url;
+      form.target = win.name;
+      form.style.display = 'none';
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'payload';
+      input.value = JSON.stringify(payload);
+      form.appendChild(input);
+      document.body.appendChild(form);
+      form.submit();
+      form.remove();
+      // Long enough for a cold Apps Script start; closing sooner aborts the write.
+      setTimeout(() => {
+        try {
+          if (!win.popup.closed) win.popup.close();
+        } catch {
+          /* already closed by the person */
+        }
+      }, closeAfterMs);
+    } catch (err) {
+      console.error('Sheet copy failed to send:', err);
+    }
+  };
+
+  const closeSheetWindow = (win: SheetWindow | null) => {
+    try {
+      win?.popup.close();
+    } catch {
+      /* already closed */
+    }
   };
 
   /**
@@ -2974,6 +3025,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const submitDieselProcurement: AppContextType['submitDieselProcurement'] = async data => {
     if (dataMode !== 'api') return submitDieselProcurementLocal(data);
+    const sheetWindow = reserveSheetWindow('SHEET_DIESEL'); // before any await — see reserveSheetWindow
     try {
       const saved = await api.post<DieselLog>('/diesel', {
         siteCode: data.warehouseId,
@@ -2994,8 +3046,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notes: data.notes
       });
       replaceDieselLog(saved);
+      if (sheetWindow) sendIntoSheetWindow(sheetWindow, buildDieselSheetPayload(saved, window.location.origin));
       return { success: true, logId: saved.id, uniqueId: saved.uniqueId, message: `Procurement request [${saved.uniqueId}] submitted.` };
     } catch (err) {
+      closeSheetWindow(sheetWindow);
       notify('error', 'Request not submitted', errorText(err));
       return { success: false, message: errorText(err) };
     }
@@ -3003,11 +3057,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const approveDieselLog: AppContextType['approveDieselLog'] = async (logId, notes) => {
     if (dataMode !== 'api') return approveDieselLogLocal(logId, notes);
+    const sheetWindow = reserveSheetWindow('SHEET_DIESEL');
     try {
       const saved = await api.post<DieselLog>(`/diesel/${encodeURIComponent(logId)}/approve`, { notes });
       replaceDieselLog(saved);
+      if (sheetWindow) sendIntoSheetWindow(sheetWindow, buildDieselSheetPayload(saved, window.location.origin));
       return { success: true, message: `Request [${saved.uniqueId}] approved — now ${saved.status}.`, log: saved };
     } catch (err) {
+      closeSheetWindow(sheetWindow);
       notify('error', 'Could not approve', errorText(err));
       return { success: false, message: errorText(err) };
     }
@@ -3015,11 +3072,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const rejectDieselLog: AppContextType['rejectDieselLog'] = async (logId, reason) => {
     if (dataMode !== 'api') return rejectDieselLogLocal(logId, reason);
+    const sheetWindow = reserveSheetWindow('SHEET_DIESEL');
     try {
       const saved = await api.post<DieselLog>(`/diesel/${encodeURIComponent(logId)}/reject`, { reason });
       replaceDieselLog(saved);
+      if (sheetWindow) sendIntoSheetWindow(sheetWindow, buildDieselSheetPayload(saved, window.location.origin));
       return { success: true, message: `Request [${saved.uniqueId}] rejected.`, log: saved };
     } catch (err) {
+      closeSheetWindow(sheetWindow);
       notify('error', 'Could not reject', errorText(err));
       return { success: false, message: errorText(err) };
     }
@@ -3030,6 +3090,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!payload.podAttachmentId) {
       return { success: false, message: 'Add the POD — a photo or a Google Drive link — before validating delivery.' };
     }
+    const sheetWindow = reserveSheetWindow('SHEET_DIESEL');
     try {
       const saved = await api.post<DieselLog>(`/diesel/${encodeURIComponent(logId)}/validate`, {
         deliveredQuantityLitres: payload.deliveredQuantityLitres,
@@ -3037,11 +3098,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notes: payload.notes
       });
       replaceDieselLog(saved);
+      if (sheetWindow) sendIntoSheetWindow(sheetWindow, buildDieselSheetPayload(saved, window.location.origin));
       return { success: true, message: `Delivery validated as ${saved.validation}.`, log: saved };
     } catch (err) {
+      closeSheetWindow(sheetWindow);
       notify('error', 'Could not validate delivery', errorText(err));
       return { success: false, message: errorText(err) };
     }
+  };
+
+  const syncSheetNow: AppContextType['syncSheetNow'] = sheetId => {
+    if (sheetId !== 'SHEET_DIESEL') return { ok: false, message: 'Send-all is available for Diesel so far.' };
+    if (!sheetWebhookUrls[sheetId]) return { ok: false, message: 'Link the sheet first.' };
+    const win = reserveSheetWindow(sheetId);
+    if (!win) return { ok: false, message: 'Pop-ups are blocked for this site. Allow them, then press again.' };
+    // One post for everything; a large batch needs longer before the window closes.
+    sendIntoSheetWindow(win, buildDieselSheetBatch(dieselLogs, window.location.origin), 45000);
+    return {
+      ok: true,
+      message: `Sent ${dieselLogs.length} requests. Rows already in the sheet are updated, missing ones added. Keep the small window open until it closes itself.`
+    };
   };
 
   // The server scores the report and enforces one per site per day, so a
@@ -3077,7 +3153,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // changed them), plus every service created in the app since.
       let sheets: OperationalSheetDef[] = OPERATIONAL_SHEETS;
       try {
-        const services = await api.get<ServiceRegistry[]>('/master/services');
+        const services = await api.get<(ServiceRegistry & { Sheet_Mirror_URL?: string })[]>('/master/services');
+        // Sheet links come from the database, so every POC's browser sends to
+        // the sheet a Super Admin linked — not only the browser it was pasted in.
+        const links: Record<string, string> = {};
+        for (const s of services) {
+          if (s.Sheet_Mirror_URL) links[sheetIdFor(s.Service_Code)] = s.Sheet_Mirror_URL;
+        }
+        if (!cancelled) setSheetWebhookUrls(links);
         const builtInCodes = new Set([...Object.values(SHEET_TO_SERVICE), 'CHECKLIST']);
         const formFor = (code: string) =>
           api.get<{ fields: FieldDefinition[] }>(`/services/${code}/form`).then(f => f.fields).catch(() => [] as FieldDefinition[]);
@@ -3304,6 +3387,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateWarehousePoc,
         sheetWebhookUrls,
         setSheetWebhookUrl,
+        syncSheetNow,
         masterDataSpreadsheetId,
         setMasterDataSpreadsheetId,
         pocMasterRows,

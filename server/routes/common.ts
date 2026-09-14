@@ -103,16 +103,22 @@ export async function requireAttachment(
 }
 
 /**
- * Queues a copy for the service's Google Sheet, when one is linked. In the
- * same transaction as the write, so a copy is never queued for a record
- * that did not save. The worker formats `record` for the sheet on delivery.
+ * Deliberately does nothing.
+ *
+ * Sheet copies are sent by the browser, not the server: Zomato's Google
+ * Workspace only lets a Web App be shared "Anyone within Zomato", and this
+ * server is not a Zomato Google user, so Google would refuse it. Queuing
+ * rows here would only fill sheet_outbox with copies nothing can deliver.
+ * The call sites stay, marking each write that has a sheet copy, in case a
+ * server path becomes possible later (e.g. a Workspace-approved service
+ * account).
  */
 export async function queueSheetCopy(
-  c: Queryable,
-  serviceCode: string,
-  payload: { event: string; record: unknown },
+  _c: Queryable,
+  _serviceCode: string,
+  _payload: { event: string; record: unknown },
 ): Promise<void> {
-  await c.query('select fn_enqueue_sheet_copy($1, $2::jsonb)', [serviceCode, JSON.stringify({ service: serviceCode, ...payload })]);
+  /* sent from the browser — see AppContext reserveSheetWindow */
 }
 
 /** Dates and timestamps as the app expects them: ISO strings. */

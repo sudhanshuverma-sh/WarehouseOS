@@ -14,8 +14,18 @@
  *        Who has access:  Anyone within Zomato   (NOT "Anyone")
  *   4. Authorise when prompted. It will warn the app is unverified —
  *      that is normal for a script you wrote yourself.
- *   5. Copy the /exec URL.
- *   6. In WarehouseOS: Diesel → Sheet sync → paste the URL → Test.
+ *   5. Copy the /exec URL (for Zomato it looks like
+ *      https://script.google.com/a/macros/zomato.com/s/…/exec).
+ *   6. In WarehouseOS, as Super Admin: Diesel → Link sheet → paste → Save.
+ *      The link is saved in the database, so every POC's browser uses it.
+ *
+ * HOW ROWS ARRIVE
+ *   The browser of whoever files or approves sends the row, right after the
+ *   app's database has saved it. That browser is signed in to Zomato Google,
+ *   which is what "Anyone within Zomato" requires. So: be signed in to your
+ *   Zomato Google account in the same browser, and allow pop-ups for the app.
+ *   If a row is ever missing, Diesel → Link sheet → "Send all to sheet"
+ *   re-sends every request; existing rows are updated, never duplicated.
  *
  * REDEPLOYING AFTER AN EDIT
  *   Deploy → Manage deployments → pencil icon → Version: New version.
@@ -87,6 +97,14 @@ function doPost(e) {
           return respond({ status: 'error', message: 'header and values must be the same length.' });
         }
         return respond(upsertRow(payload));
+      }
+
+      // Every request at once — the "Send all to sheet" catch-up.
+      if (payload.action === 'upsertDieselRows') {
+        if (!payload.header || !payload.rows) {
+          return respond({ status: 'error', message: 'header and rows are required.' });
+        }
+        return respond(upsertRows(payload));
       }
 
       // An approval, a rejection, a delivery validation: only the fields
@@ -168,6 +186,87 @@ function upsertRow(payload) {
 
   sheet.appendRow(rowValues);
   return { status: 'ok', mode: 'created', row: sheet.getLastRow(), key: payload.key };
+}
+
+/**
+ * Many rows in one call. Reads the header and the Unique ID column once,
+ * updates rows that exist, and appends all the missing ones in a single
+ * write — a few seconds for a thousand requests, where one call per row
+ * would run into Apps Script's time limit.
+ */
+function upsertRows(payload) {
+  var tabName = payload.tab || DIESEL_TAB;
+  var sheet = SpreadsheetApp.getActive().getSheetByName(tabName);
+  if (!sheet) {
+    return { status: 'error', message: 'Tab not found: ' + tabName + '. Run setupSheet() once.' };
+  }
+
+  var lastCol = sheet.getLastColumn();
+  if (lastCol === 0) {
+    return { status: 'error', message: 'The tab is empty — run setupSheet() to write the header row first.' };
+  }
+
+  var sheetHeader = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) {
+    return String(h).trim();
+  });
+  var indexByName = {};
+  for (var i = 0; i < sheetHeader.length; i++) {
+    if (sheetHeader[i]) indexByName[sheetHeader[i]] = i;
+  }
+
+  var missing = payload.header.filter(function (h) { return indexByName[h] === undefined; });
+  if (missing.length) {
+    return {
+      status: 'error',
+      message: 'Refusing to write: the sheet has no column named "' + missing.join('", "') + '".'
+    };
+  }
+  var keyIndex = indexByName[KEY_COLUMN];
+  if (keyIndex === undefined) {
+    return { status: 'error', message: 'The sheet has no "' + KEY_COLUMN + '" column to match rows on.' };
+  }
+
+  var rowByKey = {};
+  var lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    var ids = sheet.getRange(2, keyIndex + 1, lastRow - 1, 1).getValues();
+    for (var r = 0; r < ids.length; r++) {
+      var id = String(ids[r][0]).trim();
+      if (id) rowByKey[id] = r + 2;
+    }
+  }
+
+  var appends = [];
+  var updated = 0;
+  var skipped = 0;
+
+  for (var n = 0; n < payload.rows.length; n++) {
+    var item = payload.rows[n];
+    var key = item && item.key ? String(item.key).trim() : '';
+    if (!key || !item.values || item.values.length !== payload.header.length) {
+      skipped++;
+      continue;
+    }
+
+    var rowValues = new Array(sheetHeader.length).fill('');
+    for (var v = 0; v < payload.header.length; v++) {
+      rowValues[indexByName[payload.header[v]]] = item.values[v];
+    }
+
+    if (rowByKey[key] > 0) {
+      sheet.getRange(rowByKey[key], 1, 1, rowValues.length).setValues([rowValues]);
+      updated++;
+    } else if (rowByKey[key] === undefined) {
+      appends.push(rowValues);
+      rowByKey[key] = -1; // the same request twice in one batch is added once
+    }
+  }
+
+  if (appends.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, appends.length, sheetHeader.length).setValues(appends);
+  }
+
+  return { status: 'ok', updated: updated, created: appends.length, skipped: skipped };
 }
 
 /**

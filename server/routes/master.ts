@@ -23,7 +23,9 @@ import { isPlainObject, limitFrom, requireSuperAdmin, runAs, type RouteDeps } fr
 
 const ROLES = ['SITE_POC', 'WAREHOUSE_ADMIN', 'SERVICE_ADMIN', 'SUPER_ADMIN'];
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const APPS_SCRIPT_EXEC = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/;
+// Both shapes: /macros/s/…/exec, and the Workspace form a Zomato deployment
+// ("Anyone within Zomato") gives, /a/macros/zomato.com/s/…/exec.
+const APPS_SCRIPT_EXEC = /^https:\/\/script\.google\.com\/(?:a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/;
 
 const text = (v: unknown) => (v === null || v === undefined ? '' : String(v).trim());
 

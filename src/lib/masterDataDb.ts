@@ -246,6 +246,93 @@ export async function upsertPocMasterRow(
   };
 }
 
+/** Shared translation of a Postgres refusal into something an admin can act on. */
+function describeDbError(error: { code?: string; message: string }): string {
+  if (error.code === '42501' || /row-level security/i.test(error.message)) {
+    return 'Only a SUPER_ADMIN can change master data. Your account is not one.';
+  }
+  if (error.code === '23505') return 'That code already exists.';
+  return error.message;
+}
+
+/** '' -> null, so optional columns are genuinely empty rather than empty strings. */
+const orNull = (v: unknown) => (v === undefined || v === null || String(v).trim() === '' ? null : String(v).trim());
+
+/**
+ * Creates or edits one Site_Master row.
+ *
+ * `mode` is explicit rather than inferred from whether the code exists: an
+ * upsert would let "add a site" silently overwrite an existing one that
+ * happened to share a mistyped code. Create inserts and fails on a
+ * duplicate; edit updates and never touches site_code (MASTERDATA.md I2).
+ */
+export async function upsertSiteMasterRow(
+  row: Partial<SiteMaster>,
+  mode: 'create' | 'edit'
+): Promise<{ success: boolean; message: string }> {
+  const db = requireSupabase();
+  const record: Record<string, any> = {
+    wh_code: (row.WH_Code || '').trim(),
+    facility_name: (row.Facility_Name || '').trim(),
+    sap_code: orNull(row.SAP_Code),
+    cost_center: orNull(row.Cost_Center),
+    zone: row.Zone,
+    state: (row.State || '').trim(),
+    city: orNull(row.City),
+    address: orNull(row.Address),
+    pincode: orNull(row.Pincode),
+    channel: row.Channel,
+    entity: (row.Entity || '').trim(),
+    business_type: row.Business_Type,
+    gstin: orNull(row.GSTIN),
+    lat_long: orNull(row.Lat_Long),
+    map_link: orNull(row.Map_Link),
+    services_enabled: orNull(row.Services_Enabled) ?? ALL,
+    go_live_date: orNull(row.Go_Live_Date),
+    closure_date: orNull(row.Closure_Date),
+    is_active: row.Active !== 'No'
+  };
+  const code = (row.Site_Code || '').trim();
+
+  const { error } =
+    mode === 'create'
+      ? await db.from('site_master').insert({ ...record, site_code: code })
+      : await db.from('site_master').update(record).eq('site_code', code);
+
+  if (error) return { success: false, message: describeDbError(error) };
+  return { success: true, message: `${mode === 'create' ? 'Added' : 'Saved'} ${code} — logged in Master_Audit.` };
+}
+
+/** Creates or edits one Service_Registry row. Same create/edit contract as sites. */
+export async function upsertServiceRegistryRow(
+  row: Partial<ServiceRegistry>,
+  mode: 'create' | 'edit'
+): Promise<{ success: boolean; message: string }> {
+  const db = requireSupabase();
+  const record: Record<string, any> = {
+    service_name: (row.Service_Name || '').trim(),
+    needs_approval: row.Needs_Approval === 'Yes',
+    needs_delivery_validation: row.Needs_Delivery_Validation === 'Yes',
+    requires_evidence: row.Requires_Evidence === 'Yes',
+    cadence: row.Cadence,
+    submission_window: orNull(row.Submission_Window),
+    sla_hours: row.SLA_Hours === '' || row.SLA_Hours === undefined ? null : Number(row.SLA_Hours),
+    appscript_url: orNull(row.AppScript_URL),
+    records_tab: orNull(row.Records_Tab) ?? 'Records',
+    audit_tab: orNull(row.Audit_Tab) ?? 'Audit',
+    is_active: row.Active !== 'No'
+  };
+  const code = (row.Service_Code || '').trim();
+
+  const { error } =
+    mode === 'create'
+      ? await db.from('service_registry').insert({ ...record, service_code: code })
+      : await db.from('service_registry').update(record).eq('service_code', code);
+
+  if (error) return { success: false, message: describeDbError(error) };
+  return { success: true, message: `${mode === 'create' ? 'Added' : 'Saved'} ${code} — logged in Master_Audit.` };
+}
+
 /**
  * Deactivates a POC row. There is no delete — MASTERDATA.md I1, enforced by
  * a trigger that raises an exception if anything tries.

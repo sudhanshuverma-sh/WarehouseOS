@@ -27,6 +27,12 @@ import {
 } from 'lucide-react';
 import { PageHeader } from './common/PageHeader';
 import { Warehouse, User } from '../types';
+import { Plus as PlusIcon } from 'lucide-react';
+import { Button } from './common/Button';
+import { MasterDataTable } from './masterData/MasterDataTable';
+import { MasterRowEditor } from './masterData/MasterRowEditor';
+import { SITE_FIELDS, SERVICE_FIELDS, EMPTY_SITE, EMPTY_SERVICE } from './masterData/fieldConfigs';
+import { suggestNextSiteCode, STATE_CODES, type EditMode } from '../lib/masterData/validate';
 
 // Master Data browser — the three real tabs from MASTERDATA.md, in their
 // documented column order (§2/§3/§4), each keyed by its real primary key.
@@ -99,7 +105,9 @@ export const GoogleSheetsMasterConnector: React.FC<{ onBack?: () => void }> = ({
     lastMasterDataSyncAt,
     syncMasterData,
     importMasterDataFromJson,
-    assignPocMasterRow
+    assignPocMasterRow,
+    saveSiteMasterRow,
+    saveServiceRegistryRow
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'master_data' | 'admin_sync' | 'script' | 'services' | 'faq'>('master_data');
@@ -117,6 +125,43 @@ export const GoogleSheetsMasterConnector: React.FC<{ onBack?: () => void }> = ({
   const [showMasterDataPasteModal, setShowMasterDataPasteModal] = useState(false);
   const [masterDataViewTab, setMasterDataViewTab] = useState<'POC_Master' | 'Site_Master' | 'Service_Registry' | 'Master_Audit' | 'Dropdowns'>('POC_Master');
   const [masterDataPasteText, setMasterDataPasteText] = useState('');
+
+  // Site_Master / Service_Registry editor. `initial` is captured once per
+  // open, so the drawer's dirty check compares against what was opened —
+  // not against a row that a background re-sync has since replaced.
+  const [editor, setEditor] = useState<{
+    tab: 'site' | 'service';
+    mode: EditMode;
+    initial: Record<string, any>;
+  } | null>(null);
+
+  const openEditor = (tab: 'site' | 'service', mode: EditMode, row?: Record<string, any>) =>
+    setEditor({
+      tab,
+      mode,
+      initial: mode === 'edit' && row ? { ...row } : { ...(tab === 'site' ? EMPTY_SITE : EMPTY_SERVICE) },
+    });
+
+  /**
+   * Small conveniences while adding a site, never while editing one:
+   * picking a State suggests the next free Site_Code, and Cost_Center
+   * follows SAP_Code (they are the same value on every existing row).
+   * A code the admin has typed by hand is left alone.
+   */
+  const deriveSite = (next: Record<string, any>, changed: string, mode: EditMode) => {
+    if (mode !== 'create') return next;
+    const out = { ...next };
+    if (changed === 'State') {
+      const letters = STATE_CODES[out.State];
+      const code = String(out.Site_Code || '');
+      const isSuggestion = /^ZHPL-[A-Z]{2}-\d{2}$/.test(code) && !code.startsWith(`ZHPL-${letters}-`);
+      if (!code || isSuggestion) out.Site_Code = suggestNextSiteCode(out.State, siteMasterRows);
+    }
+    if (changed === 'SAP_Code' && (!out.Cost_Center || out.Cost_Center === editor?.initial.SAP_Code)) {
+      out.Cost_Center = out.SAP_Code;
+    }
+    return out;
+  };
 
   // Assign / Edit POC — the one in-app place POC_Master allocation happens.
   // Writes through assignPocMasterRow (upsert-by-Access_ID via the Apps
@@ -547,19 +592,108 @@ function buildMasterDataSnapshot() {
 // present in the submitted row are written, looked up by header name
 // (MASTERDATA.md I5, never by column index). Every create/update logs one
 // Master_Audit row per field changed (I3).
+// The app posts a hidden HTML form with one field named "payload" (a form
+// POST is the only way past the browser's CORS wall to a Web App). Its body
+// is therefore "payload=%7B...", NOT raw JSON — so read e.parameter first
+// and only fall back to a raw JSON body for callers that send one.
+function readPayload(e) {
+  if (e.parameter && e.parameter.payload) return JSON.parse(e.parameter.payload);
+  return JSON.parse(e.postData.contents);
+}
+
 function doPost(e) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000); // two admins can save in the same second
   try {
-    var payload = JSON.parse(e.postData.contents);
+    var payload = readPayload(e);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var actor = payload.actorEmail || 'APP';
 
     if (payload.action === 'upsertPocMaster') {
-      return upsertPocMaster(ss, payload.row || {}, payload.actorEmail || 'APP');
+      return upsertPocMaster(ss, payload.row || {}, actor);
+    }
+    if (payload.action === 'upsertSiteMaster') {
+      return jsonResponse(upsertByKey(ss, 'Site_Master', 'Site_Code', payload.row || {}, payload.mode, actor));
+    }
+    if (payload.action === 'upsertServiceRegistry') {
+      return jsonResponse(upsertByKey(ss, 'Service_Registry', 'Service_Code', payload.row || {}, payload.mode, actor));
     }
 
     return jsonResponse({ status: 'error', message: 'Unknown action: ' + payload.action });
   } catch (err) {
     return jsonResponse({ status: 'error', message: err.toString() });
+  } finally {
+    lock.releaseLock();
   }
+}
+
+// Create or edit one row of Site_Master / Service_Registry, by header name
+// (MASTERDATA.md I5). mode is explicit: 'create' refuses a key that already
+// exists, so "add a site" can never overwrite one; 'edit' refuses a key that
+// doesn't exist and NEVER writes the key column (I2 — other records point at
+// it). One Master_Audit row per changed field (I3). No delete path (I1).
+function upsertByKey(ss, tabName, keyColumn, row, mode, actorEmail) {
+  var sheet = ss.getSheetByName(tabName);
+  if (!sheet) return { status: 'error', message: 'Tab not found: ' + tabName };
+
+  var values = sheet.getDataRange().getValues();
+  var headers = values[0].map(function (h) { return String(h).trim(); });
+  var colIndex = {};
+  for (var c = 0; c < headers.length; c++) if (headers[c]) colIndex[headers[c]] = c;
+
+  if (colIndex[keyColumn] === undefined) {
+    return { status: 'error', message: tabName + ' has no ' + keyColumn + ' column.' };
+  }
+
+  var key = String(row[keyColumn] || '').trim();
+  if (!key) return { status: 'error', message: keyColumn + ' is required.' };
+
+  var targetRow = -1;
+  for (var r = 1; r < values.length; r++) {
+    if (String(values[r][colIndex[keyColumn]]).trim().toLowerCase() === key.toLowerCase()) {
+      targetRow = r + 1;
+      break;
+    }
+  }
+
+  var nowIso = new Date().toISOString();
+
+  if (mode === 'create') {
+    if (targetRow !== -1) {
+      return { status: 'error', message: key + ' already exists in ' + tabName + '. Nothing was written.' };
+    }
+    row.Last_Updated_By = actorEmail;
+    row.Last_Updated_At = nowIso;
+    var newRow = headers.map(function (h) { return row[h] !== undefined ? row[h] : ''; });
+    sheet.appendRow(newRow);
+    logMasterAudit(ss, 'CREATE', tabName, key, 'ALL', '', JSON.stringify(row), actorEmail);
+    return { status: 'success', mode: 'created', key: key };
+  }
+
+  if (mode !== 'edit') return { status: 'error', message: 'mode must be create or edit.' };
+  if (targetRow === -1) {
+    return { status: 'error', message: key + ' does not exist in ' + tabName + '. Nothing was written.' };
+  }
+
+  var existing = values[targetRow - 1];
+  var changed = 0;
+  for (var field in row) {
+    if (field === keyColumn || field === 'Last_Updated_By' || field === 'Last_Updated_At') continue;
+    if (colIndex[field] === undefined) continue;
+    var oldVal = existing[colIndex[field]];
+    var newVal = row[field];
+    if (String(oldVal) !== String(newVal)) {
+      sheet.getRange(targetRow, colIndex[field] + 1).setValue(newVal);
+      var action = field === 'Active' ? (newVal === 'Yes' ? 'REACTIVATE' : 'DEACTIVATE') : 'UPDATE';
+      logMasterAudit(ss, action, tabName, key, field, oldVal, newVal, actorEmail);
+      changed++;
+    }
+  }
+  if (changed > 0) {
+    if (colIndex['Last_Updated_By'] !== undefined) sheet.getRange(targetRow, colIndex['Last_Updated_By'] + 1).setValue(actorEmail);
+    if (colIndex['Last_Updated_At'] !== undefined) sheet.getRange(targetRow, colIndex['Last_Updated_At'] + 1).setValue(nowIso);
+  }
+  return { status: 'success', mode: 'updated', key: key, changed: changed };
 }
 
 function upsertPocMaster(ss, row, actorEmail) {
@@ -1172,7 +1306,9 @@ function jsonResponse(data) {
                     Deploy this <strong>into the WarehouseOS_MasterData spreadsheet itself</strong> (Extensions → Apps Script) —
                     a separate deployment from the Code.gs on the "Google Apps Script (Code.gs)" tab. It's what reads AND
                     writes here: the GET side backs both "Sync Master Data" and "Paste Master Data JSON"; the POST side is
-                    what "Assign / Edit POC" actually calls.
+                    what "Assign / Edit POC", "Add site" and "Add service" actually call.{' '}
+                    <strong>Already deployed an older copy?</strong> Paste this over it, then Deploy → Manage
+                    deployments → ✏️ → Version: <strong>New version</strong> — a new deployment would change the URL.
                   </p>
                   <button
                     type="button"
@@ -1300,61 +1436,41 @@ function jsonResponse(data) {
                 masterDataViewTab === 'Service_Registry' ? serviceRegistryRows :
                 masterAuditRows;
 
-              if (rows.length === 0) {
-                return (
-                  <div className="py-12 text-center text-sm text-slate-400">
-                    No {masterDataViewTab} rows yet — sync or paste above to load them.
-                  </div>
-                );
-              }
+              // Double-click opens the editor for the three editable tabs.
+              // Master_Audit is written by the app and the sheet script only,
+              // so it gets filters and sorting but no edit affordance.
+              const onEditRow =
+                masterDataViewTab === 'POC_Master' ? (row: Record<string, any>) => openAssignPocModal(row as any)
+                : masterDataViewTab === 'Site_Master' ? (row: Record<string, any>) => openEditor('site', 'edit', row)
+                : masterDataViewTab === 'Service_Registry' ? (row: Record<string, any>) => openEditor('service', 'edit', row)
+                : undefined;
+
+              const addLabel =
+                masterDataViewTab === 'Site_Master' ? 'Add site'
+                : masterDataViewTab === 'Service_Registry' ? 'Add service'
+                : masterDataViewTab === 'POC_Master' ? 'Assign POC'
+                : null;
+
+              const onAdd =
+                masterDataViewTab === 'Site_Master' ? () => openEditor('site', 'create')
+                : masterDataViewTab === 'Service_Registry' ? () => openEditor('service', 'create')
+                : () => openAssignPocModal();
 
               return (
-                <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 uppercase tracking-wider text-[10px] sticky top-0 z-10">
-                      <tr>
-                        {masterDataViewTab === 'POC_Master' && <th className="py-2.5 px-3 whitespace-nowrap">Edit</th>}
-                        {activeTabDef.columns.map(col => (
-                          <th key={col} className="py-2.5 px-3 whitespace-nowrap">{col}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                      {rows.map((row, idx) => (
-                        <tr key={row[activeTabDef.keyColumn] || idx} className="hover:bg-teal-50/50">
-                          {masterDataViewTab === 'POC_Master' && (
-                            <td className="py-2 px-3 whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => openAssignPocModal(row as any)}
-                                className="text-teal-600 hover:text-teal-800 font-bold text-[11px]"
-                              >
-                                Edit
-                              </button>
-                            </td>
-                          )}
-                          {activeTabDef.columns.map(col => {
-                            const val = row[col];
-                            const isYesNoCol = col === 'Active' || col === 'Is_Primary' || col.startsWith('Needs_') || col === 'Requires_Evidence';
-                            return (
-                              <td key={col} className="py-2 px-3 whitespace-nowrap max-w-[220px] truncate" title={String(val ?? '')}>
-                                {isYesNoCol ? (
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${val === 'Yes' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
-                                    {val || '—'}
-                                  </span>
-                                ) : (
-                                  <span className={col.includes('ID') || col.includes('Email') || col.includes('Code') ? 'font-mono' : ''}>
-                                    {val === '' || val === undefined || val === null ? <span className="text-slate-300 italic">—</span> : String(val)}
-                                  </span>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <MasterDataTable
+                  key={masterDataViewTab}
+                  rows={rows}
+                  columns={activeTabDef.columns}
+                  keyColumn={activeTabDef.keyColumn}
+                  onEditRow={onEditRow}
+                  actions={
+                    addLabel && (
+                      <Button variant="primary" size="sm" icon={<PlusIcon className="w-3.5 h-3.5" />} onClick={onAdd}>
+                        {addLabel}
+                      </Button>
+                    )
+                  }
+                />
               );
             })()}
           </div>
@@ -1720,6 +1836,32 @@ function jsonResponse(data) {
           (upsert by Access_ID through the Apps Script bridge). This is the one
           in-app place POC/site allocation happens; re-sync or re-paste to see
           the write reflected in the tables above. */}
+      {editor && (
+        <MasterRowEditor
+          open
+          mode={editor.mode}
+          title={
+            editor.mode === 'create'
+              ? editor.tab === 'site' ? 'Add a new site' : 'Add a new service'
+              : `${editor.tab === 'site' ? 'Site_Master' : 'Service_Registry'} · ${
+                  editor.tab === 'site' ? editor.initial.Site_Code : editor.initial.Service_Code
+                }`
+          }
+          keyField={editor.tab === 'site' ? 'Site_Code' : 'Service_Code'}
+          fields={editor.tab === 'site' ? SITE_FIELDS : SERVICE_FIELDS}
+          initial={editor.initial}
+          derive={editor.tab === 'site' ? deriveSite : undefined}
+          onClose={() => setEditor(null)}
+          onSave={async (row, mode, originalKey) => {
+            const res = editor.tab === 'site'
+              ? await saveSiteMasterRow(row as any, mode, originalKey)
+              : await saveServiceRegistryRow(row as any, mode, originalKey);
+            if (res.success) notify('success', mode === 'create' ? 'Row added' : 'Row saved', res.message);
+            return res;
+          }}
+        />
+      )}
+
       {showAssignPocModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full border border-slate-200 overflow-hidden space-y-4 p-6 max-h-[90vh] overflow-y-auto">

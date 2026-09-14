@@ -24,7 +24,8 @@ import { fetchMasterData, fetchMasterDataFromAppsScript, parseMasterDataJson, di
 import { isSupabaseConfigured } from '../lib/supabase';
 import { servicesForSite } from '../lib/permissions';
 import { buildDieselSheetPayload } from '../lib/sheetSync/dieselSheet';
-import { fetchMasterDataFromDb, upsertPocMasterRow } from '../lib/masterDataDb';
+import { fetchMasterDataFromDb, upsertPocMasterRow, upsertSiteMasterRow, upsertServiceRegistryRow } from '../lib/masterDataDb';
+import { validateSite, validateService, type EditMode, type MasterWriteResult } from '../lib/masterData/validate';
 import {
   INITIAL_WAREHOUSES,
   INITIAL_USERS,
@@ -265,6 +266,10 @@ interface AppContextType {
   masterDataAppsScriptUrl: string;
   setMasterDataAppsScriptUrl: (url: string) => void;
   assignPocMasterRow: (row: Partial<PocMaster>) => Promise<{ success: boolean; message: string }>;
+  /** Create or edit a Site_Master row. Validates first; never changes Site_Code on edit. */
+  saveSiteMasterRow: (row: Partial<SiteMaster>, mode: EditMode, originalKey?: string) => Promise<MasterWriteResult>;
+  /** Create or edit a Service_Registry row. Validates first; never changes Service_Code on edit. */
+  saveServiceRegistryRow: (row: Partial<ServiceRegistry>, mode: EditMode, originalKey?: string) => Promise<MasterWriteResult>;
 
   // Reset & Notifications
   resetToDefaultData: () => void;
@@ -529,6 +534,92 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     submitViaHiddenForm(masterDataAppsScriptUrl, { action: 'upsertPocMaster', row, actorEmail: currentUser.email });
     return { success: true, message: `Sent to the sheet. Re-sync or re-paste in a few seconds to confirm it landed and see it in the tables.` };
   };
+
+  /**
+   * One save routine for Site_Master and Service_Registry, so both follow
+   * the same order: validate, write, then reflect locally.
+   *
+   * The local update is optimistic on the Sheets path on purpose. The
+   * hidden-form POST cannot read its response, so without it an admin who
+   * adds a site sees nothing change and adds it again. The message still
+   * says "sent", never "saved" — the sheet is the record on that path, and
+   * a re-sync is what proves the write landed.
+   */
+  const saveMasterRow = async <Row extends { Last_Updated_By: string; Last_Updated_At: string }>(opts: {
+    row: Partial<Row>;
+    mode: EditMode;
+    keyField: keyof Row & string;
+    tab: 'Site_Master' | 'Service_Registry';
+    action: 'upsertSiteMaster' | 'upsertServiceRegistry';
+    validate: () => ReturnType<typeof validateSite>;
+    dbWrite: () => Promise<{ success: boolean; message: string }>;
+    setRows: React.Dispatch<React.SetStateAction<Row[]>>;
+  }): Promise<MasterWriteResult> => {
+    const errors = opts.validate();
+    if (errors.length) {
+      return { success: false, message: errors[0].message, errors };
+    }
+
+    const key = String(opts.row[opts.keyField] ?? '').trim();
+    const stamped = {
+      ...opts.row,
+      [opts.keyField]: key,
+      Last_Updated_By: currentUser.email,
+      Last_Updated_At: new Date().toISOString(),
+    } as Row;
+
+    const applyLocally = () =>
+      opts.setRows(prev =>
+        opts.mode === 'create'
+          ? [...prev, stamped]
+          : prev.map(r => (String(r[opts.keyField]) === key ? { ...r, ...stamped } : r))
+      );
+
+    if (isSupabaseConfigured) {
+      try {
+        const res = await opts.dbWrite();
+        if (res.success) await syncMasterData(); // read back the truth, including audit rows
+        return res;
+      } catch (err: any) {
+        return { success: false, message: err?.message || `Could not save that ${opts.tab} row.` };
+      }
+    }
+
+    if (!masterDataAppsScriptUrl) {
+      return {
+        success: false,
+        message: 'Set the Master Data Apps Script URL first (Sync field above) — writes go through it.',
+      };
+    }
+
+    submitViaHiddenForm(masterDataAppsScriptUrl, {
+      action: opts.action,
+      mode: opts.mode,
+      row: stamped,
+      actorEmail: currentUser.email,
+    });
+    applyLocally();
+    return {
+      success: true,
+      message: `${key} sent to the sheet. Re-sync in a few seconds to confirm it landed.`,
+    };
+  };
+
+  const saveSiteMasterRow = (row: Partial<SiteMaster>, mode: EditMode, originalKey?: string) =>
+    saveMasterRow<SiteMaster>({
+      row, mode, keyField: 'Site_Code', tab: 'Site_Master', action: 'upsertSiteMaster',
+      validate: () => validateSite(row, siteMasterRows, mode, originalKey),
+      dbWrite: () => upsertSiteMasterRow(row, mode),
+      setRows: setSiteMasterRows,
+    });
+
+  const saveServiceRegistryRow = (row: Partial<ServiceRegistry>, mode: EditMode, originalKey?: string) =>
+    saveMasterRow<ServiceRegistry>({
+      row, mode, keyField: 'Service_Code', tab: 'Service_Registry', action: 'upsertServiceRegistry',
+      validate: () => validateService(row, serviceRegistryRows, mode, originalKey),
+      dbWrite: () => upsertServiceRegistryRow(row, mode),
+      setRows: setServiceRegistryRows,
+    });
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_PREFIX + 'users', JSON.stringify(users));
@@ -2926,6 +3017,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         masterDataAppsScriptUrl,
         setMasterDataAppsScriptUrl,
         assignPocMasterRow,
+        saveSiteMasterRow,
+        saveServiceRegistryRow,
         resetToDefaultData,
         notification,
         setNotification,

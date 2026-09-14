@@ -364,7 +364,14 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
                 <th className="py-3 px-4 text-center">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            {/* See SheetDataExplorer: keyed on the filter signature so the
+                rows settle when the filter changes and stay still otherwise. */}
+            <tbody
+              key={JSON.stringify(
+                Object.entries(columnFilters).map(([k, v]) => [k, [...v].sort()])
+              )}
+              className="divide-y divide-slate-100 animate-settle"
+            >
               {filteredLogs.length === 0 ? (
                 <tr>
                   <td colSpan={22} className="py-8 text-center text-slate-400">

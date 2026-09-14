@@ -177,6 +177,29 @@
     --elevation-4: 0 10px 20px -6px rgb(14 26 22 / 0.10), 0 28px 56px -16px rgb(14 26 22 / 0.18);
     --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
 
+    /* ---------------------------------------------------------------------
+       Motion.
+
+       This is a tool people are in for eight hours, filing readings. So
+       motion is short and it explains something — a panel grows from the
+       button that opened it, a filtered row settles rather than snapping —
+       and it is never a thing to sit through. Anything above ~200ms starts
+       being felt as waiting rather than read as movement.
+
+       Named because they were previously scattered as literals (0.15s,
+       0.18s, 0.2s, 0.35s) across a dozen rules, which is how timings drift
+       apart until nothing feels like it belongs to the same product.
+       --------------------------------------------------------------------- */
+    --motion-instant: 90ms;   /* press feedback, a checkbox tick */
+    --motion-fast: 140ms;     /* dropdowns, hovers, the toggle thumb */
+    --motion-base: 200ms;     /* cards, panels, rows settling */
+    --motion-slow: 320ms;     /* entrances, counters */
+
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    /* Overshoots slightly. Reserved for the toggle thumb, where a physical
+       snap is the point; anywhere else it reads as bouncy. */
+    --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+
     /* Radii — generous, consistent. The references all read soft; this is where that comes from. */
     --r-chip: 0.625rem;
     --r-card: 1.25rem;
@@ -239,7 +262,7 @@
   border: 1px solid transparent;
   border-radius: var(--r-card);
   box-shadow: var(--elevation-1);
-  transition: box-shadow 0.2s var(--ease-out-soft), transform 0.2s var(--ease-out-soft);
+  transition: box-shadow var(--motion-base) var(--ease-out-soft), transform var(--motion-base) var(--ease-out-soft);
 }
 .soft-card:hover { box-shadow: var(--elevation-2); }
 
@@ -254,7 +277,7 @@
   border-radius: var(--r-chip);
   font-weight: 600;
   font-size: 0.8125rem;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
 .soft-nav-item:hover { background-color: var(--bg-subtle); color: var(--text-primary); }
 .soft-nav-item.active { background-color: var(--color-ink); color: #fff; }
@@ -263,7 +286,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-chip);
   background-color: var(--bg-surface);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
 }
 .soft-input:focus, .soft-select:focus {
   outline: none;
@@ -279,7 +302,7 @@
   display: flex;
   align-items: center;
   gap: 0.875rem;
-  transition: transform 0.18s var(--ease-out-soft), box-shadow 0.18s var(--ease-out-soft);
+  transition: transform var(--motion-fast) var(--ease-out-soft), box-shadow var(--motion-fast) var(--ease-out-soft);
 }
 .soft-kpi:hover { transform: translateY(-1px); box-shadow: var(--elevation-2); }
 
@@ -287,7 +310,7 @@
   border-radius: var(--r-chip);
   font-weight: 700;
   font-size: 0.75rem;
-  transition: all 0.15s ease;
+  transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard), transform var(--motion-instant) var(--ease-standard);
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
@@ -318,14 +341,40 @@
   font-size: 0.8125rem;
   color: var(--text-primary);
 }
+.soft-table tbody tr td {
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
 .soft-table tbody tr:hover td { background-color: var(--bg-subtle); }
+
+/* A sticky header sitting flat on top of scrolling rows reads as part of
+   the data. This detaches it the moment anything scrolls underneath, so
+   the boundary between "labels" and "records" stays obvious.
+
+   `animation-timeline: scroll()` degrades to nothing where unsupported —
+   the header simply stays flat, which is the current behaviour, so there
+   is no fallback to maintain. */
+@supports (animation-timeline: scroll()) {
+  .sticky-head thead th {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    animation: head-detach linear both;
+    animation-timeline: scroll(nearest block);
+    animation-range: 0 3rem;
+  }
+}
+
+@keyframes head-detach {
+  from { box-shadow: 0 0 0 0 rgb(14 26 22 / 0); }
+  to   { box-shadow: var(--elevation-2); }
+}
 
 .elevate-1 { box-shadow: var(--elevation-1); }
 .elevate-2 { box-shadow: var(--elevation-2); }
 .elevate-3 { box-shadow: var(--elevation-3); }
 .elevate-4 { box-shadow: var(--elevation-4); }
 
-.lift-on-hover { transition: transform 0.2s var(--ease-out-soft), box-shadow 0.2s var(--ease-out-soft); }
+.lift-on-hover { transition: transform var(--motion-base) var(--ease-out-soft), box-shadow var(--motion-base) var(--ease-out-soft); }
 .lift-on-hover:hover { transform: translateY(-2px); box-shadow: var(--elevation-3); }
 
 button:focus-visible, a:focus-visible, input:focus-visible,
@@ -433,7 +482,7 @@ select:focus-visible, textarea:focus-visible {
   height: 2.75rem;
   border-radius: 0.9rem;
   color: rgb(255 255 255 / 0.55);
-  transition: color 0.18s var(--ease-out-soft), background-color 0.18s var(--ease-out-soft);
+  transition: color var(--motion-fast) var(--ease-out-soft), background-color var(--motion-fast) var(--ease-out-soft);
 }
 .rail-item:hover { color: #fff; background-color: rgb(255 255 255 / 0.08); }
 
@@ -490,7 +539,7 @@ select:focus-visible, textarea:focus-visible {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-fade-in-up { animation: fade-in-up 0.35s var(--ease-out-soft) both; }
+.animate-fade-in-up { animation: fade-in-up var(--motion-slow) var(--ease-out-soft) both; }
 
 /* Instrument dial — retained for the % readings already using it, retuned. */
 .instrument-dial {
@@ -499,7 +548,7 @@ select:focus-visible, textarea:focus-visible {
   display: grid;
   place-items: center;
   background: conic-gradient(var(--dial-color, #4f9377) calc(var(--dial-value, 0) * 1%), var(--border-subtle) 0);
-  transition: background 0.6s var(--ease-out-soft);
+  transition: background 600ms var(--ease-out-soft);
 }
 .instrument-dial::before {
   content: '';
@@ -511,11 +560,71 @@ select:focus-visible, textarea:focus-visible {
 }
 .instrument-dial > * { position: relative; z-index: 1; }
 
+/* =========================================================================
+   Motion primitives
+   ========================================================================= */
+
+/* Dropdowns. Scales up from almost-there rather than from nothing, so it
+   reads as the panel arriving rather than something being inflated. The
+   caller sets transform-origin, which is what makes a panel appear to come
+   out of the button that opened it instead of out of the page. */
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.animate-pop-in {
+  animation: pop-in var(--motion-fast) var(--ease-standard) both;
+  transform-origin: var(--pop-origin, top center);
+}
+
+/* Rows arriving after a filter. Barely a movement — enough to show the
+   table changed, not enough to wait for when it happens on every keystroke. */
+@keyframes settle-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-settle { animation: settle-in var(--motion-fast) var(--ease-standard) both; }
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-subtle) 25%, var(--border-subtle) 37%, var(--bg-subtle) 63%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: var(--r-chip);
+}
+
+/* Reserved for B_Check_Status = DUE NOW. Attention motion has to be
+   rationed: put it on three things and it stops meaning anything. */
+@keyframes pulse-attention {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(202 90 117 / 0.35); }
+  50%      { box-shadow: 0 0 0 5px rgb(202 90 117 / 0); }
+}
+.animate-attention { animation: pulse-attention 2s var(--ease-out-soft) infinite; }
+
+/* =========================================================================
+   Reduced motion.
+
+   Global on purpose. This block used to name five classes, which meant
+   every animation added afterwards silently escaped it — the honest
+   default for an accessibility guard is "everything", with exceptions
+   added deliberately rather than inclusions remembered.
+
+   0.01ms rather than 0: transitionend and animationend still fire, so any
+   code waiting on them keeps working instead of hanging.
+   ========================================================================= */
 @media (prefers-reduced-motion: reduce) {
-  .lift-on-hover, .instrument-dial, .animate-fade-in-up,
-  .soft-card, .rail-item {
-    animation: none !important;
-    transition: none !important;
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
-  .lift-on-hover:hover { transform: none; }
+
+  /* Hover lifts are movement too, and survive a duration change because
+     they are a transform rather than an animation. */
+  .lift-on-hover:hover,
+  .soft-kpi:hover { transform: none !important; }
 }

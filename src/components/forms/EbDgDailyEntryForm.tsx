@@ -16,6 +16,7 @@ import { getSiteDgConfig } from '../../lib/ebdg/siteDgConfig';
 import { createEmptyInput as emptyInput, prefillConstants, rowToInput } from '../../lib/ebdg/input';
 import { getEbDgWebhookUrl, setEbDgWebhookUrl, rowsToCsv } from '../../lib/ebdg/sheetWriter';
 import { capabilitiesFor } from '../../lib/permissions';
+import { Toggle } from '../common/Toggle';
 
 interface EbDgDailyEntryFormProps {
   onBack?: () => void;
@@ -121,7 +122,15 @@ function DgBlock({
           <Fuel className="w-4 h-4 text-amber-600" /> DG {n}
         </h2>
         {status && (
-          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${B_CHECK_BADGE[status] || 'bg-slate-100 text-slate-700'}`}>
+          // The only pulsing thing in the app, deliberately. A DG past its
+          // 500 hours or 365 days is the one state here that should pull
+          // your eye before you finish reading the panel; put this on three
+          // more things and it stops meaning anything.
+          <span
+            className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${B_CHECK_BADGE[status] || 'bg-slate-100 text-slate-700'} ${
+              status === 'DUE NOW' ? 'animate-attention' : ''
+            }`}
+          >
             B-Check: {status}
           </span>
         )}
@@ -603,10 +612,21 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
               {warnings.map((w, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm text-amber-800"><AlertTriangle className="w-4 h-4 shrink-0" /> {w.message}</div>
               ))}
-              <label className="flex items-center gap-2 text-xs font-semibold text-amber-900 pt-1">
-                <input type="checkbox" checked={overrideWarnings} onChange={e => setOverrideWarnings(e.target.checked)} disabled={!input.Remark.trim()} />
-                I've reviewed these warnings and want to submit anyway{!input.Remark.trim() && ' (add a Remark first)'}
-              </label>
+              {/* A switch rather than a checkbox: this is a setting being
+                  turned on, not a field being filled, and a screen reader
+                  should say "on"/"off" rather than "checked". Caution tone —
+                  overriding a warning is not a success state. */}
+              <div className="pt-1">
+                <Toggle
+                  checked={overrideWarnings}
+                  onChange={setOverrideWarnings}
+                  disabled={!input.Remark.trim()}
+                  size="sm"
+                  tone="caution"
+                  label="I've reviewed these warnings and want to submit anyway"
+                  description={!input.Remark.trim() ? 'Add a Remark first' : undefined}
+                />
+              </div>
             </div>
           )}
 

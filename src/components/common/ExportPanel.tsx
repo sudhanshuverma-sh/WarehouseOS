@@ -59,7 +59,9 @@ export function ExportPanel<T>({ rows, spec, caps, totalCount }: ExportPanelProp
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition cursor-pointer ${
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border cursor-pointer
+          transition-[background-color,border-color,color] duration-(--motion-fast) ease-(--ease-standard)
+          active:scale-[0.98] active:duration-(--motion-instant) ${
           open ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
         }`}
       >
@@ -70,7 +72,13 @@ export function ExportPanel<T>({ rows, spec, caps, totalCount }: ExportPanelProp
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden="true" />
 
-          <div className="absolute right-0 z-50 mt-1.5 w-60 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+          {/* Grows from the button that opened it. Without the origin it
+              scales from its own centre, which reads as a panel appearing
+              out of the page rather than out of the control. */}
+          <div
+            className="absolute right-0 z-50 mt-1.5 w-60 bg-white border border-slate-200 rounded-xl overflow-hidden elevate-3 animate-pop-in"
+            style={{ '--pop-origin': 'top right' } as React.CSSProperties}
+          >
             {/* Says what is about to leave. When the table is filtered this
                 is the reassurance that the file matches the screen. */}
             <div className="px-3 py-2 bg-slate-50 border-b border-slate-100">

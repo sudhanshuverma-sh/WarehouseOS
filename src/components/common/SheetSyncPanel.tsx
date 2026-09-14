@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Link2, Check, AlertTriangle, ExternalLink, X } from 'lucide-react';
+import { Link2, AlertTriangle, ExternalLink, X } from 'lucide-react';
 import type { Capabilities } from '../../lib/permissions';
 import { validateSheetUrl, openSheetHealthCheck } from '../../lib/sheetSync/sheetSync';
 import { useApp } from '../../context/AppContext';
+import { Button } from './Button';
 
 /**
  * Connects one service to its Google Sheet.
@@ -40,6 +41,10 @@ export const SheetSyncPanel: React.FC<SheetSyncPanelProps> = ({ sheetId, service
     setSheetWebhookUrl(sheetId, url.trim());
     setError(null);
     setSaved(true);
+    // Settles back to "Save" so the control does not sit there claiming a
+    // success from several minutes ago. Long enough to be read, short
+    // enough not to be mistaken for the button's resting state.
+    window.setTimeout(() => setSaved(false), 1800);
   };
 
   const disconnect = () => {
@@ -55,7 +60,7 @@ export const SheetSyncPanel: React.FC<SheetSyncPanelProps> = ({ sheetId, service
         type="button"
         onClick={() => setOpen((o) => !o)}
         title={linked ? 'Sheet connected' : 'Connect a Google Sheet'}
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition cursor-pointer ${
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border cursor-pointer transition-[background-color,border-color,color] duration-(--motion-fast) ease-(--ease-standard) active:scale-[0.98] ${
           linked
             ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
             : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
@@ -69,7 +74,10 @@ export const SheetSyncPanel: React.FC<SheetSyncPanelProps> = ({ sheetId, service
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden="true" />
 
-          <div className="absolute right-0 z-50 mt-1.5 w-96 bg-white border border-slate-200 rounded-xl shadow-lg p-4 space-y-3">
+          <div
+            className="absolute right-0 z-50 mt-1.5 w-96 bg-white border border-slate-200 rounded-xl p-4 space-y-3 elevate-3 animate-pop-in"
+            style={{ '--pop-origin': 'top right' } as React.CSSProperties}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h4 className="text-sm font-bold text-slate-900">{serviceLabel} → Google Sheet</h4>
@@ -106,28 +114,23 @@ export const SheetSyncPanel: React.FC<SheetSyncPanelProps> = ({ sheetId, service
                 <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" /> {error}
               </p>
             )}
-            {saved && !error && (
-              <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-2 flex items-start gap-1.5">
-                <Check className="w-3 h-3 mt-0.5 shrink-0" /> Saved. New submissions will be mirrored.
-              </p>
-            )}
 
             <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={save}
-                className="px-3 py-1.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition cursor-pointer"
-              >
+              {/* Success is reported on the control that was pressed, rather
+                  than in a panel below it — cause and effect in one place,
+                  and one less thing to miss. */}
+              <Button variant="primary" size="sm" onClick={save} success={saved} successLabel="Saved">
                 Save
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<ExternalLink className="w-3 h-3" />}
                 onClick={() => openSheetHealthCheck(url)}
                 disabled={!validateSheetUrl(url).ok}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed rounded-lg transition cursor-pointer"
               >
-                <ExternalLink className="w-3 h-3" /> Test
-              </button>
+                Test
+              </Button>
               {linked && (
                 <button
                   type="button"

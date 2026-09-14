@@ -811,7 +811,17 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
             </thead>
 
             {/* Grid Data Rows */}
-            <tbody className="divide-y divide-slate-200 font-sans">
+            {/* Keyed on the filter signature so the body re-mounts and
+                settles only when the filter actually changes — not on every
+                unrelated render, which would make the table twitch while
+                someone is just scrolling. One animation on the container
+                rather than one per row: same read, far cheaper at 500 rows. */}
+            <tbody
+              key={JSON.stringify(
+                Object.entries(columnFilters).map(([k, v]) => [k, [...v].sort()])
+              )}
+              className="divide-y divide-slate-200 font-sans animate-settle"
+            >
               {filteredRows.length > 0 ? (
                 filteredRows.map((row, rowIdx) => {
                   return (

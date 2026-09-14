@@ -23,6 +23,7 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { NotificationCenterModal } from './components/NotificationCenterModal';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { AccessDenied } from './components/common/AccessDenied';
+import { DemoModeBanner, StartupScreen } from './components/common/StartupScreen';
 import { capabilitiesFor } from './lib/permissions';
 
 const MainContent: React.FC = () => {
@@ -338,10 +339,27 @@ const MainContent: React.FC = () => {
   );
 };
 
+/**
+ * Nothing renders until we know who this is. MainContent picks its landing
+ * view from the user's role on mount, so mounting it before /api/me answers
+ * would land a Super Admin on a POC screen.
+ */
+const Gate: React.FC = () => {
+  const { dataMode, accessProblem } = useApp();
+  if (dataMode === 'loading') return <StartupScreen />;
+  if (accessProblem) return <StartupScreen problem={accessProblem} />;
+  return (
+    <>
+      <MainContent />
+      {dataMode === 'demo' && <DemoModeBanner />}
+    </>
+  );
+};
+
 export default function App() {
   return (
     <AppProvider>
-      <MainContent />
+      <Gate />
     </AppProvider>
   );
 }

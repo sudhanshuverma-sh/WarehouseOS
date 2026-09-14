@@ -45,6 +45,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     currentUser,
     setCurrentUser,
     users,
+    dataMode,
     dailySiteLogs,
     sheetRecords,
     dieselLogs
@@ -144,7 +145,8 @@ export const TopBar: React.FC<TopBarProps> = ({
               </button>
 
               {/* Role Dropdown */}
-              {showRoleMenu && (
+              {/* Demo only: with the API, who you are comes from sign-in, not a menu. */}
+              {showRoleMenu && dataMode === 'demo' && (
                 <div className="absolute left-0 top-full mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-xl p-2 z-50 min-w-[260px] max-h-[70vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-100">
                   <div className="px-2.5 py-1 text-[10px] font-extrabold uppercase text-slate-400">
                     Switch User Role & Access
@@ -312,7 +314,8 @@ export const TopBar: React.FC<TopBarProps> = ({
             </button>
 
             {/* Role dropdown */}
-            {showRoleMenu && (
+            {/* Demo only: with the API, who you are comes from sign-in, not a menu. */}
+            {showRoleMenu && dataMode === 'demo' && (
               <div className="absolute left-0 top-full mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-xl p-2 z-50 min-w-[290px] max-h-[80vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-100">
                 <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase text-slate-400 tracking-wider flex items-center justify-between">
                   <span>Switch Role & Perspective</span>

@@ -10,4 +10,12 @@ export default defineConfig({
       '@': path.resolve(__dirname, '.'),
     },
   },
+  server: {
+    // Same-origin /api in development too, exactly as in production where
+    // one server serves both. Run the API alongside: npm run api:dev (8080).
+    // With no API running, the app detects that and uses demo mode.
+    proxy: {
+      '/api': { target: process.env.API_PROXY_TARGET || 'http://localhost:8080' },
+    },
+  },
 });

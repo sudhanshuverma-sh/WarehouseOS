@@ -70,11 +70,15 @@ export function capabilitiesFor(user: User): Capabilities {
   // SERVICE_ADMIN and SUPER_ADMIN span every site; WAREHOUSE_ADMIN and
   // SITE_POC are pinned to the one warehouse on their row.
   const spansAllSites = role === 'SUPER_ADMIN' || role === 'SERVICE_ADMIN';
+  // A POC covering several warehouses holds one grant per site, and the API
+  // sends every one (user.siteCodes). Demo users carry only warehouseId.
   const siteScope: 'ALL' | string[] = spansAllSites
     ? 'ALL'
-    : user.warehouseId
-      ? [user.warehouseId]
-      : []; // pinned to a site but no site on the row = sees nothing, not everything
+    : user.siteCodes?.length
+      ? [...user.siteCodes]
+      : user.warehouseId
+        ? [user.warehouseId]
+        : []; // pinned to a site but no site on the row = sees nothing, not everything
 
   return {
     role,
@@ -104,10 +108,11 @@ export function capabilitiesFor(user: User): Capabilities {
  * not have been offered — gets their own site instead of everyone's.
  */
 export function resolveSiteFilter(caps: Capabilities, requested: string): string {
-  if (caps.canViewAllSites) return requested;
-  const [ownSite] = caps.siteScope === 'ALL' ? ['ALL'] : caps.siteScope;
+  if (caps.canViewAllSites || caps.siteScope === 'ALL') return requested;
+  const [ownSite] = caps.siteScope;
   if (!ownSite) return '__NONE__'; // pinned user with no site matches nothing
-  return requested === 'ALL' || requested !== ownSite ? ownSite : requested;
+  // Any of their own sites is fine; 'ALL' or someone else's falls back to their first.
+  return caps.siteScope.includes(requested) ? requested : ownSite;
 }
 
 /** True when this row belongs to a site the user may see. */

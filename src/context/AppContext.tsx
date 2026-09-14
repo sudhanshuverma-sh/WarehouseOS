@@ -39,6 +39,8 @@ import {
   FIXED_CC_EMAILS,
   POD_CC_EMAILS
 } from '../data/initialData';
+import { api, ApiError, detectDataMode, type DataMode } from '../lib/api/client';
+import { userFromMe, warehouseFromSite, type MeResponse, type MySiteRow } from '../lib/api/adapters';
 
 export interface ComplianceMatrixResult {
   ok: boolean;
@@ -268,6 +270,15 @@ interface AppContextType {
   saveSiteMasterRow: (row: Partial<SiteMaster>, mode: EditMode, originalKey?: string) => Promise<MasterWriteResult>;
   /** Create or edit a Service_Registry row. Validates first; never changes Service_Code on edit. */
   saveServiceRegistryRow: (row: Partial<ServiceRegistry>, mode: EditMode, originalKey?: string) => Promise<MasterWriteResult>;
+
+  /**
+   * Where this page's data lives. 'api': Postgres through the API — always,
+   * on the deployed app. 'demo': this browser's localStorage, only under
+   * `npm run dev` with no API running. 'loading': still deciding.
+   */
+  dataMode: DataMode;
+  /** Set when the API answered but this person cannot use the app: not signed in, no access row, server down. */
+  accessProblem: ApiError | null;
 
   // Reset & Notifications
   resetToDefaultData: () => void;
@@ -2863,6 +2874,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotification({ type, message });
   };
 
+  // ---------------------------------------------------------------------
+  // Data mode and identity.
+  //
+  // In API mode the signed-in person comes from /api/me — their real roles,
+  // every site they hold and every service — and the warehouse list is the
+  // sites they can see, keyed by Site_Code. The demo users and demo
+  // warehouses are never used, so nobody can "switch persona" into access
+  // they do not have.
+  // ---------------------------------------------------------------------
+  const [dataMode, setDataMode] = useState<DataMode>('loading');
+  const [accessProblem, setAccessProblem] = useState<ApiError | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const mode = await detectDataMode();
+      if (cancelled) return;
+      if (mode === 'demo') {
+        setDataMode('demo');
+        return;
+      }
+      try {
+        const [me, sites] = await Promise.all([api.get<MeResponse>('/me'), api.get<MySiteRow[]>('/my-sites')]);
+        if (cancelled) return;
+        setCurrentUser(userFromMe(me));
+        setWarehouses(sites.map(warehouseFromSite));
+        // One site: start filtered to it. Several, or nationwide: start on all.
+        setSelectedWarehouseIdState(me.sites !== 'ALL' && me.sites.length === 1 ? me.sites[0] : 'ALL');
+      } catch (err) {
+        if (cancelled) return;
+        setAccessProblem(err instanceof ApiError ? err : new ApiError(0, 'INTERNAL', 'Could not load your access.'));
+      }
+      setDataMode('api');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const housekeepingLogs = useMemo(() => {
     return sheetRecords['SHEET_HOUSEKEEPING'] || [];
   }, [sheetRecords]);
@@ -2965,7 +3015,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         resetToDefaultData,
         notification,
         setNotification,
-        notify
+        notify,
+        dataMode,
+        accessProblem
       }}
     >
       {children}

@@ -39,7 +39,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
     dailySiteLogs,
     currentDate,
     resetToDefaultData,
-    isServiceAccessible
+    isServiceAccessible,
+    dataMode
   } = useApp();
 
   const [isPinned, setIsPinned] = useState<boolean>(() => {
@@ -473,8 +474,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
                 </button>
               </div>
 
-              {/* Who you're acting as. The persona picker is a stand-in until
-                  Google sign-in lands (MASTERDATA.md §11). */}
+              {/* Who you're acting as. With the API this is the signed-in person
+                  from /api/me; the persona picker exists only in demo mode. */}
               <div className="px-3 pb-3">
                 <div className="relative">
                   <button
@@ -504,7 +505,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
                   </button>
 
                   <AnimatePresence>
-                    {showPersonaMenu && (
+                    {showPersonaMenu && dataMode === 'demo' && (
                       <motion.div
                         initial={{ opacity: 0, y: -4 }}
                         animate={{ opacity: 1, y: 0 }}

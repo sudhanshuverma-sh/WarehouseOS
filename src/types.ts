@@ -53,6 +53,10 @@ export interface User {
   department?: string;
   assignedServiceIds?: string[]; // Services this admin manages across all warehouses
   warehouseId?: string; // Optional for SUPER_ADMIN & SERVICE_ADMIN
+  /** Every site this person holds a grant for (from /api/me). Absent = nationwide, or a demo user. */
+  siteCodes?: string[];
+  /** Service_Codes held, or 'ALL' (from /api/me). Absent for demo users. */
+  serviceCodes?: 'ALL' | string[];
   isActive: boolean;
   createdAt: string;
   avatar?: string;

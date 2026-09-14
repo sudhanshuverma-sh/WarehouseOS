@@ -240,33 +240,67 @@ function saveBlob(blob: Blob, filename: string): void {
  * exports, and it should not sit in the bundle every POC downloads to file
  * a reading.
  */
-export async function downloadXlsx<T>(
-  rows: T[],
-  spec: ExportSpec<T>,
-  filters: ExportFilters,
-  caps: Capabilities,
-): Promise<ExportResult> {
-  const result = buildExport(rows, spec, filters, caps);
-  const { selected } = selectRows(rows, spec, filters, caps);
+/** One cell, in the shape write-excel-file expects. `{}` is a blank cell. */
+export type XlsxCell =
+  | Record<string, never>
+  | { value: string | number; type: StringConstructor | NumberConstructor; [style: string]: unknown };
 
-  // The '/browser' entry point specifically: the package has no bare
-  // export, and the node build pulls in fs/stream, which Vite would then
-  // try (and fail) to bundle for the browser.
-  const { default: writeXlsxFile } = await import('write-excel-file/browser');
+/**
+ * Only the part of write-excel-file this module uses.
+ *
+ * Typed narrowly on purpose. The previous version cast the library's
+ * return value straight to Blob with `as unknown as Blob`, which is how a
+ * real mismatch reached the browser: writeXlsxFile does NOT return a Blob,
+ * it returns { toBlob, toFile }. TypeScript said so (TS2352 — "neither
+ * type sufficiently overlaps") and the cast silenced it. With this type,
+ * a future change to the library's shape fails at the type level rather
+ * than as "createObjectURL: Overload resolution failed" at the moment a
+ * user clicks Export.
+ */
+export type XlsxWriter = (
+  rows: XlsxCell[][],
+  options: unknown,
+) => { toBlob: () => Promise<Blob> };
 
-  // Built as raw sheet data rather than through the schema API: it keeps
-  // the per-cell type explicit, which is the whole reason for offering
-  // .xlsx in the first place.
-  const headerRow = spec.columns.map((col) => ({
+/**
+ * A workbook tab name Excel will accept.
+ *
+ * Excel rejects a name that is empty, over 31 characters, or contains
+ * [ ] / \ : * ? — and the library throws rather than trimming. Service
+ * codes come from master data and from services created in the app, so
+ * they are not guaranteed to be safe. Sanitising here means a badly named
+ * service degrades to a plain tab name instead of failing the export with
+ * an error that looks identical to the Blob bug above.
+ */
+export function toSheetName(serviceCode: string): string {
+  const cleaned = String(serviceCode ?? '')
+    .replace(/[[\]/\\:*?]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 31)
+    .trim();
+  return cleaned || 'Data';
+}
+
+/**
+ * The header row plus one row per record, as cell objects.
+ *
+ * Pure, so the cell typing rules can be tested without a browser or the
+ * library. Every cell carries an explicit type: that is what stops Excel
+ * reinterpreting an id like DL/25-26/999 as a date, and what lets litres
+ * and amounts be summed without converting a column first.
+ */
+export function toSheetRows<T>(selected: T[], columns: ExportColumn<T>[]): XlsxCell[][] {
+  const headerRow: XlsxCell[] = columns.map((col) => ({
     value: col.header,
     type: String,
-    fontWeight: 'bold' as const,
+    fontWeight: 'bold',
     backgroundColor: '#0F172A',
     color: '#FFFFFF',
   }));
 
-  const dataRows = selected.map((row) =>
-    spec.columns.map((col) => {
+  const dataRows: XlsxCell[][] = selected.map((row) =>
+    columns.map((col): XlsxCell => {
       const v = col.value(row);
       // A blank stays an empty cell. Coercing '' to 0 in a numeric column
       // would invent a zero-litre delivery, or a DG reading, that never
@@ -278,15 +312,62 @@ export async function downloadXlsx<T>(
     }),
   );
 
-  const blob = await writeXlsxFile([headerRow, ...dataRows] as never, {
+  return [headerRow, ...dataRows];
+}
+
+/**
+ * The '/browser' entry point specifically: the package has no bare export,
+ * and the node build pulls in fs/stream, which Vite would then try (and
+ * fail) to bundle for the browser.
+ */
+const loadXlsxWriter = async (): Promise<XlsxWriter> => {
+  const mod = await import('write-excel-file/browser');
+  return mod.default as XlsxWriter;
+};
+
+/**
+ * Builds the workbook and returns the Blob, touching no DOM.
+ *
+ * Separated from the download so the part that actually broke — unwrapping
+ * the library's return value — is testable without a browser.
+ */
+export async function buildXlsxBlob<T>(
+  selected: T[],
+  spec: ExportSpec<T>,
+  // Injected so a test can supply a fake writer, the same way
+  // server/identity.ts injects its JWT verifier.
+  loadWriter: () => Promise<XlsxWriter> = loadXlsxWriter,
+): Promise<Blob> {
+  const writeXlsxFile = await loadWriter();
+
+  const workbook = writeXlsxFile(toSheetRows(selected, spec.columns), {
     columns: spec.columns.map((col) => ({
       width: Math.min(Math.max(col.header.length + 4, 12), 40),
     })),
-    sheet: spec.serviceCode.slice(0, 31),   // Excel caps sheet names at 31 chars
-  } as never);
+    sheet: toSheetName(spec.serviceCode),
+  });
+
+  // writeXlsxFile returns { toBlob, toFile } — NOT a Blob, and not a
+  // promise. The Blob only exists once toBlob() is called and awaited.
+  // Awaiting the wrapper itself yields the wrapper, which is what reached
+  // URL.createObjectURL and produced "Overload resolution failed".
+  return workbook.toBlob();
+}
+
+export async function downloadXlsx<T>(
+  rows: T[],
+  spec: ExportSpec<T>,
+  filters: ExportFilters,
+  caps: Capabilities,
+  loadWriter: () => Promise<XlsxWriter> = loadXlsxWriter,
+): Promise<ExportResult> {
+  const result = buildExport(rows, spec, filters, caps);
+  const { selected } = selectRows(rows, spec, filters, caps);
+
+  const blob = await buildXlsxBlob(selected, spec, loadWriter);
 
   const filename = result.filename.replace(/\.csv$/, '.xlsx');
-  saveBlob(blob as unknown as Blob, filename);
+  saveBlob(blob, filename);
   return { ...result, filename };
 }
 

@@ -77,7 +77,7 @@ export function validateSubmissionData(
       case 'evidence':
         // An uploaded attachment's id. The photo or link itself was
         // validated when it was uploaded.
-        if (!UUID.test(String(v))) fail(f, `${f.label} must be an uploaded photo or a Google Drive link.`);
+        if (!UUID.test(String(v))) fail(f, `${f.label}: attach a link.`);
         break;
       default:
         if (typeof v === 'object') fail(f, `${f.label} must be text.`);

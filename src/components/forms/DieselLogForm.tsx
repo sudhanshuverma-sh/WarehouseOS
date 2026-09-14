@@ -147,7 +147,7 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
     }
     // QR Code Image is only required for Payment Only (no physical delivery to inspect instead) — rule addition.
     if (type === 'Payment Only' && !qr) {
-      setFormError('Please add the QR code — upload a photo or paste a Google Drive link.');
+      setFormError('Please attach the QR code link.');
       return;
     }
 
@@ -584,7 +584,7 @@ const ValidateDeliveryModal: React.FC<{
 
   const handleSubmit = async () => {
     if (!pod) {
-      setError('Add the POD — upload a photo or paste a Google Drive link — before validating.');
+      setError('Attach the POD link before validating.');
       return;
     }
     setSaving(true);

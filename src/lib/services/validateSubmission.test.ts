@@ -49,7 +49,7 @@ describe('validateSubmissionData', () => {
     const f = [field({ type: 'evidence', label: 'Photo', required: true })];
     expect(messages(f, { k: '3f2504e0-4f89-11d3-9a0c-0305e82c3301' })).toEqual([]);
     expect(messages(f, { k: 'data:image/jpeg;base64,AAAA' })).toEqual([
-      'Photo must be an uploaded photo or a Google Drive link.',
+      'Photo: attach a link.',
     ]);
   });
 });

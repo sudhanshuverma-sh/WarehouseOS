@@ -3095,7 +3095,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const validateDelivery: AppContextType['validateDelivery'] = async (logId, payload) => {
     if (dataMode !== 'api') return validateDeliveryLocal(logId, payload);
     if (!payload.podAttachmentId) {
-      return { success: false, message: 'Add the POD — a photo or a Google Drive link — before validating delivery.' };
+      return { success: false, message: 'Attach the POD link before validating delivery.' };
     }
     const sheetWindow = reserveSheetWindow('SHEET_DIESEL');
     try {

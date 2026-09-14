@@ -39,6 +39,8 @@ import {
 import { Shift, FieldDefinition, User } from '../types';
 import { PageHeader } from './common/PageHeader';
 import { ExportPanel } from './common/ExportPanel';
+import { DIESEL_EXPORT } from '../lib/export/dieselExport';
+import type { ExportSpec } from '../lib/export/exporter';
 import { ColumnFilter } from './common/ColumnFilter';
 import { applyColumnFilters, countActiveFilters, clearAllFilters, type ColumnFilters } from '../lib/table/columnFilters';
 
@@ -310,8 +312,13 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
    * exports its own complete header without a hand-maintained list per
    * service that would drift the moment someone adds a field.
    */
-  const exportSpec = useMemo(
-    () => ({
+  const exportSpec = useMemo((): ExportSpec<Record<string, any>> => {
+    // Diesel exports exactly as its Google Sheet — same headers, order and
+    // values — whichever screen the Export button is pressed on.
+    if (selectedSheetId === 'SHEET_DIESEL') {
+      return DIESEL_EXPORT as unknown as ExportSpec<Record<string, any>>;
+    }
+    return {
       label: currentSheetDef?.title ?? 'records',
       serviceCode: currentSheetDef?.code ?? selectedSheetId ?? 'RECORDS',
       dateOf: (r: Record<string, any>) => r.date as string | undefined,
@@ -320,9 +327,8 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
         header: key,
         value: (r: Record<string, any>) => r[key] ?? '',
       })),
-    }),
-    [columns, currentSheetDef, selectedSheetId]
-  );
+    };
+  }, [columns, currentSheetDef, selectedSheetId]);
 
   const exportSites = useMemo(
     () =>

@@ -681,12 +681,9 @@ export const AdminServiceDeepDive: React.FC<AdminServiceDeepDiveProps> = ({
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      approveDieselLog(log.id, 'Authorized by Admin Command Center');
-                                      setNotification({
-                                        type: 'success',
-                                        message: `Requisition [${log.uniqueId}] Approved! Mail #2 sent to POC & Vendor.`
-                                      });
+                                    onClick={async () => {
+                                      const res = await approveDieselLog(log.id, 'Authorized by Admin Command Center');
+                                      if (res.success) setNotification({ type: 'success', message: res.message });
                                     }}
                                     className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] shadow-xs transition cursor-pointer"
                                     title="Approve & Send Mail #2"
@@ -695,12 +692,9 @@ export const AdminServiceDeepDive: React.FC<AdminServiceDeepDiveProps> = ({
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      rejectDieselLog(log.id, 'Rejected by Admin Command Center');
-                                      setNotification({
-                                        type: 'warning',
-                                        message: `Requisition [${log.uniqueId}] Rejected.`
-                                      });
+                                    onClick={async () => {
+                                      const res = await rejectDieselLog(log.id, 'Rejected by Admin Command Center');
+                                      if (res.success) setNotification({ type: 'warning', message: res.message });
                                     }}
                                     className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[10px] transition cursor-pointer"
                                     title="Reject Requisition"
@@ -923,10 +917,11 @@ export const AdminServiceDeepDive: React.FC<AdminServiceDeepDiveProps> = ({
                 <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
                   <button
                     type="button"
-                    onClick={() => {
-                      rejectDieselLog(selectedLogForDetail.id, 'Rejected by Admin Inspector');
-                      setSelectedLogForDetail((prev: any) => ({ ...prev, status: 'Rejected' }));
-                      setNotification({ type: 'warning', message: 'Requisition Rejected.' });
+                    onClick={async () => {
+                      const res = await rejectDieselLog(selectedLogForDetail.id, 'Rejected by Admin Inspector');
+                      if (!res.success) return;
+                      setSelectedLogForDetail((prev: any) => res.log ?? { ...prev, status: 'Rejected' });
+                      setNotification({ type: 'warning', message: res.message });
                     }}
                     className="px-4 py-2 bg-rose-50 text-rose-700 border border-rose-200 font-bold rounded-xl text-xs hover:bg-rose-100"
                   >
@@ -934,10 +929,13 @@ export const AdminServiceDeepDive: React.FC<AdminServiceDeepDiveProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      approveDieselLog(selectedLogForDetail.id, 'Authorized by Admin Inspector');
-                      setSelectedLogForDetail((prev: any) => ({ ...prev, status: 'Approved' }));
-                      setNotification({ type: 'success', message: 'Requisition Approved! Mail #2 sent.' });
+                    onClick={async () => {
+                      const res = await approveDieselLog(selectedLogForDetail.id, 'Authorized by Admin Inspector');
+                      if (!res.success) return;
+                      setSelectedLogForDetail((prev: any) =>
+                        res.log ?? { ...prev, status: prev.type === 'Delivery Only' ? 'Ready for Delivery' : 'Payment Processing' }
+                      );
+                      setNotification({ type: 'success', message: res.message });
                     }}
                     className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-sm"
                   >

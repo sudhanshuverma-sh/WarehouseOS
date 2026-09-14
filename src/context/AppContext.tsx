@@ -178,17 +178,22 @@ interface AppContextType {
     orderQuantityLitres?: number;
     ratePerLitre: number;
     qrCodeImageUrl?: string;
+    /** The uploaded QR photo or Drive link (API mode). */
+    qrAttachmentId?: string;
     notes?: string;
-  }) => { success: boolean; logId: string; uniqueId: string; threadId: string; message: string } | { success: false; message: string; logId?: undefined; uniqueId?: undefined; threadId?: undefined };
+  }) => Promise<{ success: boolean; logId?: string; uniqueId?: string; message: string }>;
 
-  approveDieselLog: (logId: string, notes?: string) => { success: boolean; message: string };
-  rejectDieselLog: (logId: string, reason: string) => { success: boolean; message: string };
+  // In API mode `log` is the request as the server now holds it.
+  approveDieselLog: (logId: string, notes?: string) => Promise<{ success: boolean; message: string; log?: DieselLog }>;
+  rejectDieselLog: (logId: string, reason: string) => Promise<{ success: boolean; message: string; log?: DieselLog }>;
   validateDelivery: (logId: string, payload: {
     validation: 'Delivered' | 'Partial Delivered' | 'Not Delivered';
     deliveredQuantityLitres: number;
     podUrl: string;
+    /** The uploaded POD photo or Drive link (API mode). */
+    podAttachmentId?: string;
     notes?: string;
-  }) => { success: boolean; message: string };
+  }) => Promise<{ success: boolean; message: string; log?: DieselLog }>;
   /** @deprecated use validateDelivery — kept temporarily for any lingering call sites during migration */
   validateAndUploadPOD: (logId: string, payload: {
     deliveredQuantityLitres: number;
@@ -317,6 +322,11 @@ const ROUTINE_KEYS = [
 ];
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Declared first: the persistence effects below read it, and it decides
+  // whether anything is written to this browser at all.
+  const [dataMode, setDataMode] = useState<DataMode>('loading');
+  const [accessProblem, setAccessProblem] = useState<ApiError | null>(null);
+
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'users');
     return saved ? JSON.parse(saved) : INITIAL_USERS;
@@ -653,7 +663,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_PREFIX + 'vendors', JSON.stringify(vendors));
+    if (dataMode === 'demo') localStorage.setItem(STORAGE_KEY_PREFIX + 'vendors', JSON.stringify(vendors));
   }, [vendors]);
 
   useEffect(() => {
@@ -737,11 +747,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (currentUser.role === 'SITE_POC' && currentUser.warehouseId) {
       setSelectedWarehouseIdState(currentUser.warehouseId);
     }
-    localStorage.setItem(STORAGE_KEY_PREFIX + 'currentUser', JSON.stringify(currentUser));
+    if (dataMode === 'demo') localStorage.setItem(STORAGE_KEY_PREFIX + 'currentUser', JSON.stringify(currentUser));
   }, [currentUser]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_PREFIX + 'warehouses', JSON.stringify(warehouses));
+    if (dataMode === 'demo') localStorage.setItem(STORAGE_KEY_PREFIX + 'warehouses', JSON.stringify(warehouses));
   }, [warehouses]);
 
   useEffect(() => {
@@ -753,7 +763,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [submissions]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_PREFIX + 'dieselLogs', JSON.stringify(dieselLogs));
+    // Only demo data lives in the browser. In API mode the records belong to
+    // the database, and a shared site phone should keep no copy of them.
+    if (dataMode === 'demo') localStorage.setItem(STORAGE_KEY_PREFIX + 'dieselLogs', JSON.stringify(dieselLogs));
   }, [dieselLogs]);
 
   useEffect(() => {
@@ -866,7 +878,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   /**
    * Diesel Procurement Workflow matching Google Form & Google Apps Script
    */
-  const submitDieselProcurement = (data: {
+  const submitDieselProcurementLocal = (data: {
     emailAddress: string;
     entity: string;
     whNameB2B: string;
@@ -1030,7 +1042,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  const approveDieselLog = (logId: string, notes?: string) => {
+  const approveDieselLogLocal = (logId: string, notes?: string) => {
     const target = dieselLogs.find(l => l.id === logId);
     if (!target) return { success: false, message: 'Log not found' };
 
@@ -1115,7 +1127,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, message: `Request [${target.uniqueId}] approved.` };
   };
 
-  const rejectDieselLog = (logId: string, reason: string) => {
+  const rejectDieselLogLocal = (logId: string, reason: string) => {
     const target = dieselLogs.find(l => l.id === logId);
     if (!target) return { success: false, message: 'Log not found' };
 
@@ -1209,7 +1221,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    * Delivered Quantity is capped at Order Quantity (no admin-override path implemented yet).
    * POD is mandatory before this can complete.
    */
-  const validateDelivery = (
+  const validateDeliveryLocal = (
     logId: string,
     payload: {
       validation: 'Delivered' | 'Partial Delivered' | 'Not Delivered';
@@ -1369,7 +1381,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const deliveredQty = Number(payload.deliveredQuantityLitres || 0);
     const validation: 'Delivered' | 'Partial Delivered' | 'Not Delivered' =
       deliveredQty === 0 ? 'Not Delivered' : deliveredQty >= orderedQty ? 'Delivered' : 'Partial Delivered';
-    const res = validateDelivery(logId, { ...payload, validation });
+    const res = validateDeliveryLocal(logId, { ...payload, validation });
     return { success: res.success, isDiscrepancy: deliveredQty !== orderedQty, message: res.message };
   };
 
@@ -2883,9 +2895,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // warehouses are never used, so nobody can "switch persona" into access
   // they do not have.
   // ---------------------------------------------------------------------
-  const [dataMode, setDataMode] = useState<DataMode>('loading');
-  const [accessProblem, setAccessProblem] = useState<ApiError | null>(null);
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -2912,6 +2921,111 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cancelled = true;
     };
   }, []);
+
+  // ---------------------------------------------------------------------
+  // Diesel through the API.
+  //
+  // The exported functions keep their names; in demo mode each falls
+  // through to the local implementation above, unchanged. In API mode the
+  // server's answer is the truth: its ID, its amount, its status. A failure
+  // is shown to the person as the server's own sentence and nothing is
+  // changed on screen, so the page never claims a save that did not happen.
+  // ---------------------------------------------------------------------
+  const errorText = (err: unknown) => (err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+
+  const replaceDieselLog = (saved: DieselLog) =>
+    setDieselLogs(prev =>
+      prev.some(l => l.id === saved.id) ? prev.map(l => (l.id === saved.id ? saved : l)) : [saved, ...prev]
+    );
+
+  useEffect(() => {
+    if (dataMode !== 'api' || accessProblem) return;
+    let cancelled = false;
+    Promise.all([api.get<DieselLog[]>('/diesel?limit=2000'), api.get<Vendor[]>('/vendors')])
+      .then(([logs, vendorRows]) => {
+        if (cancelled) return;
+        setDieselLogs(logs);
+        setVendors(vendorRows);
+      })
+      .catch(err => {
+        if (!cancelled) notify('error', 'Could not load diesel requests', errorText(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dataMode, accessProblem]);
+
+  const submitDieselProcurement: AppContextType['submitDieselProcurement'] = async data => {
+    if (dataMode !== 'api') return submitDieselProcurementLocal(data);
+    try {
+      const saved = await api.post<DieselLog>('/diesel', {
+        siteCode: data.warehouseId,
+        requesterName: currentUser.fullName,
+        entity: data.entity,
+        whNameB2B: data.whNameB2B,
+        whNameB2C: data.whNameB2C,
+        costCenter: data.costCenter,
+        zone: data.zone,
+        fuel: data.fuel,
+        type: data.type,
+        vendorNamePayment: data.vendorNamePayment,
+        vendorNameDelivery: data.vendorNameDelivery,
+        quantity: data.quantity,
+        orderQuantityLitres: data.orderQuantityLitres,
+        ratePerLitre: data.ratePerLitre,
+        qrAttachmentId: data.qrAttachmentId,
+        notes: data.notes
+      });
+      replaceDieselLog(saved);
+      return { success: true, logId: saved.id, uniqueId: saved.uniqueId, message: `Procurement request [${saved.uniqueId}] submitted.` };
+    } catch (err) {
+      notify('error', 'Request not submitted', errorText(err));
+      return { success: false, message: errorText(err) };
+    }
+  };
+
+  const approveDieselLog: AppContextType['approveDieselLog'] = async (logId, notes) => {
+    if (dataMode !== 'api') return approveDieselLogLocal(logId, notes);
+    try {
+      const saved = await api.post<DieselLog>(`/diesel/${encodeURIComponent(logId)}/approve`, { notes });
+      replaceDieselLog(saved);
+      return { success: true, message: `Request [${saved.uniqueId}] approved — now ${saved.status}.`, log: saved };
+    } catch (err) {
+      notify('error', 'Could not approve', errorText(err));
+      return { success: false, message: errorText(err) };
+    }
+  };
+
+  const rejectDieselLog: AppContextType['rejectDieselLog'] = async (logId, reason) => {
+    if (dataMode !== 'api') return rejectDieselLogLocal(logId, reason);
+    try {
+      const saved = await api.post<DieselLog>(`/diesel/${encodeURIComponent(logId)}/reject`, { reason });
+      replaceDieselLog(saved);
+      return { success: true, message: `Request [${saved.uniqueId}] rejected.`, log: saved };
+    } catch (err) {
+      notify('error', 'Could not reject', errorText(err));
+      return { success: false, message: errorText(err) };
+    }
+  };
+
+  const validateDelivery: AppContextType['validateDelivery'] = async (logId, payload) => {
+    if (dataMode !== 'api') return validateDeliveryLocal(logId, payload);
+    if (!payload.podAttachmentId) {
+      return { success: false, message: 'Add the POD — a photo or a Google Drive link — before validating delivery.' };
+    }
+    try {
+      const saved = await api.post<DieselLog>(`/diesel/${encodeURIComponent(logId)}/validate`, {
+        deliveredQuantityLitres: payload.deliveredQuantityLitres,
+        podAttachmentId: payload.podAttachmentId,
+        notes: payload.notes
+      });
+      replaceDieselLog(saved);
+      return { success: true, message: `Delivery validated as ${saved.validation}.`, log: saved };
+    } catch (err) {
+      notify('error', 'Could not validate delivery', errorText(err));
+      return { success: false, message: errorText(err) };
+    }
+  };
 
   const housekeepingLogs = useMemo(() => {
     return sheetRecords['SHEET_HOUSEKEEPING'] || [];

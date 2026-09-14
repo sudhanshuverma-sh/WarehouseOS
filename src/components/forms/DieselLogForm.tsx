@@ -16,6 +16,7 @@ import {
   Upload
 } from 'lucide-react';
 import { PageHeader } from '../common/PageHeader';
+import { EvidenceInput, type EvidenceValue } from '../common/EvidenceInput';
 
 interface DieselLogFormProps {
   onBack?: () => void;
@@ -43,14 +44,6 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => (
   </span>
 );
 
-const fileToDataUrl = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-
 export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess, initialMode = 'form', selectedLogId }) => {
   const {
     currentUser,
@@ -63,7 +56,8 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
     rejectDieselLog,
     validateDelivery,
     deleteDieselLog,
-    notify
+    notify,
+    dataMode
   } = useApp();
 
   const isAdmin = currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'SERVICE_ADMIN' || currentUser.role === 'WAREHOUSE_ADMIN';
@@ -91,7 +85,7 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
   const [orderQuantity, setOrderQuantity] = useState<number | ''>('');
   const [quantity, setQuantity] = useState<number | ''>('');
   const [rate, setRate] = useState<number | ''>('');
-  const [qrImage, setQrImage] = useState<string>('');
+  const [qr, setQr] = useState<EvidenceValue | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState<{ uniqueId: string } | null>(null);
@@ -119,18 +113,12 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
     setOrderQuantity('');
     setQuantity('');
     setRate('');
-    setQrImage('');
+    setQr(null);
     setFormError(null);
     setSubmitted(null);
   };
 
-  const handleQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setQrImage(await fileToDataUrl(file));
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -158,13 +146,13 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
       return;
     }
     // QR Code Image is only required for Payment Only (no physical delivery to inspect instead) — rule addition.
-    if (type === 'Payment Only' && !qrImage) {
-      setFormError('Please upload the QR code image.');
+    if (type === 'Payment Only' && !qr) {
+      setFormError('Please add the QR code — upload a photo or paste a Google Drive link.');
       return;
     }
 
     setIsSubmitting(true);
-    const result = submitDieselProcurement({
+    const result = await submitDieselProcurement({
       emailAddress: currentUser.email,
       entity: derivedEntity,
       whNameB2B: activeWh?.b2bName || activeWh?.name || '',
@@ -179,7 +167,8 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
       quantity: Number(effectiveQuantity),
       orderQuantityLitres: type === 'Delivery Only' ? Number(orderQuantity) : undefined,
       ratePerLitre: Number(rate),
-      qrCodeImageUrl: type === 'Payment Only' ? qrImage : undefined
+      qrCodeImageUrl: type === 'Payment Only' ? qr?.url : undefined,
+      qrAttachmentId: type === 'Payment Only' ? qr?.id : undefined
     });
     setIsSubmitting(false);
 
@@ -212,19 +201,26 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
   const [rejectModalLog, setRejectModalLog] = useState<DieselLog | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
-  const handleApprove = (log: DieselLog) => {
-    const res = approveDieselLog(log.id);
+  // The request being decided, so its buttons cannot be pressed twice while the server answers.
+  const [decidingId, setDecidingId] = useState<string | null>(null);
+
+  const handleApprove = async (log: DieselLog) => {
+    setDecidingId(log.id);
+    const res = await approveDieselLog(log.id);
+    setDecidingId(null);
     if (res.success) notify('success', `[${log.uniqueId}] Approved`, res.message);
     else notify('error', 'Could not approve', res.message);
   };
 
-  const handleRejectConfirm = () => {
+  const handleRejectConfirm = async () => {
     if (!rejectModalLog) return;
     if (!rejectReason.trim()) {
       notify('warning', 'Rejection reason required', 'Please enter a rejection reason.');
       return;
     }
-    const res = rejectDieselLog(rejectModalLog.id, rejectReason.trim());
+    setDecidingId(rejectModalLog.id);
+    const res = await rejectDieselLog(rejectModalLog.id, rejectReason.trim());
+    setDecidingId(null);
     if (res.success) {
       notify('warning', `[${rejectModalLog.uniqueId}] Rejected`, res.message);
       setRejectModalLog(null);
@@ -359,14 +355,14 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
                       <label className="text-xs font-bold uppercase tracking-wider text-slate-700">Quantity (Litres) <span className="text-rose-600">*</span></label>
                       <input type="number" min={1} value={quantity} onChange={e => setQuantity(e.target.value === '' ? '' : Number(e.target.value))} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm font-mono" placeholder="e.g. 1500" />
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-700">QR Code Image <span className="text-rose-600">*</span></label>
-                      <label className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 border border-dashed border-slate-300 rounded-lg text-sm cursor-pointer hover:bg-slate-100 transition">
-                        <Upload className="w-4 h-4 text-slate-400" />
-                        <span className="text-slate-500">{qrImage ? 'Image attached ✓' : 'Tap to upload or capture'}</span>
-                        <input type="file" accept="image/*" capture="environment" onChange={handleQrUpload} className="hidden" />
-                      </label>
-                    </div>
+                    <EvidenceInput
+                      label="QR Code Image"
+                      required
+                      serviceCode="DIESEL"
+                      siteCode={activeWh?.id}
+                      value={qr}
+                      onChange={setQr}
+                    />
                   </div>
                 )}
 
@@ -465,8 +461,9 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
                       Validate Delivery
                     </button>
                   )}
-                  {/* Wrong/mistaken submission — deletable only before it's gone anywhere */}
-                  {(log.status === 'Pending Admin Approval' || log.status === 'Rejected') && (
+                  {/* Demo only. In the database a filed request is never deleted (I1) —
+                      a mistaken one is rejected by an admin, which keeps the history. */}
+                  {dataMode === 'demo' && (log.status === 'Pending Admin Approval' || log.status === 'Rejected') && (
                     <button onClick={() => setDeletingLog(log)} className="px-3.5 py-2 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg cursor-pointer">
                       Delete
                     </button>
@@ -502,7 +499,7 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
                       <button onClick={() => setRejectModalLog(log)} className="px-4 py-2 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg cursor-pointer">
                         Reject
                       </button>
-                      <button onClick={() => handleApprove(log)} className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg cursor-pointer">
+                      <button onClick={() => handleApprove(log)} disabled={decidingId === log.id} className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg cursor-pointer">
                         <Check className="w-3.5 h-3.5" /> Approve
                       </button>
                     </div>
@@ -529,7 +526,7 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
             />
             <div className="flex justify-end gap-2">
               <button onClick={() => { setRejectModalLog(null); setRejectReason(''); }} className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer">Cancel</button>
-              <button onClick={handleRejectConfirm} className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer">Confirm Reject</button>
+              <button onClick={handleRejectConfirm} disabled={decidingId === rejectModalLog.id} className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 rounded-lg cursor-pointer">Confirm Reject</button>
             </div>
           </div>
         </div>
@@ -554,8 +551,8 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
         <ValidateDeliveryModal
           log={validatingLog}
           onClose={() => setValidatingLog(null)}
-          onSubmit={(payload) => {
-            const res = validateDelivery(validatingLog.id, payload);
+          onSubmit={async (payload) => {
+            const res = await validateDelivery(validatingLog.id, payload);
             if (res.success) {
               notify('success', 'Delivery validated', res.message);
               setValidatingLog(null);
@@ -573,29 +570,35 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
 const ValidateDeliveryModal: React.FC<{
   log: DieselLog;
   onClose: () => void;
-  onSubmit: (payload: { validation: 'Delivered' | 'Partial Delivered' | 'Not Delivered'; deliveredQuantityLitres: number; podUrl: string; notes?: string }) => void;
+  onSubmit: (payload: { validation: 'Delivered' | 'Partial Delivered' | 'Not Delivered'; deliveredQuantityLitres: number; podUrl: string; podAttachmentId?: string; notes?: string }) => Promise<void> | void;
 }> = ({ log, onClose, onSubmit }) => {
   const orderedQty = log.orderQuantityLitres || 0;
   const [deliveredQty, setDeliveredQty] = useState<number | ''>(orderedQty);
-  const [podUrl, setPodUrl] = useState('');
+  const [pod, setPod] = useState<EvidenceValue | null>(null);
+  const [saving, setSaving] = useState(false);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const derivedValidation: 'Delivered' | 'Partial Delivered' | 'Not Delivered' =
     Number(deliveredQty) === 0 ? 'Not Delivered' : Number(deliveredQty) >= orderedQty ? 'Delivered' : 'Partial Delivered';
 
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPodUrl(await fileToDataUrl(file));
-  };
-
-  const handleSubmit = () => {
-    if (!podUrl) {
-      setError('Please upload POD before completing the delivery validation.');
+  const handleSubmit = async () => {
+    if (!pod) {
+      setError('Add the POD — upload a photo or paste a Google Drive link — before validating.');
       return;
     }
-    onSubmit({ validation: derivedValidation, deliveredQuantityLitres: Number(deliveredQty) || 0, podUrl, notes: notes || undefined });
+    setSaving(true);
+    try {
+      await onSubmit({
+        validation: derivedValidation,
+        deliveredQuantityLitres: Number(deliveredQty) || 0,
+        podUrl: pod.url,
+        podAttachmentId: pod.id,
+        notes: notes || undefined
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -615,14 +618,14 @@ const ValidateDeliveryModal: React.FC<{
           <p className="text-[11px] text-slate-400">Derived automatically from the quantity above — partial delivery is a normal business outcome, not an error.</p>
         </div>
 
-        <div className="space-y-1.5">
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-700">POD — Proof of Delivery <span className="text-rose-600">*</span></label>
-          <label className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 border border-dashed border-slate-300 rounded-lg text-sm cursor-pointer hover:bg-slate-100">
-            <Upload className="w-4 h-4 text-slate-400" />
-            <span className="text-slate-500">{podUrl ? 'POD attached ✓' : 'Tap to capture or upload'}</span>
-            <input type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" />
-          </label>
-        </div>
+        <EvidenceInput
+          label="POD — Proof of Delivery"
+          required
+          serviceCode="DIESEL"
+          siteCode={log.warehouseId}
+          value={pod}
+          onChange={setPod}
+        />
 
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Remarks (optional)…" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
 
@@ -630,7 +633,9 @@ const ValidateDeliveryModal: React.FC<{
 
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer">Cancel</button>
-          <button onClick={handleSubmit} className="px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg cursor-pointer">Submit Validation</button>
+          <button onClick={handleSubmit} disabled={saving} className="px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50 rounded-lg cursor-pointer">
+            {saving ? 'Saving…' : 'Submit Validation'}
+          </button>
         </div>
       </div>
     </div>

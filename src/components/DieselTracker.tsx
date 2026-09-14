@@ -627,9 +627,9 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
                     <button
                       type="button"
-                      onClick={() => {
-                        rejectDieselLog(selectedLogForInspection.id, 'Rejected by Admin from Audit View');
-                        setSelectedLogForInspection(prev => prev ? { ...prev, status: 'Rejected' } : null);
+                      onClick={async () => {
+                        const res = await rejectDieselLog(selectedLogForInspection.id, 'Rejected by Admin from Audit View');
+                        if (res.success) setSelectedLogForInspection(prev => res.log ?? (prev ? { ...prev, status: 'Rejected' } : null));
                       }}
                       className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition cursor-pointer"
                     >
@@ -637,9 +637,13 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        approveDieselLog(selectedLogForInspection.id, 'Authorized by Admin from Audit View');
-                        setSelectedLogForInspection(prev => prev ? { ...prev, status: 'Approved' } : null);
+                      onClick={async () => {
+                        const res = await approveDieselLog(selectedLogForInspection.id, 'Authorized by Admin from Audit View');
+                        if (res.success) {
+                          setSelectedLogForInspection(prev =>
+                            res.log ?? (prev ? { ...prev, status: prev.type === 'Delivery Only' ? 'Ready for Delivery' : 'Payment Processing' } : null)
+                          );
+                        }
                       }}
                       className="px-4 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition cursor-pointer"
                     >

@@ -914,9 +914,9 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
                               <>
                                 <button
                                   type="button"
-                                  onClick={(e) => {
+                                  onClick={async (e) => {
                                     e.stopPropagation();
-                                    const res = approveDieselLog(row.id);
+                                    const res = await approveDieselLog(row.id);
                                     setNotification({
                                       type: res.success ? 'success' : 'error',
                                       message: res.success ? `Requisition [${row.uniqueId || row.id}] Approved! Mail #2 sent to POC & Vendor.` : res.message
@@ -929,11 +929,11 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={(e) => {
+                                  onClick={async (e) => {
                                     e.stopPropagation();
                                     const reason = window.prompt('Rejection reason (required):');
                                     if (!reason || !reason.trim()) return;
-                                    const res = rejectDieselLog(row.id, reason.trim());
+                                    const res = await rejectDieselLog(row.id, reason.trim());
                                     setNotification({
                                       type: res.success ? 'warning' : 'error',
                                       message: res.success ? `Requisition [${row.uniqueId || row.id}] Rejected! Mail #2 sent.` : res.message
@@ -1130,11 +1130,11 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
                     <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={async () => {
                           const reason = window.prompt('Rejection reason (required):');
                           if (!reason || !reason.trim()) return;
-                          const res = rejectDieselLog(activeRecordDetail.id, reason.trim());
-                          if (res.success) setActiveRecordDetail((prev: any) => ({ ...prev, status: 'Rejected' }));
+                          const res = await rejectDieselLog(activeRecordDetail.id, reason.trim());
+                          if (res.success) setActiveRecordDetail((prev: any) => res.log ?? { ...prev, status: 'Rejected' });
                           setNotification({
                             type: res.success ? 'warning' : 'error',
                             message: res.success ? `Requisition [${activeRecordDetail.uniqueId || activeRecordDetail.id}] Rejected! Mail #2 sent to POC.` : res.message
@@ -1146,11 +1146,11 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          const res = approveDieselLog(activeRecordDetail.id);
+                        onClick={async () => {
+                          const res = await approveDieselLog(activeRecordDetail.id);
                           if (res.success) {
                             const nextStatus = activeRecordDetail.type === 'Delivery Only' ? 'Ready for Delivery' : 'Payment Processing';
-                            setActiveRecordDetail((prev: any) => ({ ...prev, status: nextStatus }));
+                            setActiveRecordDetail((prev: any) => res.log ?? { ...prev, status: nextStatus });
                           }
                           setNotification({
                             type: res.success ? 'success' : 'error',

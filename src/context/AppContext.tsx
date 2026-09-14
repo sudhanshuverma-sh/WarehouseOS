@@ -3022,7 +3022,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .catch(err => {
           if (!cancelled) notify('error', `Could not load ${what}`, errorText(err));
         });
-    void load<DieselLog[]>('/diesel?limit=2000', setDieselLogs, 'diesel requests');
+    void load<DieselLog[]>('/diesel?limit=5000', setDieselLogs, 'diesel requests');
     void load<Vendor[]>('/vendors', setVendors, 'vendors');
     void load<DailySiteLog[]>('/daily-site?limit=2000', setDailySiteLogs, 'daily site reports');
     return () => {

@@ -150,27 +150,16 @@ create index master_audit_target_idx on master_audit (target_tab, target_key, ts
 -- each write:   select set_config('app.actor_email', $1, true);
 -- ---------------------------------------------------------------------
 
--- Who is making this change? Works under both deployment models:
---   Supabase  — the signed-in user's JWT email claim, set by PostgREST
---   Cloud SQL — your API calls set_config('app.actor_email', $1, true)
--- Falls back to 'APP' rather than failing, so a write is never blocked
--- just because attribution is unavailable.
+-- Who is making this change? The API states it at the start of every
+-- request transaction (server/db.ts withActor):
+--     select set_config('app.actor_email', $1, true);
+-- There is exactly one source of identity, on purpose: a second path (such
+-- as trusting a JWT claim) is a second thing to keep in step with RLS.
+-- Falls back to 'app' rather than failing, which matches no POC row — so a
+-- missing identity sees nothing, never everything.
 create or replace function fn_actor_email() returns text
-language plpgsql stable as $$
-declare claim_email text;
-begin
-  begin
-    claim_email := nullif(current_setting('request.jwt.claims', true)::json ->> 'email', '');
-  exception when others then
-    claim_email := null;
-  end;
-
-  if claim_email is not null then
-    return lower(claim_email);
-  end if;
-
-  return coalesce(nullif(current_setting('app.actor_email', true), ''), 'APP');
-end;
+language sql stable as $$
+  select lower(coalesce(nullif(current_setting('app.actor_email', true), ''), 'app'))
 $$;
 
 -- Stamp last_updated_* on every write, so it can't be forgotten.

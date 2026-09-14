@@ -1,6 +1,0 @@
-{
-  "name": "Warehouse Management Portal",
-  "description": "Zomato & Grofers Supply Chain Facility Operations Portal with dedicated ultra-simple single-tab POC filing desk (5 core services: Diesel, EB-DG, Cold Room, Housekeeping, Attendance) and Service Admin Control Room.",
-  "requestFramePermissions": ["camera"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

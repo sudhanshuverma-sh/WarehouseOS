@@ -15,7 +15,7 @@
  * Every division is guarded — see safeDiv() — so a fresh site with no
  * consumption yet renders 0, never NaN or Infinity.
  *
- * This file has NO dependency on Google Sheets, Supabase, or React. It is
+ * This file has NO dependency on Google Sheets, the database, or React. It is
  * intentionally pure so calculate.test.ts can exercise it without any I/O,
  * and so a future Firestore-backed repository (MASTERDATA.md I8) reuses it
  * unchanged.

@@ -541,25 +541,6 @@ select:focus-visible, textarea:focus-visible {
 }
 .animate-fade-in-up { animation: fade-in-up var(--motion-slow) var(--ease-out-soft) both; }
 
-/* Instrument dial — retained for the % readings already using it, retuned. */
-.instrument-dial {
-  position: relative;
-  border-radius: 9999px;
-  display: grid;
-  place-items: center;
-  background: conic-gradient(var(--dial-color, #4f9377) calc(var(--dial-value, 0) * 1%), var(--border-subtle) 0);
-  transition: background 600ms var(--ease-out-soft);
-}
-.instrument-dial::before {
-  content: '';
-  position: absolute;
-  inset: 12%;
-  border-radius: 9999px;
-  background: var(--color-surface);
-  box-shadow: inset 0 1px 2px rgb(14 26 22 / 0.07);
-}
-.instrument-dial > * { position: relative; z-index: 1; }
-
 /* =========================================================================
    Motion primitives
    ========================================================================= */

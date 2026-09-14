@@ -21,10 +21,8 @@ import {
 } from '../types';
 import { PocMaster, SiteMaster, ServiceRegistry, MasterAudit } from '../types/masterData';
 import { fetchMasterData, fetchMasterDataFromAppsScript, parseMasterDataJson, diffRows, formatRowDiff } from '../lib/masterDataSync';
-import { isSupabaseConfigured } from '../lib/supabase';
 import { servicesForSite } from '../lib/permissions';
 import { buildDieselSheetPayload } from '../lib/sheetSync/dieselSheet';
-import { fetchMasterDataFromDb, upsertPocMasterRow, upsertSiteMasterRow, upsertServiceRegistryRow } from '../lib/masterDataDb';
 import { validateSite, validateService, type EditMode, type MasterWriteResult } from '../lib/masterData/validate';
 import {
   INITIAL_WAREHOUSES,
@@ -397,35 +395,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    * "Paste Master Data JSON" in the UI), not either of these.
    */
   const syncMasterData = async (idOrAppsScriptUrl?: string) => {
-    // Postgres wins whenever it's configured: it's a live, reliable read with
-    // no sharing/CORS caveats, so none of the sheet fallbacks below apply.
-    if (isSupabaseConfigured) {
-      try {
-        const { pocMaster, siteMaster, serviceRegistry, masterAudit, dropdowns, errors } =
-          await fetchMasterDataFromDb();
-
-        const failed = Object.entries(errors).filter(([, msg]) => msg);
-        if (failed.length) {
-          return { ok: false, message: failed.map(([t, msg]) => `${t}: ${msg}`).join(' | ') };
-        }
-
-        setPocMasterRows(pocMaster);
-        setSiteMasterRows(siteMaster);
-        setServiceRegistryRows(serviceRegistry);
-        setMasterAuditRows(masterAudit);
-        setDropdownLists(dropdowns);
-        setLastMasterDataSyncAt(new Date().toISOString());
-
-        return {
-          ok: true,
-          message: `Loaded ${pocMaster.length} POC_Master, ${siteMaster.length} Site_Master, ${serviceRegistry.length} Service_Registry rows from Postgres.`,
-          counts: { poc: pocMaster.length, site: siteMaster.length, service: serviceRegistry.length }
-        };
-      } catch (err: any) {
-        return { ok: false, message: err?.message || 'Could not read master data from Postgres.' };
-      }
-    }
-
     const input = (idOrAppsScriptUrl || masterDataAppsScriptUrl || masterDataSpreadsheetId).trim();
     if (!input) {
       return { ok: false, message: 'Paste the WarehouseOS_MasterData Spreadsheet ID or Apps Script Web App URL first.' };
@@ -513,19 +482,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    * counterpart — Google Sheets doesn't expose one without Apps Script).
    */
   const assignPocMasterRow = async (row: Partial<PocMaster>) => {
-    // Postgres path: a real write with a real answer. The permission check
-    // happens inside the database (RLS), so a non-SUPER_ADMIN is refused
-    // there rather than merely being shown fewer buttons here.
-    if (isSupabaseConfigured) {
-      try {
-        const res = await upsertPocMasterRow(row);
-        if (res.success) await syncMasterData(); // read back, so the tables show the truth
-        return { success: res.success, message: res.message };
-      } catch (err: any) {
-        return { success: false, message: err?.message || 'Could not save that POC row.' };
-      }
-    }
-
     if (!masterDataAppsScriptUrl) {
       return { success: false, message: 'Deploy the Master Data Apps Script bridge first — writes need it even though reads alone don’t.' };
     }
@@ -552,7 +508,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     tab: 'Site_Master' | 'Service_Registry';
     action: 'upsertSiteMaster' | 'upsertServiceRegistry';
     validate: () => ReturnType<typeof validateSite>;
-    dbWrite: () => Promise<{ success: boolean; message: string }>;
     setRows: React.Dispatch<React.SetStateAction<Row[]>>;
   }): Promise<MasterWriteResult> => {
     const errors = opts.validate();
@@ -574,16 +529,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ? [...prev, stamped]
           : prev.map(r => (String(r[opts.keyField]) === key ? { ...r, ...stamped } : r))
       );
-
-    if (isSupabaseConfigured) {
-      try {
-        const res = await opts.dbWrite();
-        if (res.success) await syncMasterData(); // read back the truth, including audit rows
-        return res;
-      } catch (err: any) {
-        return { success: false, message: err?.message || `Could not save that ${opts.tab} row.` };
-      }
-    }
 
     if (!masterDataAppsScriptUrl) {
       return {
@@ -609,7 +554,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveMasterRow<SiteMaster>({
       row, mode, keyField: 'Site_Code', tab: 'Site_Master', action: 'upsertSiteMaster',
       validate: () => validateSite(row, siteMasterRows, mode, originalKey),
-      dbWrite: () => upsertSiteMasterRow(row, mode),
       setRows: setSiteMasterRows,
     });
 
@@ -617,7 +561,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveMasterRow<ServiceRegistry>({
       row, mode, keyField: 'Service_Code', tab: 'Service_Registry', action: 'upsertServiceRegistry',
       validate: () => validateService(row, serviceRegistryRows, mode, originalKey),
-      dbWrite: () => upsertServiceRegistryRow(row, mode),
       setRows: setServiceRegistryRows,
     });
 

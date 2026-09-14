@@ -5,9 +5,12 @@
  * you already paste into the app today. Open the Apps Script Web App URL in a
  * browser tab, save the page as JSON, and run:
  *
- *   node scripts/json-to-sql.mjs master-data.json > db/seed.sql
+ *   node scripts/json-to-sql.mjs master-data.json db/seed.sql
  *
- * Then run db/schema.sql followed by db/seed.sql in the Supabase SQL editor.
+ * (Pass the output path rather than using `>`: PowerShell redirects write
+ * UTF-16, which psql rejects.)
+ *
+ * Then apply it with `npm run db:migrate:seed` (after db/schema.sql and db/ebdg.sql).
  *
  * WHY NOT JUST IMPORT THE CSVs: the sheet's data needs three fixes on the way
  * in, and doing them here means they're applied consistently and visibly

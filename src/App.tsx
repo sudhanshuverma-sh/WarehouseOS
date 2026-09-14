@@ -6,9 +6,6 @@ import { POCFilingView } from './components/POCFilingView';
 import { DashboardOverview } from './components/DashboardOverview';
 import { DailySiteActivityForm } from './components/DailySiteActivityForm';
 import { HousekeepingForm } from './components/forms/HousekeepingForm';
-// DGPowerWaterForm is intentionally not imported: it inverted HSD Closing and
-// HSD Consumption, so every route that used to reach it now renders
-// EbDgDailyEntryForm instead. The file is kept for reference/history only.
 import { EbDgDailyEntryForm } from './components/forms/EbDgDailyEntryForm';
 import { WashingAdhocForm } from './components/forms/WashingAdhocForm';
 import { OperationalSheetsHub } from './components/OperationalSheetsHub';
@@ -220,9 +217,8 @@ const MainContent: React.FC = () => {
 
             {/* 'dgPower' is kept as an alias so existing links/back-history still
                 resolve, but it renders the EB-DG form — see the note in
-                handleSelectSheetFromHub. DGPowerWaterForm is left in the tree
-                unused; the admin dashboards still read its historical
-                dgPowerLogs, which this change does not touch. */}
+                handleSelectSheetFromHub. The admin dashboards still read the
+                historical dgPowerLogs from the old DG form. */}
             {(currentView === 'dgPower' || currentView === 'ebDg') && (
               <EbDgDailyEntryForm
                 onBack={handleGoBack}

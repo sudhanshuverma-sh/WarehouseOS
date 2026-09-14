@@ -3,6 +3,7 @@ import { buildExport, csvCell, dateRange, ExportNotPermittedError, type ExportSp
 import { capabilitiesFor } from '../permissions';
 import type { User, UserRole } from '../../types';
 import { DIESEL_EXPORT, summariseDiesel } from './dieselExport';
+import { DIESEL_SHEET_HEADER } from '../sheetSync/dieselSheet';
 import { EBDG_EXPORT } from './ebdgExport';
 import { EBDG_COLUMN_ORDER } from '../../types/ebdg';
 import type { DieselLog } from '../../types';
@@ -187,12 +188,19 @@ const log = (over: Partial<DieselLog>): DieselLog =>
 describe('diesel export', () => {
   const c = caps('SUPER_ADMIN');
 
-  it('leads with the columns the question asks about', () => {
-    const r = buildExport([log({})], DIESEL_EXPORT, {}, c);
-    const header = r.csv.split('\r\n')[0];
-    expect(header).toContain('Requested_By');
-    expect(header).toContain('Billed_Litres');
-    expect(header).toContain('Final_Amount');
+  it('has exactly the Diesel sheet’s columns, in the sheet’s order', () => {
+    expect(DIESEL_EXPORT.columns.map((col) => col.header)).toEqual([...DIESEL_SHEET_HEADER]);
+  });
+
+  it('writes the same values the sheet gets', () => {
+    const row = log({ entity: 'B2C', whNameB2B: 'Vizag WHS', whNameB2C: 'Vizag WHS', status: 'Ready for Delivery' });
+    const r = buildExport([row], DIESEL_EXPORT, {}, c);
+    const header = r.csv.split('\r\n')[0].split(',');
+    const cells = r.csv.split('\r\n')[1].split(',');
+    const at = (h: string) => cells[header.indexOf(h)];
+    expect(at('WH NAME (B2B)')).toBe('');
+    expect(at('WH NAME (B2C)')).toBe('Vizag WHS');
+    expect(at('Status')).toBe('Approved');
   });
 
   it('quotes a vendor name containing a comma', () => {
@@ -206,26 +214,11 @@ describe('diesel export', () => {
     const r = buildExport([log({ type: 'Payment Only' })], DIESEL_EXPORT, {}, c);
     const cells = r.csv.split('\r\n')[1].split(',');
     const header = r.csv.split('\r\n')[0].split(',');
-    expect(cells[header.indexOf('Delivered_Litres')]).toBe('');
+    expect(cells[header.indexOf('Delivered Quantity')]).toBe('');
   });
 });
 
 describe('complete headers', () => {
-  it('diesel exports every field on the record', () => {
-    // "Complete header of the respective service" — a curated subset is
-    // always missing the one column the recipient needed, and they cannot
-    // tell whether it was omitted or never captured.
-    const headers = DIESEL_EXPORT.columns.map((c) => c.header);
-    for (const expected of [
-      'Requested_By', 'Requested_By_Email', 'Vendor', 'Ordered_Litres',
-      'Delivered_Litres', 'Billed_Litres', 'Rate_Per_Litre', 'Final_Amount',
-      'Status', 'Delivery_Validation', 'Rejection_Reason', 'Validated_By',
-      'Approved_By', 'Approval_Notes', 'POD_URL', 'POD_Uploaded_By',
-      'QR_Invoice_URL', 'Request_ID', 'Record_ID', 'Email_Thread_ID',
-    ]) {
-      expect(headers).toContain(expected);
-    }
-  });
 
   it('has no duplicate diesel headers', () => {
     const headers = DIESEL_EXPORT.columns.map((c) => c.header);
@@ -254,9 +247,9 @@ describe('complete headers', () => {
 
   it('diesel money and volume columns are numeric', () => {
     const byHeader = new Map(DIESEL_EXPORT.columns.map((c) => [c.header, c]));
-    expect(byHeader.get('Final_Amount')?.numeric).toBe(true);
-    expect(byHeader.get('Billed_Litres')?.numeric).toBe(true);
-    expect(byHeader.get('Request_ID')?.numeric).toBeFalsy();
+    expect(byHeader.get('Final Amount')?.numeric).toBe(true);
+    expect(byHeader.get('Quantity')?.numeric).toBe(true);
+    expect(byHeader.get('Unique ID')?.numeric).toBeFalsy();
   });
 });
 

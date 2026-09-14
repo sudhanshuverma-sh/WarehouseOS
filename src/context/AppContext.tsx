@@ -1097,7 +1097,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return l;
       })
     );
-    pushDieselUpdateToSheet(target.uniqueId, { status: updatedStatus });
+    // The whole row, not a partial update: it creates the row if the sheet
+    // never received the request, and every column goes through the same
+    // mapping (Status as Approved/Rejected, one warehouse name).
+    pushDieselLogToSheet({ ...target, status: updatedStatus });
 
     setDieselAuditLog(prev => [{
       id: `AUD_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`,
@@ -1183,7 +1186,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     // Note: the real master sheet header has no "Rejection Reason" column — only Status.
     // The reason itself stays in the app's own audit log (dieselAuditLog), not the sheet.
-    pushDieselUpdateToSheet(target.uniqueId, { status: updatedStatus });
+    pushDieselLogToSheet({ ...target, status: updatedStatus, rejectionReason: reason });
 
     setDieselAuditLog(prev => [{
       id: `AUD_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`,
@@ -1302,7 +1305,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return l;
       })
     );
-    pushDieselUpdateToSheet(target.uniqueId, {
+    // The whole row. The partial update this replaced wrote the POD photo
+    // itself (hundreds of KB of base64) into one cell; Google refuses a cell
+    // that size, so the POD never arrived. The row mapping writes a link.
+    pushDieselLogToSheet({
+      ...target,
       status: finalStatus,
       validation,
       deliveredQuantityLitres: deliveredQty,

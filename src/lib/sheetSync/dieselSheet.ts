@@ -53,13 +53,26 @@ const photoLink = (v: string | undefined, origin?: string): string => {
   return origin && v.startsWith('/') ? origin + v : v;
 };
 
+/**
+ * The sheet's Status column is the admin's decision only: Approved or
+ * Rejected, and blank while it is still waiting. Where a request went after
+ * approval (payment processing, delivered, partial…) is the Validation
+ * column's job, not this one's.
+ */
+export function sheetStatus(status: string | undefined): string {
+  if (!status || status === 'Pending Admin Approval') return '';
+  return status === 'Rejected' ? 'Rejected' : 'Approved';
+}
+
 /** Sheet header → the value for that column. */
 const VALUE_FOR: Record<string, (r: DieselLog, origin?: string) => string | number> = {
   Timestamp: (r) => r.timestamp ?? '',
   'Email Address': (r) => r.emailAddress ?? '',
   Entity: (r) => r.entity ?? '',
-  'WH NAME (B2B)': (r) => r.whNameB2B ?? '',
-  'WH NAME (B2C)': (r) => r.whNameB2C ?? '',
+  // Only the name for the request's own channel: a B2C request leaves the
+  // B2B name blank, and the other way round.
+  'WH NAME (B2B)': (r) => (r.entity === 'B2C' ? '' : r.whNameB2B ?? ''),
+  'WH NAME (B2C)': (r) => (r.entity === 'B2B' ? '' : r.whNameB2C ?? ''),
   'COST CENTER': (r) => r.costCenter ?? '',
   Zone: (r) => r.zone ?? '',
   Fuel: (r) => r.fuel ?? '',
@@ -75,11 +88,16 @@ const VALUE_FOR: Record<string, (r: DieselLog, origin?: string) => string | numb
   'Vendor Name(Delivery)': (r) => r.vendorNameDelivery ?? '',
   'Order Quantity': (r) => r.orderQuantityLitres ?? '',
   'Unique ID': (r) => r.uniqueId ?? '',
-  Status: (r) => r.status ?? '',
+  Status: (r) => sheetStatus(r.status),
   Validation: (r) => r.validation ?? '',
   'Delivered Quantity': (r) => r.deliveredQuantityLitres ?? '',
   "POD's": (r, origin) => photoLink(r.podUrl, origin),
 };
+
+/** One column of one request, exactly as the sheet shows it. Also what the export uses. */
+export function dieselSheetValue(header: string, log: DieselLog, origin?: string): string | number {
+  return VALUE_FOR[header](log, origin);
+}
 
 /** One request → one row. `origin` (e.g. https://warehouseos.apps.blinkit.in) completes photo links. */
 export function buildDieselSheetPayload(log: DieselLog, origin?: string): SheetPayload {

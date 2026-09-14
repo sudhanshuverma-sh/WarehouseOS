@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { validateSheetUrl } from './sheetSync';
-import { DIESEL_SHEET_HEADER, buildDieselSheetBatch, buildDieselSheetPayload } from './dieselSheet';
+import { DIESEL_SHEET_HEADER, buildDieselSheetBatch, buildDieselSheetPayload, sheetStatus } from './dieselSheet';
 import type { DieselLog } from '../../types';
 
 const log = (over: Partial<DieselLog> = {}): DieselLog =>
@@ -88,6 +88,24 @@ describe('diesel sheet payload', () => {
   it('keeps a real zero as 0', () => {
     const p = buildDieselSheetPayload(log({ deliveredQuantityLitres: 0 }));
     expect(p.values[p.header.indexOf('Delivered Quantity')]).toBe(0);
+  });
+
+  it('fills only the warehouse name for the request’s own channel', () => {
+    const at = (p: ReturnType<typeof buildDieselSheetPayload>, h: string) => p.values[p.header.indexOf(h)];
+    const b2c = buildDieselSheetPayload(log({ entity: 'B2C', whNameB2B: 'Vizag WHS', whNameB2C: 'Vizag WHS' }));
+    expect(at(b2c, 'WH NAME (B2B)')).toBe('');
+    expect(at(b2c, 'WH NAME (B2C)')).toBe('Vizag WHS');
+    const b2b = buildDieselSheetPayload(log({ entity: 'B2B', whNameB2B: 'GGN3', whNameB2C: 'GGN3' }));
+    expect(at(b2b, 'WH NAME (B2B)')).toBe('GGN3');
+    expect(at(b2b, 'WH NAME (B2C)')).toBe('');
+  });
+
+  it('shows only the admin decision in Status', () => {
+    expect(sheetStatus('Pending Admin Approval')).toBe('');
+    expect(sheetStatus('Rejected')).toBe('Rejected');
+    for (const s of ['Approved', 'Payment Processing', 'Ready for Delivery', 'Delivery Completed', 'Partial Delivery', 'Not Delivered', 'Completed']) {
+      expect(sheetStatus(s)).toBe('Approved');
+    }
   });
 
   it('gives the sheet a photo link it can open', () => {

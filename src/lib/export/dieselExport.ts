@@ -1,84 +1,32 @@
 /**
- * What a diesel export contains: EVERY field on the record.
+ * What a diesel export contains: exactly the Diesel Google Sheet.
  *
- * Complete rather than curated. A subset always turns out to be missing
- * the one column the recipient needed, and they cannot tell whether it was
- * omitted deliberately or never captured — so they come back and ask, or
- * worse, assume. Ordering is what makes it readable instead: the question
- * it actually gets asked ("a month of diesel — by whom, how much") is
- * answered by the first dozen columns, and ids, URLs and email plumbing
- * sit at the end where they do not get in the way.
+ * Same 21 headers, same order, same values — produced by the same function
+ * that writes the sheet (dieselSheetValue). A file downloaded from the app
+ * and the sheet itself can be laid side by side, or pasted one into the
+ * other, without renaming or reordering a column.
  */
 
 import type { DieselLog } from '../../types';
+import { DIESEL_SHEET_HEADER, dieselSheetValue } from '../sheetSync/dieselSheet';
 import type { ExportSpec } from './exporter';
 
-/**
- * Ordered vs. delivered vs. billed are three different numbers and a
- * Payment Only row has no delivery at all. Rather than pick one and label
- * it "Quantity", all three are exported and the one the money was
- * calculated from is named explicitly.
- */
+/** Written as real numbers in .xlsx so they can be summed; everything else stays text. */
+const NUMERIC_COLUMNS = new Set(['Quantity', 'Rate per Litres', 'Final Amount', 'Order Quantity', 'Delivered Quantity']);
+
+/** Photo links in the file open the photo, as they do in the sheet. */
+const origin = () => (typeof window !== 'undefined' ? window.location.origin : undefined);
+
 export const DIESEL_EXPORT: ExportSpec<DieselLog> = {
   label: 'Diesel & DEF procurement',
   serviceCode: 'DIESEL',
   dateOf: (r) => r.timestamp,
   siteOf: (r) => r.warehouseId,
-  columns: [
-    { header: 'Date', value: (r) => (r.timestamp ? r.timestamp.slice(0, 10) : '') },
-    { header: 'Site_Code', value: (r) => r.warehouseId },
-    { header: 'WH_Name', value: (r) => r.whNameB2B || r.whNameB2C || '' },
-    { header: 'Zone', value: (r) => r.zone },
-    { header: 'Cost_Center', value: (r) => r.costCenter },
-    { header: 'Entity', value: (r) => r.entity },
-
-    // Who asked for it — the "by whom" half of the question.
-    { header: 'Requested_By', value: (r) => r.submittedByName },
-    { header: 'Requested_By_Email', value: (r) => r.emailAddress },
-
-    { header: 'Fuel', value: (r) => r.fuel },
-    { header: 'Request_Type', value: (r) => r.type },
-    { header: 'Vendor', value: (r) => r.vendorNamePayment || r.vendorNameDelivery || '' },
-
-    // The "how much" half. Blank stays blank: a Payment Only row has no
-    // ordered or delivered quantity, and writing 0 would understate
-    // delivery performance when these are summed.
-    { header: 'Ordered_Litres', value: (r) => r.orderQuantityLitres ?? '', numeric: true },
-    { header: 'Delivered_Litres', value: (r) => r.deliveredQuantityLitres ?? '', numeric: true },
-    { header: 'Billed_Litres', value: (r) => r.quantity ?? '', numeric: true },
-    { header: 'Rate_Per_Litre', value: (r) => r.ratePerLitre, numeric: true },
-    { header: 'Final_Amount', value: (r) => r.finalAmount, numeric: true },
-
-    { header: 'Status', value: (r) => r.status },
-    { header: 'Delivery_Validation', value: (r) => r.validation ?? '' },
-    { header: 'Rejection_Reason', value: (r) => r.rejectionReason ?? '' },
-
-    { header: 'Validated_By', value: (r) => r.validatedByName ?? '' },
-    { header: 'Validated_At', value: (r) => r.validatedAt ?? '' },
-    { header: 'Approved_By', value: (r) => r.adminApprovedBy ?? '' },
-    { header: 'Approved_At', value: (r) => r.adminApprovedAt ?? '' },
-
-    { header: 'Approval_Notes', value: (r) => r.adminApprovalNotes ?? '' },
-
-    // Proof of delivery — who uploaded it and when, not just the link.
-    { header: 'POD_URL', value: (r) => r.podUrl ?? '' },
-    { header: 'POD_Uploaded_By', value: (r) => r.podUploadedByName ?? '' },
-    { header: 'POD_Timestamp', value: (r) => r.podTimestamp ?? '' },
-    { header: 'QR_Invoice_URL', value: (r) => r.qrCodeImageUrl ?? '' },
-
-    { header: 'Notes', value: (r) => r.notes ?? '' },
-
-    // Identifiers and plumbing last: needed for tracing a specific
-    // request, never the reason someone opened the file.
-    { header: 'Request_ID', value: (r) => r.uniqueId },
-    { header: 'Record_ID', value: (r) => r.id },
-    { header: 'Submitted_By_ID', value: (r) => r.submittedById },
-    { header: 'WH_Name_B2B', value: (r) => r.whNameB2B ?? '' },
-    { header: 'WH_Name_B2C', value: (r) => r.whNameB2C ?? '' },
-    { header: 'Email_Thread_ID', value: (r) => r.threadId ?? '' },
-    { header: 'Last_Email_Sent_At', value: (r) => r.lastEmailTriggeredAt ?? '' },
-    { header: 'Submitted_At', value: (r) => r.timestamp },
-  ],
+  columns: DIESEL_SHEET_HEADER.map((header) => ({
+    header,
+    value: (r: DieselLog) => dieselSheetValue(header, r, origin()),
+    numeric: NUMERIC_COLUMNS.has(header),
+  })),
 };
 
 export interface DieselSummaryRow {

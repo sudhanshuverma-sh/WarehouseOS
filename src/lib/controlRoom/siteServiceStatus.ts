@@ -280,6 +280,60 @@ export function computeSiteStatuses(
   });
 }
 
+/** A month ('YYYY-MM') as Monday-first weeks; cells outside the month are null. */
+export function monthGrid(month: string): (string | null)[][] {
+  const first = `${month}-01`;
+  const weekday = new Date(`${first}T00:00:00Z`).getUTCDay() || 7; // Mon=1 … Sun=7
+  const length = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  const cells: (string | null)[] = [...Array<null>(weekday - 1).fill(null), ...Array.from({ length }, (_, i) => shift(first, i))];
+  while (cells.length % 7) cells.push(null);
+  return Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+}
+
+/** 'YYYY-MM' moved by `n` months. */
+export const shiftMonth = (month: string, n: number): string =>
+  new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1 + n, 1)).toISOString().slice(0, 7);
+
+export interface DayActivity {
+  day: string;
+  /** Daily services filed that day, counted per site. */
+  done: number;
+  /** Daily services expected that day, counted per site. */
+  due: number;
+  /** Every entry filed that day for these sites and services, any cadence. */
+  entries: number;
+}
+
+/** For each day: how many daily filings were done of those due, and how many entries came in. */
+export function activityByDay(
+  sites: ControlRoomSite[],
+  services: ControlRoomService[],
+  records: ControlRoomRecords,
+  days: string[],
+): DayActivity[] {
+  const index = indexRecords(records);
+  const daily = services.filter((s) => s.cadence === 'DAILY');
+  const codes = new Set(services.map((s) => s.code));
+  const known = new Set(sites.flatMap((s) => [s.id, ...s.aliases].map((a) => a.toLowerCase())));
+  const entries = new Map<string, number>();
+  for (const f of allFilings(records)) {
+    if (codes.has(f.code) && known.has(f.site.toLowerCase())) entries.set(f.day, (entries.get(f.day) ?? 0) + 1);
+  }
+
+  return days.map((day) => {
+    let done = 0;
+    let due = 0;
+    for (const site of sites) {
+      for (const svc of daily) {
+        if (site.services !== 'ALL' && !site.services.includes(svc.code)) continue;
+        due++;
+        if (countFor(index, svc.code, site, [day, day]) > 0) done++;
+      }
+    }
+    return { day, done, due, entries: entries.get(day) ?? 0 };
+  });
+}
+
 /** The last `days` India days ending on `today`, oldest first. */
 export function lastDays(today: string, days: number): string[] {
   return Array.from({ length: days }, (_, i) => shift(today, i - (days - 1)));

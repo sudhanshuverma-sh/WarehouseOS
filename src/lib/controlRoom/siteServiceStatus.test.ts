@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { Warehouse } from '../../types';
 import type { ServiceRegistry, SiteMaster } from '../../types/masterData';
 import {
+  activityByDay,
+  monthGrid,
+  shiftMonth,
   appWarehouseIdFor,
   siteMatches,
   computeSiteStatuses,
@@ -96,6 +99,38 @@ describe('services', () => {
     expect(list.find((s) => s.code === 'HOUSEKEEPING')?.name).toBe('Housekeeping Roster');
     expect(list.find((s) => s.code === 'DIESEL')?.cadence).toBe('EVENT_DRIVEN');
     expect(list.filter((s) => s.code === 'EB_DG')).toHaveLength(1);
+  });
+});
+
+describe('calendar', () => {
+  it('lays a month out as Monday-first weeks', () => {
+    const weeks = monthGrid('2026-09'); // 1 Sep 2026 is a Tuesday
+    expect(weeks).toHaveLength(5);
+    expect(weeks[0]).toEqual([null, '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05', '2026-09-06']);
+    expect(weeks[4]).toEqual(['2026-09-28', '2026-09-29', '2026-09-30', null, null, null, null]);
+    expect(monthGrid('2026-02').flat().filter(Boolean)).toHaveLength(28);
+  });
+
+  it('moves between months across years', () => {
+    expect(shiftMonth('2026-12', 1)).toBe('2027-01');
+    expect(shiftMonth('2026-01', -1)).toBe('2025-12');
+  });
+
+  it('counts daily filings done of due, and every entry, per day', () => {
+    const sites = controlRoomSites([site({}), site({ Site_Code: 'ZHPL-DL-01', WH_Code: 'DEL1', Services_Enabled: 'DIESEL' })], []);
+    const services = controlRoomServices([service('SITE_ACTIVITY', 'DAILY'), service('HOUSEKEEPING', 'DAILY'), service('DIESEL', 'EVENT_DRIVEN')], []);
+    const records: ControlRoomRecords = {
+      ...noRecords(),
+      dailySiteLogs: [{ site: 'ZHPL-HR-03', date: TODAY }],
+      dieselLogs: [
+        { warehouseId: 'ZHPL-DL-01', timestamp: '2026-09-15T05:00:00Z' },
+        { warehouseId: 'ZHPL-XX-99', timestamp: '2026-09-15T05:00:00Z' }, // not one of these sites
+      ],
+    };
+    expect(activityByDay(sites, services, records, ['2026-09-14', TODAY])).toEqual([
+      { day: '2026-09-14', done: 0, due: 2, entries: 0 },
+      { day: TODAY, done: 1, due: 2, entries: 2 },
+    ]);
   });
 });
 

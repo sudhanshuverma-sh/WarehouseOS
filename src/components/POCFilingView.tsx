@@ -36,7 +36,8 @@ import {
 } from '../lib/controlRoom/siteServiceStatus';
 import { serviceCodeFor, sheetIdFor } from '../lib/services/serviceCodes';
 import type { FieldDefinition, Shift } from '../types';
-import { EvidenceInput, type EvidenceValue } from './common/EvidenceInput';
+import type { EvidenceValue } from './common/EvidenceInput';
+import { ServiceFieldList, collectEntry } from './forms/ServiceFieldList';
 
 /**
  * POC Filing Desk.
@@ -224,19 +225,9 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!filing || !site) return;
-    const next: Record<string, string> = {};
-    for (const f of formFields) {
-      const v = f.type === 'evidence' ? evidence[f.key] : values[f.key];
-      if (f.required && (v === undefined || v === null || String(v).trim() === '')) next[f.key] = `${f.label} is required.`;
-      if (f.type === 'number' || f.type === 'percentage' || f.type === 'temperature') {
-        if (v !== undefined && v !== '' && !Number.isFinite(Number(v))) next[f.key] = `${f.label} must be a number.`;
-      }
-    }
+    const { data, errors: next } = collectEntry(formFields, values, evidence);
     setErrors(next);
     if (Object.keys(next).length) return;
-
-    const data: Record<string, unknown> = { ...values };
-    for (const f of formFields) if (f.type === 'evidence') data[f.key] = evidence[f.key]?.id ?? evidence[f.key]?.url ?? '';
 
     setSaving(true);
     const res = await addSheetRecord(sheetIdFor(filing.code), {
@@ -470,68 +461,18 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
-              {formFields.map((f) => {
-                const err = errors[f.key];
-                const base = `w-full px-3 py-2.5 text-sm bg-slate-50 border rounded-lg focus:outline-none focus:bg-white ${err ? 'border-rose-300' : 'border-slate-200 focus:border-slate-400'}`;
-                const set = (v: unknown) => setValues((prev) => ({ ...prev, [f.key]: v }));
-                const v = values[f.key];
-                return (
-                  <div key={f.key} className="space-y-1">
-                    {f.type !== 'evidence' && (
-                      <label className="text-xs font-semibold text-slate-700">
-                        {f.label} {f.required && <span className="text-rose-600">*</span>}
-                        {f.unit && <span className="text-slate-400 font-normal"> ({f.unit})</span>}
-                      </label>
-                    )}
-                    {f.type === 'evidence' ? (
-                      <EvidenceInput
-                        label={f.label}
-                        required={f.required}
-                        serviceCode={filing.code}
-                        siteCode={site.id}
-                        value={evidence[f.key] ?? null}
-                        onChange={(ev) => setEvidence((prev) => ({ ...prev, [f.key]: ev }))}
-                      />
-                    ) : f.type === 'select' ? (
-                      <select value={String(v ?? '')} onChange={(e) => set(e.target.value)} className={base}>
-                        <option value="">Choose…</option>
-                        {(f.options ?? []).map((o) => (
-                          <option key={o} value={o}>{o}</option>
-                        ))}
-                      </select>
-                    ) : f.type === 'boolean' ? (
-                      <div className="flex gap-2">
-                        {['Yes', 'No'].map((o) => (
-                          <button
-                            key={o}
-                            type="button"
-                            onClick={() => set(o)}
-                            className={`flex-1 h-10 rounded-lg border text-sm font-semibold cursor-pointer ${v === o ? 'bg-(--color-ink) text-white border-(--color-ink)' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
-                          >
-                            {o}
-                          </button>
-                        ))}
-                      </div>
-                    ) : f.type === 'textarea' ? (
-                      <textarea rows={3} value={String(v ?? '')} onChange={(e) => set(e.target.value)} className={base} />
-                    ) : (
-                      <input
-                        type={f.type === 'date' ? 'date' : f.type === 'time' ? 'time' : f.type === 'number' || f.type === 'percentage' || f.type === 'temperature' ? 'number' : 'text'}
-                        inputMode={f.type === 'number' || f.type === 'percentage' || f.type === 'temperature' ? 'decimal' : undefined}
-                        min={f.min}
-                        max={f.max}
-                        step="any"
-                        value={String(v ?? '')}
-                        onChange={(e) => set(e.target.value)}
-                        className={base}
-                      />
-                    )}
-                    {f.helperText && !err && <p className="text-[11px] text-slate-400">{f.helperText}</p>}
-                    {err && <p className="text-[11px] text-rose-600">{err}</p>}
-                  </div>
-                );
-              })}
+            <div className="p-5">
+              <ServiceFieldList
+                fields={formFields}
+                values={values}
+                onValue={(key, v) => setValues((prev) => ({ ...prev, [key]: v }))}
+                evidence={evidence}
+                onEvidence={(key, ev) => setEvidence((prev) => ({ ...prev, [key]: ev }))}
+                errors={errors}
+                serviceCode={filing.code}
+                siteCode={site.id}
+                idPrefix="poc"
+              />
             </div>
 
             <div className="p-5 pt-0">

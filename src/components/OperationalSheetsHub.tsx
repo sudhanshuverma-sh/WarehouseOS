@@ -1,255 +1,431 @@
-import React, { useState } from 'react';
-import { useApp } from '../context/AppContext';
-import { 
-  ClipboardCheck, 
-  Fuel, 
-  Zap, 
-  Users, 
-  Truck, 
-  Cpu, 
-  BatteryCharging, 
-  ThermometerSnowflake, 
-  Sliders, 
-  ShieldAlert, 
-  Wind, 
-  Droplet, 
-  Layers, 
-  ArrowUpDown, 
-  Lock,
-  Search,
-  CheckCircle2,
-  Table,
+import React, { useMemo, useState } from 'react';
+import {
+  Activity,
+  AlertCircle,
   ArrowRight,
-  PlusCircle,
+  ClipboardCheck,
+  ClipboardList,
   Database,
-  Eye
+  Droplets,
+  Flame,
+  Fuel,
+  Pencil,
+  Plus,
+  Search,
+  Shield,
+  Snowflake,
+  Sparkles,
+  Truck,
+  Users,
+  Wind,
+  X,
+  Zap,
 } from 'lucide-react';
-import { OperationalSheetDef } from '../types';
+import { useApp } from '../context/AppContext';
+import { canSeeSite, capabilitiesFor } from '../lib/permissions';
+import {
+  allFilings,
+  computeSiteStatuses,
+  controlRoomServices,
+  controlRoomSites,
+  summarise,
+  type ControlRoomRecords,
+  type ControlRoomService,
+} from '../lib/controlRoom/siteServiceStatus';
+import { sheetIdFor } from '../lib/services/serviceCodes';
+import { CADENCE_OPTIONS, OWN_SCREEN_SERVICES, cadenceLabel } from '../lib/services/formBuilder';
+import type { FieldDefinition } from '../types';
+import type { EvidenceValue } from './common/EvidenceInput';
 import { PageHeader } from './common/PageHeader';
+import { ServiceFieldList, collectEntry } from './forms/ServiceFieldList';
+
+/**
+ * Operational Sheets: every form POCs fill, from Master Data.
+ *
+ * One card per active Service_Registry service, with how many questions it
+ * has, how many sites filed it for the current period, and when the last
+ * entry came in. Admins who may change forms build new ones or edit the
+ * questions of existing ones; services with their own screens open those.
+ */
 
 interface OperationalSheetsHubProps {
   onSelectSheet: (sheetId: string) => void;
   onOpenCreateForm?: () => void;
+  onEditForm?: (sheetId: string) => void;
   onOpenDatabase?: (sheetId?: string) => void;
   onBack?: () => void;
 }
 
-export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ 
-  onSelectSheet, 
-  onOpenCreateForm,
-  onOpenDatabase,
-  onBack
-}) => {
-  const { operationalSheets, activeSheetId, setActiveSheetId } = useApp();
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+type CadenceFilter = 'ALL' | ControlRoomService['cadence'];
 
-  const iconsMap: Record<string, React.ReactNode> = {
-    ClipboardCheck: <ClipboardCheck className="w-5 h-5 text-teal-600" />,
-    Fuel: <Fuel className="w-5 h-5 text-amber-600" />,
-    Zap: <Zap className="w-5 h-5 text-amber-500" />,
-    Users: <Users className="w-5 h-5 text-indigo-600" />,
-    Truck: <Truck className="w-5 h-5 text-blue-600" />,
-    Cpu: <Cpu className="w-5 h-5 text-emerald-600" />,
-    BatteryCharging: <BatteryCharging className="w-5 h-5 text-emerald-500" />,
-    ThermometerSnowflake: <ThermometerSnowflake className="w-5 h-5 text-cyan-600" />,
-    Sliders: <Sliders className="w-5 h-5 text-purple-600" />,
-    ShieldAlert: <ShieldAlert className="w-5 h-5 text-rose-600" />,
-    Wind: <Wind className="w-5 h-5 text-teal-500" />,
-    Droplet: <Droplet className="w-5 h-5 text-sky-600" />,
-    Layers: <Layers className="w-5 h-5 text-orange-600" />,
-    ArrowUpDown: <ArrowUpDown className="w-5 h-5 text-indigo-500" />,
-    Lock: <Lock className="w-5 h-5 text-slate-700" />
-  };
+const SERVICE_ICON: Record<string, React.ElementType> = {
+  SITE_ACTIVITY: ClipboardCheck,
+  HOUSEKEEPING: Users,
+  EB_DG: Zap,
+  DIESEL: Fuel,
+  WASHING: Droplets,
+  ADHOC: Sparkles,
+  COLD_ROOM: Snowflake,
+  RT: Truck,
+  BOPT: Truck,
+  UPS: Activity,
+  LT_PANEL: Zap,
+  FIRE: Flame,
+  HVLS: Wind,
+  WATER: Droplets,
+  SECURITY: Shield,
+  ATTENDANCE: Users,
+};
 
-  const categories = ['ALL', 'Daily Operations', 'Energy & Fuel', 'MHE & Fleet', 'EHS & Facilities', 'Manpower', 'Custom Forms'];
+const PERIOD_DONE: Record<ControlRoomService['cadence'], string> = {
+  DAILY: 'Done today',
+  WEEKLY: 'Done this week',
+  MONTHLY: 'Done this month',
+  EVENT_DRIVEN: 'Filed today',
+};
 
-  const filteredSheets = operationalSheets.filter(sheet => {
-    const matchesSearch = sheet.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          sheet.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          sheet.tableTarget.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCat = selectedCategory === 'ALL' || sheet.category === selectedCategory;
-    return matchesSearch && matchesCat;
-  });
+const when = (at: string) => {
+  const d = new Date(at.length === 10 ? `${at}T00:00:00` : at);
+  if (Number.isNaN(d.getTime())) return at;
+  return at.length === 10
+    ? d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+    : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+};
 
-  const handleLaunchSheet = (sheet: OperationalSheetDef) => {
-    setActiveSheetId(sheet.id);
-    onSelectSheet(sheet.id);
-  };
+export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ onSelectSheet, onOpenCreateForm, onEditForm, onOpenDatabase, onBack }) => {
+  const {
+    currentUser,
+    currentDate,
+    warehouses,
+    siteMasterRows,
+    serviceRegistryRows,
+    operationalSheets,
+    dailySiteLogs,
+    dieselLogs,
+    ebdgRows,
+    submissions,
+    sheetRecords,
+    activeSheetId,
+    setActiveSheetId,
+  } = useApp();
 
-  const handleViewDatabase = (sheet: OperationalSheetDef) => {
-    setActiveSheetId(sheet.id);
-    if (onOpenDatabase) {
-      onOpenDatabase(sheet.id);
-    }
+  const caps = useMemo(() => capabilitiesFor(currentUser), [currentUser]);
+  const [query, setQuery] = useState('');
+  const [cadence, setCadence] = useState<CadenceFilter>('ALL');
+  const [filling, setFilling] = useState<ControlRoomService | null>(null);
+
+  const fromMasterData = serviceRegistryRows.length > 0;
+  const services = useMemo(() => controlRoomServices(serviceRegistryRows, operationalSheets), [serviceRegistryRows, operationalSheets]);
+  const switchedOff = serviceRegistryRows.filter((r) => r.Active !== 'Yes');
+  const sites = useMemo(() => controlRoomSites(siteMasterRows, warehouses), [siteMasterRows, warehouses]);
+
+  const records: ControlRoomRecords = useMemo(
+    () => ({ dailySiteLogs, dieselLogs, ebdgRows, submissions, sheetRecords }),
+    [dailySiteLogs, dieselLogs, ebdgRows, submissions, sheetRecords],
+  );
+  const progress = useMemo(
+    () => new Map(summarise(computeSiteStatuses(sites, services, records, currentDate), services).services.map((s) => [s.code, s])),
+    [sites, services, records, currentDate],
+  );
+  const lastEntry = useMemo(() => {
+    const latest = new Map<string, string>();
+    for (const f of allFilings(records)) if ((latest.get(f.code) ?? '') < f.at) latest.set(f.code, f.at);
+    return latest;
+  }, [records]);
+
+  const fieldsOf = (code: string): FieldDefinition[] => operationalSheets.find((s) => s.id === sheetIdFor(code))?.fieldsConfig ?? [];
+  const canBuild = caps.canEditSchema;
+
+  const q = query.trim().toLowerCase();
+  const visible = services.filter((s) => (cadence === 'ALL' || s.cadence === cadence) && (!q || `${s.name} ${s.code}`.toLowerCase().includes(q)));
+
+  const fill = (s: ControlRoomService) => {
+    setActiveSheetId(sheetIdFor(s.code));
+    if (OWN_SCREEN_SERVICES.has(s.code)) onSelectSheet(sheetIdFor(s.code));
+    else setFilling(s);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header Banner */}
+    <div className="max-w-7xl mx-auto pb-16">
       <PageHeader
-        title="Warehouse Operations Sheets Hub"
-        subtitle="Replaces fragmented multi-tab Google spreadsheets with structured digital forms, RBAC validation, and instant database archiving."
-        categoryBadge={`${operationalSheets.length} Sheets System`}
-        categoryColor="bg-teal-50 text-teal-700 border-teal-200"
+        title="Operational Sheets"
+        subtitle={`${services.length} forms POCs fill, from Master Data.${canBuild ? ' Build a new one or change the questions of an existing one.' : ''}`}
         onBack={onBack}
         backLabel="Back"
-        breadcrumbs={[
-          { label: 'Portal', onClick: onBack },
-          { label: 'Operations' },
-          { label: 'Sheets Hub' }
-        ]}
+        showFacilityBadge={false}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {onOpenCreateForm && (
-              <button
-                onClick={onOpenCreateForm}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
-              >
-                <PlusCircle className="w-3.5 h-3.5" />
-                <span>+ Add New Form</span>
-              </button>
-            )}
-
+          <>
             {onOpenDatabase && (
               <button
+                type="button"
                 onClick={() => onOpenDatabase()}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 active:scale-[0.98] transition cursor-pointer"
               >
-                <Database className="w-3.5 h-3.5" />
-                <span>Database Viewer</span>
+                <Database className="w-3.5 h-3.5" /> All records
               </button>
             )}
-          </div>
+            {canBuild && onOpenCreateForm && (
+              <button
+                type="button"
+                onClick={onOpenCreateForm}
+                className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl text-xs font-semibold text-white bg-(--color-ink) hover:bg-(--color-ink-soft) active:scale-[0.98] transition cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> New form
+              </button>
+            )}
+          </>
         }
       />
 
-      {/* Category Pills & Search */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex gap-2 overflow-x-auto pb-1 flex-1">
-          {categories.map(cat => (
+      {!fromMasterData && (
+        <div className="mb-4 flex items-start gap-2 rounded-(--r-card) border border-(--color-due) bg-(--color-due-tint) px-4 py-3 text-xs text-(--color-ink)">
+          <AlertCircle className="w-4 h-4 text-(--color-due) shrink-0" />
+          Master Data is not loaded, so the built-in forms are shown. Import Master Data to list your own services.
+        </div>
+      )}
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-64">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search forms"
+            aria-label="Search forms"
+            className="w-full h-9 pl-8 pr-3 text-xs bg-white border border-slate-200 rounded-xl placeholder:text-slate-500 focus:outline-none focus:border-slate-400"
+          />
+        </div>
+        <div className="inline-flex flex-wrap p-1 bg-white border border-slate-200 rounded-xl" role="tablist" aria-label="How often">
+          {([{ value: 'ALL', label: 'All' }, ...CADENCE_OPTIONS] as { value: CadenceFilter; label: string }[]).map((c) => (
             <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
-                selectedCategory === cat
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
+              key={c.value}
+              type="button"
+              role="tab"
+              aria-selected={cadence === c.value}
+              onClick={() => setCadence(c.value)}
+              className={`h-7 px-3 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                cadence === c.value ? 'bg-(--color-ink) text-white' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              {cat}
+              {c.label}
             </button>
           ))}
         </div>
-
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search sheet, target table..."
-            className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-300 focus:ring-2 focus:ring-teal-500 w-56"
-          />
-        </div>
+        <span className="ml-auto text-xs font-mono text-slate-500">{visible.length} forms</span>
       </div>
 
-      {/* Sheets Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredSheets.map((sheet, index) => {
-          const isSelected = activeSheetId === sheet.id;
-
+      <div key={`${cadence}-${q}`} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        {visible.map((s, i) => {
+          const Icon = SERVICE_ICON[s.code] ?? ClipboardList;
+          const ownScreen = OWN_SCREEN_SERVICES.has(s.code);
+          const questions = fieldsOf(s.code).length;
+          const p = progress.get(s.code) ?? { done: 0, total: 0 };
+          const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+          const last = lastEntry.get(s.code);
+          const noQuestions = !ownScreen && questions === 0;
+          const selected = activeSheetId === sheetIdFor(s.code);
           return (
-            <div
-              key={sheet.id}
-              className={`bg-white rounded-2xl border p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between ${
-                isSelected ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-slate-200'
+            <article
+              key={s.code}
+              style={{ animationDelay: `${Math.min(i, 9) * 25}ms` }}
+              className={`animate-settle flex flex-col bg-white border rounded-(--r-card) p-5 shadow-xs hover:shadow-md transition ${
+                selected ? 'border-slate-400' : 'border-slate-200'
               }`}
             >
-              <div>
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center">
-                    {iconsMap[sheet.iconName] || <Table className="w-5 h-5 text-slate-700" />}
-                  </div>
+              <div className="flex items-start justify-between gap-3">
+                <span className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                  <Icon className="w-5 h-5" />
+                </span>
+                <span className="px-2 py-0.5 rounded-full border border-slate-200 text-[10px] font-semibold text-slate-600">{cadenceLabel(s.cadence)}</span>
+              </div>
+              <h3 className="mt-3 text-sm font-semibold text-slate-900">{s.name}</h3>
+              <p className="text-[11px] font-mono text-slate-500">{s.code}</p>
 
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                      {sheet.code}
-                    </span>
-                    {sheet.isCustom && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800">
-                        Custom
-                      </span>
-                    )}
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-teal-50 text-teal-800">
-                      {sheet.fieldsCount} cols
-                    </span>
-                  </div>
+              <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <dt className="text-slate-500">Questions</dt>
+                  <dd className="mt-0.5 font-semibold text-slate-900">
+                    {ownScreen ? 'Own screen' : noQuestions ? <span className="text-(--color-due)">None yet</span> : <span className="font-mono">{questions}</span>}
+                  </dd>
                 </div>
+                <div>
+                  <dt className="text-slate-500">{PERIOD_DONE[s.cadence]}</dt>
+                  <dd className="mt-0.5 font-semibold font-mono text-slate-900">
+                    {p.done}
+                    <span className="text-slate-400"> / {p.total} sites</span>
+                  </dd>
+                </div>
+              </dl>
+              {s.cadence !== 'EVENT_DRIVEN' && (
+                <div className="mt-2 h-1 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-(--color-filed)" style={{ width: `${pct}%` }} />
+                </div>
+              )}
+              <p className="mt-3 text-[11px] text-slate-500">{last ? `Last entry ${when(last)}` : 'No entries yet'}</p>
 
-                <h3 className="font-bold text-slate-900 text-sm">{sheet.title}</h3>
-                <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
-                  {sheet.description}
-                </p>
-
-                <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Target Table:</span>
-                    <code className="text-teal-700 font-mono font-bold">{sheet.tableTarget}</code>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Frequency:</span>
-                    <span className="font-semibold text-slate-800">{sheet.frequency}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Category:</span>
-                    <span className="font-semibold text-slate-800">{sheet.category}</span>
-                  </div>
+              <div className="mt-auto pt-4">
+                <div className="flex items-center gap-1 pt-3 border-t border-slate-100">
+                  {onOpenDatabase && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveSheetId(sheetIdFor(s.code));
+                        onOpenDatabase(sheetIdFor(s.code));
+                      }}
+                      className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
+                    >
+                      <Database className="w-3.5 h-3.5" /> Records
+                    </button>
+                  )}
+                  {canBuild && onEditForm && !ownScreen && (
+                    <button
+                      type="button"
+                      onClick={() => onEditForm(sheetIdFor(s.code))}
+                      className={`inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                        noQuestions ? 'text-(--color-ink) bg-(--color-due-tint) hover:brightness-95' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Pencil className="w-3.5 h-3.5" /> {noQuestions ? 'Add questions' : 'Edit form'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => fill(s)}
+                    disabled={noQuestions}
+                    title={noQuestions ? 'Add questions to this form first' : undefined}
+                    className="group ml-auto inline-flex items-center gap-1.5 h-8 px-3.5 rounded-lg text-xs font-semibold text-white bg-(--color-ink) hover:bg-(--color-ink-soft) disabled:opacity-40 disabled:cursor-default active:scale-[0.98] transition cursor-pointer"
+                  >
+                    {ownScreen ? 'Open' : 'Fill'}
+                    <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+                  </button>
                 </div>
               </div>
-
-              <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleViewDatabase(sheet)}
-                  className="px-2.5 py-1.5 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 text-xs font-semibold rounded-lg transition flex items-center gap-1"
-                  title="View recorded data in database explorer"
-                >
-                  <Database className="w-3.5 h-3.5 text-indigo-500" />
-                  View DB
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleLaunchSheet(sheet)}
-                  className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow-sm"
-                >
-                  Open Sheet Form
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
+            </article>
           );
         })}
 
-        {/* Create New Form Quick Card */}
-        {onOpenCreateForm && (
-          <div
+        {canBuild && onOpenCreateForm && !q && cadence === 'ALL' && (
+          <button
+            type="button"
             onClick={onOpenCreateForm}
-            className="bg-slate-50 hover:bg-teal-50/50 border-2 border-dashed border-slate-300 hover:border-teal-400 rounded-2xl p-6 transition flex flex-col items-center justify-center text-center cursor-pointer group min-h-[240px]"
+            className="group flex flex-col items-center justify-center text-center min-h-60 rounded-(--r-card) border-2 border-dashed border-slate-300 hover:border-slate-500 bg-transparent hover:bg-white p-6 transition cursor-pointer"
           >
-            <div className="w-12 h-12 rounded-2xl bg-white group-hover:bg-teal-600 text-slate-400 group-hover:text-white flex items-center justify-center transition shadow-sm mb-3">
-              <PlusCircle className="w-6 h-6" />
-            </div>
-            <h3 className="font-bold text-slate-800 text-sm group-hover:text-teal-700">
-              + Add Another Operational Form
-            </h3>
-            <p className="text-xs text-slate-500 max-w-xs mt-1">
-              Build custom form schemas with custom data types, validation thresholds, and Firestore table targets.
-            </p>
-          </div>
+            <span className="w-11 h-11 rounded-xl bg-white group-hover:bg-(--color-ink) text-slate-500 group-hover:text-white flex items-center justify-center shadow-xs transition">
+              <Plus className="w-5 h-5" />
+            </span>
+            <span className="mt-3 text-sm font-semibold text-slate-900">New form</span>
+            <span className="mt-1 max-w-56 text-xs text-slate-500">Choose the questions, preview what POCs see, and publish it to their desk.</span>
+          </button>
         )}
       </div>
+
+      {visible.length === 0 && (
+        <p className="mt-6 text-center text-sm text-slate-500">No forms match. Clear the search or pick another filter.</p>
+      )}
+
+      {caps.isSuperAdmin && switchedOff.length > 0 && (
+        <p className="mt-6 text-xs text-slate-500">
+          Switched off in Master Data: {switchedOff.map((r) => r.Service_Name || r.Service_Code).join(', ')}.
+        </p>
+      )}
+
+      {filling && <FillDialog service={filling} fields={fieldsOf(filling.code)} onClose={() => setFilling(null)} />}
+    </div>
+  );
+};
+
+/** An admin filing a form for one of the sites they can see. */
+const FillDialog: React.FC<{ service: ControlRoomService; fields: FieldDefinition[]; onClose: () => void }> = ({ service, fields, onClose }) => {
+  const { currentUser, currentDate, warehouses, siteMasterRows, addSheetRecord, notify } = useApp();
+  const caps = useMemo(() => capabilitiesFor(currentUser), [currentUser]);
+  const sites = useMemo(
+    () =>
+      controlRoomSites(siteMasterRows, warehouses).filter(
+        (s) =>
+          (caps.canViewAllSites || s.aliases.some((a) => canSeeSite(caps, a))) &&
+          (s.services === 'ALL' || s.services.includes(service.code)),
+      ),
+    [siteMasterRows, warehouses, caps, service.code],
+  );
+  const [siteId, setSiteId] = useState(sites[0]?.id ?? '');
+  const [values, setValues] = useState<Record<string, unknown>>({});
+  const [evidence, setEvidence] = useState<Record<string, EvidenceValue | null>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const site = sites.find((s) => s.id === siteId);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!site) return;
+    const { data, errors: problems } = collectEntry(fields, values, evidence);
+    setErrors(problems);
+    if (Object.keys(problems).length) return;
+    setSaving(true);
+    const res = await addSheetRecord(sheetIdFor(service.code), { warehouseId: site.id, date: currentDate, ...data });
+    setSaving(false);
+    if (!res.ok) return;
+    notify('success', `${service.name} filed`, `Saved for ${site.name}.`);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-label={`Fill ${service.name}`}>
+      <form onSubmit={submit} className="animate-pop-in w-full sm:max-w-md max-h-[92vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl">
+        <div className="flex items-start justify-between gap-3 p-5 border-b border-slate-100">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">{service.name}</h3>
+            <p className="text-xs text-slate-500">{new Date(`${currentDate}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer" aria-label="Close">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {sites.length === 0 ? (
+          <p className="p-6 text-center text-sm text-slate-500">None of your sites run this service.</p>
+        ) : (
+          <>
+            <div className="p-5 space-y-4">
+              <div className="space-y-1">
+                <label htmlFor="fill-site" className="text-xs font-semibold text-slate-700">Site</label>
+                <select
+                  id="fill-site"
+                  value={siteId}
+                  onChange={(e) => setSiteId(e.target.value)}
+                  className="w-full px-3 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-slate-400"
+                >
+                  {sites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <ServiceFieldList
+                key={siteId}
+                fields={fields}
+                values={values}
+                onValue={(k, v) => setValues((p) => ({ ...p, [k]: v }))}
+                evidence={evidence}
+                onEvidence={(k, v) => setEvidence((p) => ({ ...p, [k]: v }))}
+                errors={errors}
+                serviceCode={service.code}
+                siteCode={site?.id}
+                idPrefix="fill"
+              />
+            </div>
+            <div className="p-5 pt-0">
+              <button
+                type="submit"
+                disabled={saving || !site}
+                className="w-full h-11 rounded-xl bg-(--color-ink) hover:bg-(--color-ink-soft) disabled:opacity-60 text-white text-sm font-semibold active:scale-[0.99] transition cursor-pointer"
+              >
+                {saving ? 'Saving' : `File ${service.name}`}
+              </button>
+            </div>
+          </>
+        )}
+      </form>
     </div>
   );
 };

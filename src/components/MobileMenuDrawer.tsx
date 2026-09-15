@@ -82,7 +82,7 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
           title: 'Admin Service Management',
           items: [
             { id: 'adminDashboard', label: 'Admin Service Hub', icon: Award, color: 'text-amber-600', bg: 'bg-amber-50' },
-            { id: 'sheets', label: '15 Operational Sheets Catalog', icon: Layers, color: 'text-slate-700', bg: 'bg-slate-100' },
+            { id: 'sheets', label: 'Operational Sheets', icon: Layers, color: 'text-slate-700', bg: 'bg-slate-100' },
             { id: 'diesel', label: 'Diesel Requisition & POD Audit', icon: Fuel, color: 'text-amber-600', bg: 'bg-amber-50' },
             { id: 'dgPower', label: 'DG Power, EB Units & Water', icon: Zap, color: 'text-emerald-600', bg: 'bg-emerald-50' },
             { id: 'housekeeping', label: 'Housekeeping & Staff Roster', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50' },
@@ -116,9 +116,9 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
         items: [
           { id: 'dashboard', label: 'Control Room & Network Matrix', icon: LayoutDashboard, color: 'text-indigo-600', bg: 'bg-indigo-50' },
           { id: 'adminDashboard', label: 'Admin Service Hub', icon: Award, color: 'text-amber-600', bg: 'bg-amber-50' },
-          { id: 'sheets', label: '15 Operational Sheets Catalog', icon: Layers, color: 'text-slate-700', bg: 'bg-slate-100' },
+          { id: 'sheets', label: 'Operational Sheets', icon: Layers, color: 'text-slate-700', bg: 'bg-slate-100' },
           { id: 'database', label: 'Sheet Data Explorer', icon: Database, color: 'text-blue-600', bg: 'bg-blue-50' },
-          { id: 'createForm', label: 'Create New Operational Form', icon: PlusCircle, color: 'text-teal-600', bg: 'bg-teal-50' }
+          { id: 'createForm', label: 'New Form', icon: PlusCircle, color: 'text-teal-600', bg: 'bg-teal-50' }
         ]
       },
       {

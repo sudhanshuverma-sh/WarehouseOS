@@ -10,7 +10,7 @@ import { EbDgDailyEntryForm } from './components/forms/EbDgDailyEntryForm';
 import { WashingAdhocForm } from './components/forms/WashingAdhocForm';
 import { OperationalSheetsHub } from './components/OperationalSheetsHub';
 import { SheetDataExplorer } from './components/SheetDataExplorer';
-import { CreateNewFormModal } from './components/CreateNewFormModal';
+import { FormBuilder } from './components/forms/FormBuilder';
 import { TaskChecklists } from './components/TaskChecklists';
 import { DieselTracker } from './components/DieselTracker';
 import { TemplateManager } from './components/TemplateManager';
@@ -49,6 +49,12 @@ const MainContent: React.FC = () => {
   const [viewHistory, setViewHistory] = useState<string[]>([]);
   const [isArchitectureModalOpen, setIsArchitectureModalOpen] = useState<boolean>(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
+  // The form the builder is editing; unset means a new form.
+  const [editFormId, setEditFormId] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (currentView !== 'createForm') setEditFormId(undefined);
+  }, [currentView]);
 
   // Auto-adapt landing view when user switches role or persona
   useEffect(() => {
@@ -121,7 +127,11 @@ const MainContent: React.FC = () => {
 
   const handleFormCreated = (newSheetId: string) => {
     setActiveSheetId(newSheetId);
-    navigateTo('database');
+    // Back to the catalog, replacing the builder in history rather than
+    // stacking on it, so Back does not reopen a form that is already saved.
+    setViewHistory(h => (h[h.length - 1] === 'sheets' ? h.slice(0, -1) : h));
+    setCurrentView('sheets');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const pendingAlertCount = useMemo(() => {
@@ -197,6 +207,10 @@ const MainContent: React.FC = () => {
               <OperationalSheetsHub
                 onSelectSheet={handleSelectSheetFromHub}
                 onOpenCreateForm={() => navigateTo('createForm')}
+                onEditForm={(sheetId) => {
+                  setEditFormId(sheetId);
+                  navigateTo('createForm');
+                }}
                 onOpenDatabase={handleOpenDatabaseForSheet}
                 onBack={handleGoBack}
               />
@@ -242,11 +256,9 @@ const MainContent: React.FC = () => {
             )}
 
             {currentView === 'createForm' && (
-              <CreateNewFormModal
-                isOpen={true}
-                onClose={handleGoBack}
-                onFormCreated={handleFormCreated}
-              />
+              caps.canEditSchema
+                ? <FormBuilder key={editFormId ?? 'new'} editSheetId={editFormId} onClose={handleGoBack} onSaved={handleFormCreated} />
+                : <AccessDenied what="the form builder" onBack={handleGoBack} />
             )}
 
             {currentView === 'diesel' && (

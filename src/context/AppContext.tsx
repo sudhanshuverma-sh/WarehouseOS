@@ -132,6 +132,11 @@ interface AppContextType {
   sheetRecords: Record<string, any[]>;
   addSheetRecord: (sheetId: string, recordData: Record<string, any>) => Promise<{ ok: boolean; id: string; message: string }>;
   addOperationalSheet: (sheetDef: OperationalSheetDef) => Promise<{ ok: boolean; message: string }>;
+  /** Renames a form, changes how often it is filed, and replaces its questions. */
+  updateOperationalSheet: (
+    sheetId: string,
+    changes: { title: string; cadence: ServiceRegistry['Cadence']; description?: string; fields: FieldDefinition[] }
+  ) => Promise<{ ok: boolean; message: string }>;
   exportSheetData: (sheetId: string, format: 'csv' | 'json') => void;
 
   // Sheet Column & Schema Customization
@@ -1646,12 +1651,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addOperationalSheetLocal = (sheetDef: OperationalSheetDef) => {
-    setOperationalSheets(prev => [...prev, sheetDef]);
+    const code = serviceCodeFor(sheetDef.id);
+    setOperationalSheets(prev => [...prev.filter(s => s.id !== sheetDef.id), sheetDef]);
+    // The Control Room and POC desk list services from the registry. An empty
+    // registry means Master Data is not loaded and they fall back to the
+    // built-in list, which a single added row would otherwise hide.
+    setServiceRegistryRows(prev =>
+      prev.length === 0 || prev.some(r => r.Service_Code === code)
+        ? prev
+        : [
+            ...prev,
+            {
+              Service_Code: code,
+              Service_Name: sheetDef.title,
+              Needs_Approval: 'No',
+              Needs_Delivery_Validation: 'No',
+              Requires_Evidence: 'No',
+              Cadence: cadenceFor(sheetDef.frequency),
+              Submission_Window: '',
+              SLA_Hours: '',
+              AppScript_URL: '',
+              Records_Tab: '',
+              Audit_Tab: '',
+              Active: 'Yes',
+              Last_Updated_By: currentUser.email ?? '',
+              Last_Updated_At: new Date().toISOString()
+            }
+          ]
+    );
     setNotification({
       type: 'success',
-      message: `New Form "${sheetDef.title}" created & added to Operational Sheets!`
+      message: `"${sheetDef.title}" is published. POCs at its sites can fill it now.`
     });
-    return { ok: true, message: 'Form created successfully.' };
+    return { ok: true, message: 'Form published.' };
+  };
+
+  const updateOperationalSheetLocal: AppContextType['updateOperationalSheet'] = async (sheetId, changes) => {
+    const code = serviceCodeFor(sheetId);
+    setOperationalSheets(prev =>
+      prev.map(s =>
+        s.id === sheetId
+          ? {
+              ...s,
+              title: changes.title,
+              frequency: changes.cadence,
+              description: changes.description || s.description,
+              fieldsConfig: changes.fields,
+              fieldsCount: changes.fields.length
+            }
+          : s
+      )
+    );
+    setServiceRegistryRows(prev =>
+      prev.map(r => (r.Service_Code === code ? { ...r, Service_Name: changes.title, Cadence: changes.cadence } : r))
+    );
+    setNotification({ type: 'success', message: `"${changes.title}" saved. POCs get the new questions now.` });
+    return { ok: true, message: 'Form saved.' };
   };
 
   const exportSheetData = (sheetId: string, format: 'csv' | 'json') => {
@@ -3278,7 +3333,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (dataMode !== 'api') return addOperationalSheetLocal(sheetDef);
     const code = serviceCodeFor(sheetDef.id);
     try {
-      await api.post('/master/services', {
+      const saved = await api.post<ServiceRegistry>('/master/services', {
         Service_Code: code,
         Service_Name: sheetDef.title,
         Cadence: cadenceFor(sheetDef.frequency),
@@ -3288,9 +3343,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         Active: 'Yes'
       });
       await api.put(`/services/${code}/form`, { fields: sheetDef.fieldsConfig ?? [] });
+      // The saved row, so the Control Room and POC desk list it without a reload.
+      setServiceRegistryRows(prev => [...prev.filter(r => r.Service_Code !== code), saved]);
       return addOperationalSheetLocal(sheetDef);
     } catch (err) {
       notify('error', 'Form not created', errorText(err));
+      return { ok: false, message: errorText(err) };
+    }
+  };
+
+  const updateOperationalSheet: AppContextType['updateOperationalSheet'] = async (sheetId, changes) => {
+    if (dataMode !== 'api') return updateOperationalSheetLocal(sheetId, changes);
+    const code = serviceCodeFor(sheetId);
+    try {
+      const registered = serviceRegistryRows.find(r => r.Service_Code === code);
+      if (registered && (registered.Service_Name !== changes.title || registered.Cadence !== changes.cadence)) {
+        await api.patch(`/master/services/${code}`, { Service_Name: changes.title, Cadence: changes.cadence });
+      }
+      await api.put(`/services/${code}/form`, { fields: changes.fields });
+      return updateOperationalSheetLocal(sheetId, changes);
+    } catch (err) {
+      notify('error', 'Form not saved', errorText(err));
       return { ok: false, message: errorText(err) };
     }
   };
@@ -3387,6 +3460,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         sheetRecords,
         addSheetRecord,
         addOperationalSheet,
+        updateOperationalSheet,
         exportSheetData,
         updateSheetColumns,
         addColumnToSheet,

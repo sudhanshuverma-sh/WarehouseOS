@@ -300,6 +300,8 @@ interface AppContextType {
   dataMode: DataMode;
   /** Set when the API answered but this person cannot use the app: not signed in, no access row, server down. */
   accessProblem: ApiError | null;
+  /** EB-DG entries (site + date) for the Control Room. */
+  ebdgRows: { Site_Code: string; Date: string }[];
 
   // Reset & Notifications
   resetToDefaultData: () => void;
@@ -342,6 +344,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // whether anything is written to this browser at all.
   const [dataMode, setDataMode] = useState<DataMode>('loading');
   const [accessProblem, setAccessProblem] = useState<ApiError | null>(null);
+  /** EB-DG entries (site + date) — what the Control Room needs to mark EB-DG done. */
+  const [ebdgRows, setEbdgRows] = useState<{ Site_Code: string; Date: string }[]>([]);
 
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'users');
@@ -3025,10 +3029,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     void load<DieselLog[]>('/diesel?limit=5000', setDieselLogs, 'diesel requests');
     void load<Vendor[]>('/vendors', setVendors, 'vendors');
     void load<DailySiteLog[]>('/daily-site?limit=2000', setDailySiteLogs, 'daily site reports');
+    // This month's EB-DG entries — enough for the Control Room's daily status.
+    void load<{ Site_Code: string; Date: string }[]>(
+      `/ebdg/rows?from=${new Date().toISOString().slice(0, 7)}-01&limit=5000`,
+      setEbdgRows,
+      'EB-DG entries'
+    );
     return () => {
       cancelled = true;
     };
   }, [dataMode, accessProblem]);
+
+  // Demo mode: EB-DG entries live in the EB-DG form's own browser storage.
+  useEffect(() => {
+    if (dataMode !== 'demo') return;
+    const rows: { Site_Code: string; Date: string }[] = [];
+    for (const key of ['wos_ebdg_EB_DG_B2B_rows', 'wos_ebdg_EB_DG_B2C_rows']) {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+        if (Array.isArray(parsed)) rows.push(...parsed);
+      } catch {
+        /* unreadable demo data counts as none */
+      }
+    }
+    setEbdgRows(rows);
+  }, [dataMode]);
 
   const submitDieselProcurement: AppContextType['submitDieselProcurement'] = async data => {
     if (dataMode !== 'api') return submitDieselProcurementLocal(data);
@@ -3168,6 +3193,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (s.Sheet_Mirror_URL) links[sheetIdFor(s.Service_Code)] = s.Sheet_Mirror_URL;
         }
         if (!cancelled) setSheetWebhookUrls(links);
+        // The Control Room lists every site and every service from Master
+        // Data, so both are loaded for everyone, not only on the Master Data
+        // screen. Site and service catalogues are readable by any signed-in user.
+        if (!cancelled) setServiceRegistryRows(services);
+        api
+          .get<SiteMaster[]>('/master/sites')
+          .then(rows => {
+            if (!cancelled) setSiteMasterRows(rows);
+          })
+          .catch(err => {
+            if (!cancelled) notify('error', 'Could not load sites', errorText(err));
+          });
         const builtInCodes = new Set([...Object.values(SHEET_TO_SERVICE), 'CHECKLIST']);
         const formFor = (code: string) =>
           api.get<{ fields: FieldDefinition[] }>(`/services/${code}/form`).then(f => f.fields).catch(() => [] as FieldDefinition[]);
@@ -3415,7 +3452,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setNotification,
         notify,
         dataMode,
-        accessProblem
+        accessProblem,
+        ebdgRows
       }}
     >
       {children}

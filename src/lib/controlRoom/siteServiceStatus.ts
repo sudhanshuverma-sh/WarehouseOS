@@ -64,11 +64,21 @@ export interface SiteStatus {
 }
 
 export interface ControlRoomRecords {
-  dailySiteLogs: Pick<DailySiteLog, 'site' | 'date'>[];
-  dieselLogs: Pick<DieselLog, 'warehouseId' | 'timestamp'>[];
-  ebdgRows: { Site_Code?: string; Date?: string }[];
-  submissions: Pick<TaskSubmission, 'warehouseId' | 'submissionDate'>[];
-  sheetRecords: Record<string, { warehouseId?: string; site?: string; date?: string }[]>;
+  dailySiteLogs: (Pick<DailySiteLog, 'site' | 'date'> & { timestamp?: string; pocName?: string })[];
+  dieselLogs: (Pick<DieselLog, 'warehouseId' | 'timestamp'> & { submittedByName?: string })[];
+  ebdgRows: { Site_Code?: string; Date?: string; Timestamp?: string; Submitted_By?: string }[];
+  submissions: (Pick<TaskSubmission, 'warehouseId' | 'submissionDate'> & { submittedAt?: string; submittedByName?: string })[];
+  sheetRecords: Record<string, { warehouseId?: string; site?: string; date?: string; submittedAt?: string; submittedByName?: string }[]>;
+}
+
+/** One filed record, reduced to what a status screen needs. */
+export interface Filing {
+  code: string;
+  site: string;
+  day: string;
+  /** When it was filed (timestamp), or the day when no time was recorded. */
+  at: string;
+  by: string;
 }
 
 const CADENCES: Cadence[] = ['DAILY', 'WEEKLY', 'MONTHLY', 'EVENT_DRIVEN'];
@@ -200,26 +210,41 @@ type RecordIndex = Map<string, Map<string, string[]>>;
 
 const DEDICATED = new Set(['SITE_ACTIVITY', 'DIESEL', 'EB_DG', 'CHECKLIST']);
 
-export function indexRecords(records: ControlRoomRecords): RecordIndex {
-  const index: RecordIndex = new Map();
-  const add = (code: string, site: string | undefined, day: string | undefined) => {
+/** Every filed record across all sources, as (service, site, day, when, by). */
+export function allFilings(records: ControlRoomRecords): Filing[] {
+  const out: Filing[] = [];
+  const add = (code: string, site: string | undefined, day: string | undefined, at?: string, by?: string) => {
     if (!site || !day) return;
-    const bySite = index.get(code) ?? new Map<string, string[]>();
-    const days = bySite.get(site) ?? [];
-    days.push(day.slice(0, 10));
-    bySite.set(site, days);
-    index.set(code, bySite);
+    out.push({ code, site, day: day.slice(0, 10), at: at || day.slice(0, 10), by: by || '' });
   };
 
-  for (const l of records.dailySiteLogs) add('SITE_ACTIVITY', l.site, l.date);
-  for (const l of records.dieselLogs) add('DIESEL', l.warehouseId, indiaDay(l.timestamp));
-  for (const r of records.ebdgRows) add('EB_DG', r.Site_Code, r.Date);
-  for (const s of records.submissions) add('CHECKLIST', s.warehouseId, s.submissionDate);
+  for (const l of records.dailySiteLogs) add('SITE_ACTIVITY', l.site, l.date, l.timestamp, l.pocName);
+  for (const l of records.dieselLogs) add('DIESEL', l.warehouseId, indiaDay(l.timestamp), l.timestamp, l.submittedByName);
+  for (const r of records.ebdgRows) add('EB_DG', r.Site_Code, r.Date, r.Timestamp, r.Submitted_By);
+  for (const s of records.submissions) add('CHECKLIST', s.warehouseId, s.submissionDate, s.submittedAt, s.submittedByName);
   for (const [sheetId, rows] of Object.entries(records.sheetRecords)) {
     const code = serviceCodeFor(sheetId);
     // The old power/water sheet still counts as EB-DG filings.
     if (DEDICATED.has(code) && sheetId !== 'SHEET_DG_POWER_WATER') continue;
-    for (const r of rows ?? []) add(code, r.warehouseId || r.site, r.date);
+    for (const r of rows ?? []) add(code, r.warehouseId || r.site, r.date, r.submittedAt, r.submittedByName);
+  }
+  return out;
+}
+
+/** One service's filings, newest first. */
+export const filingsFor = (code: string, records: ControlRoomRecords): Filing[] =>
+  allFilings(records)
+    .filter((f) => f.code === code)
+    .sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at));
+
+export function indexRecords(records: ControlRoomRecords): RecordIndex {
+  const index: RecordIndex = new Map();
+  for (const f of allFilings(records)) {
+    const bySite = index.get(f.code) ?? new Map<string, string[]>();
+    const days = bySite.get(f.site) ?? [];
+    days.push(f.day);
+    bySite.set(f.site, days);
+    index.set(f.code, bySite);
   }
   return index;
 }

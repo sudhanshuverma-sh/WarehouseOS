@@ -7,6 +7,7 @@ import {
   computeSiteStatuses,
   controlRoomServices,
   controlRoomSites,
+  filingsFor,
   inChannel,
   lastDays,
   periodFor,
@@ -95,6 +96,25 @@ describe('services', () => {
     expect(list.find((s) => s.code === 'HOUSEKEEPING')?.name).toBe('Housekeeping Roster');
     expect(list.find((s) => s.code === 'DIESEL')?.cadence).toBe('EVENT_DRIVEN');
     expect(list.filter((s) => s.code === 'EB_DG')).toHaveLength(1);
+  });
+});
+
+describe('filingsFor', () => {
+  it('lists one service’s filings newest first, with who filed and when', () => {
+    const records: ControlRoomRecords = {
+      ...noRecords(),
+      dailySiteLogs: [
+        { site: 'ZHPL-HR-03', date: '2026-09-14', timestamp: '2026-09-14T04:00:00Z', pocName: 'Asha' },
+        { site: 'ZHPL-DL-01', date: TODAY, timestamp: '2026-09-15T05:00:00Z', pocName: 'Ravi' },
+      ],
+      sheetRecords: { SHEET_HOUSEKEEPING: [{ warehouseId: 'ZHPL-HR-03', date: TODAY, submittedByName: 'Asha' }] },
+    };
+    expect(filingsFor('SITE_ACTIVITY', records)).toEqual([
+      { code: 'SITE_ACTIVITY', site: 'ZHPL-DL-01', day: TODAY, at: '2026-09-15T05:00:00Z', by: 'Ravi' },
+      { code: 'SITE_ACTIVITY', site: 'ZHPL-HR-03', day: '2026-09-14', at: '2026-09-14T04:00:00Z', by: 'Asha' },
+    ]);
+    // No timestamp recorded: the day stands in for "when".
+    expect(filingsFor('HOUSEKEEPING', records)).toEqual([{ code: 'HOUSEKEEPING', site: 'ZHPL-HR-03', day: TODAY, at: TODAY, by: 'Asha' }]);
   });
 });
 

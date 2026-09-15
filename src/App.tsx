@@ -251,7 +251,11 @@ const MainContent: React.FC = () => {
             {currentView === 'database' && (
               <SheetDataExplorer
                 onBack={handleGoBack}
-                onNavigateToCreateForm={() => navigateTo('createForm')}
+                onNavigateTab={navigateTo}
+                onEditForm={(sheetId) => {
+                  setEditFormId(sheetId);
+                  navigateTo('createForm');
+                }}
               />
             )}
 

@@ -6,7 +6,9 @@ import {
   controlRoomServices,
   controlRoomSites,
   inChannel,
+  lastDays,
   periodFor,
+  siteProgressByDay,
   sortByAttention,
   summarise,
   type ControlRoomRecords,
@@ -65,6 +67,19 @@ describe('services', () => {
     expect(list.find((s) => s.code === 'HOUSEKEEPING')?.name).toBe('Housekeeping Roster');
     expect(list.find((s) => s.code === 'DIESEL')?.cadence).toBe('EVENT_DRIVEN');
     expect(list.filter((s) => s.code === 'EB_DG')).toHaveLength(1);
+  });
+});
+
+describe('a site’s week', () => {
+  it('lists the last days oldest first and counts each day on its own', () => {
+    expect(lastDays(TODAY, 3)).toEqual(['2026-09-13', '2026-09-14', '2026-09-15']);
+    const [s] = controlRoomSites([site({ Services_Enabled: 'SITE_ACTIVITY,DIESEL' })], []);
+    const svc = controlRoomServices([service('SITE_ACTIVITY', 'DAILY'), service('DIESEL', 'EVENT_DRIVEN')], []);
+    const records = { ...noRecords(), dailySiteLogs: [{ site: 'ZHPL-HR-03', date: '2026-09-14' }] };
+    expect(siteProgressByDay(s, svc, records, lastDays(TODAY, 2))).toEqual([
+      { day: '2026-09-14', done: 1, due: 1 },
+      { day: '2026-09-15', done: 0, due: 1 },
+    ]);
   });
 });
 

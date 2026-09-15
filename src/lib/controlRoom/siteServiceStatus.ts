@@ -221,6 +221,24 @@ export function computeSiteStatuses(
   });
 }
 
+/** The last `days` India days ending on `today`, oldest first. */
+export function lastDays(today: string, days: number): string[] {
+  return Array.from({ length: days }, (_, i) => shift(today, i - (days - 1)));
+}
+
+/** One site's done / due for each of the given days — the POC's week strip. */
+export function siteProgressByDay(
+  site: ControlRoomSite,
+  services: ControlRoomService[],
+  records: ControlRoomRecords,
+  days: string[],
+): { day: string; done: number; due: number }[] {
+  return days.map((day) => {
+    const [s] = computeSiteStatuses([site], services, records, day);
+    return { day, done: s.done, due: s.due };
+  });
+}
+
 const STATE_RANK: Record<SiteState, number> = { 'not-started': 0, partial: 1, complete: 2 };
 
 /** What needs attention first: not started, then in progress, then complete; then by name. */

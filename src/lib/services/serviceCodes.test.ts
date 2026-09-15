@@ -20,10 +20,12 @@ describe('service codes', () => {
     expect(seeded.size).toBeGreaterThan(10);
   });
 
-  it('maps every sheet the POC filing desk offers to a service the database knows', () => {
-    const keys = [...read('src/components/POCFilingView.tsx').matchAll(/sheetKey: '([A-Z_]+)'/g)].map((m) => m[1]);
-    expect(keys.length).toBeGreaterThan(5);
-    for (const key of keys) expect(seeded, `${key} → ${serviceCodeFor(key)}`).toContain(serviceCodeFor(key));
+  it('sends only services the database knows to their own forms from the POC filing desk', () => {
+    const src = read('src/components/POCFilingView.tsx');
+    const block = src.slice(src.indexOf('const DEDICATED_VIEW'), src.indexOf('};', src.indexOf('const DEDICATED_VIEW')));
+    const codes = [...block.matchAll(/^\s+([A-Z_]+):/gm)].map((m) => m[1]);
+    expect(codes.length).toBeGreaterThan(4);
+    for (const code of codes) expect(seeded, code).toContain(code);
   });
 
   it('maps every built-in operational sheet', () => {

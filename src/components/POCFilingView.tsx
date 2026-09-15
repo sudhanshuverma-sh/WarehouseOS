@@ -22,9 +22,11 @@ import {
 import { useApp } from '../context/AppContext';
 import { canSeeSite, capabilitiesFor } from '../lib/permissions';
 import {
+  appWarehouseIdFor,
   computeSiteStatuses,
   controlRoomServices,
   controlRoomSites,
+  siteMatches,
   indiaDay,
   lastDays,
   siteProgressByDay,
@@ -127,18 +129,20 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
 
   const caps = useMemo(() => capabilitiesFor(currentUser), [currentUser]);
 
-  // Sites this person may file for — their own, never anyone else's.
+  // Sites this person may file for — their own, never anyone else's. Matched
+  // by every name the site goes by, so a POC whose account says
+  // WH_AP_VIZAG_B2C finds the Site_Master site ZHPL-AP-01.
   const mySites = useMemo(
     () =>
       controlRoomSites(siteMasterRows, warehouses).filter(
-        (s) => caps.canViewAllSites || canSeeSite(caps, s.id) || (s.whCode && canSeeSite(caps, s.whCode)),
+        (s) => caps.canViewAllSites || s.aliases.some((a) => canSeeSite(caps, a)),
       ),
     [siteMasterRows, warehouses, caps],
   );
 
   const [pickedSite, setPickedSite] = useState<string>('');
   const site: ControlRoomSite | undefined = useMemo(() => {
-    const byId = (id: string) => mySites.find((s) => s.id === id || s.whCode === id);
+    const byId = (id: string) => mySites.find((s) => siteMatches(s, id));
     return (
       byId(pickedSite) ??
       (caps.siteScope !== 'ALL' ? byId(caps.siteScope[0]) : undefined) ??
@@ -172,7 +176,7 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
 
   const recent = useMemo(() => {
     if (!site) return [];
-    const mine = (id?: string) => Boolean(id) && (id === site.id || (site.whCode !== '' && id === site.whCode));
+    const mine = (id?: string) => siteMatches(site, id);
     const rows: { service: string; at: string; by: string }[] = [
       ...dailySiteLogs.filter((l) => mine(l.site)).map((l) => ({ service: serviceName.get('SITE_ACTIVITY') ?? 'Daily Site Report', at: l.timestamp || l.date, by: l.pocName })),
       ...dieselLogs.filter((l) => mine(l.warehouseId)).map((l) => ({ service: `${serviceName.get('DIESEL') ?? 'Diesel'} · ${l.uniqueId}`, at: l.timestamp, by: l.submittedByName || '' })),
@@ -206,7 +210,8 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
     if (!site) return;
     const view = DEDICATED_VIEW[s.code];
     if (view && onNavigateToForm) {
-      setSelectedWarehouseId(site.id);
+      // The dedicated forms look the site up in the app's warehouse list.
+      setSelectedWarehouseId(appWarehouseIdFor(site, warehouses));
       onNavigateToForm(view);
       return;
     }
@@ -277,11 +282,15 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
         {mySites.length > 1 ? (
           <label className="flex items-center gap-2 text-xs text-slate-500">
             <MapPin className="w-3.5 h-3.5" />
+            {caps.canViewAllSites && !pickedSite && selectedWarehouseId === 'ALL' && (
+              <span className="text-(--color-due) font-semibold">Choose a site</span>
+            )}
             <select
               value={site.id}
               onChange={(e) => {
                 setPickedSite(e.target.value);
-                setSelectedWarehouseId(e.target.value);
+                const chosen = mySites.find((s) => s.id === e.target.value);
+                if (chosen) setSelectedWarehouseId(appWarehouseIdFor(chosen, warehouses));
               }}
               className="h-9 pl-2.5 pr-8 text-sm font-semibold text-slate-900 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-slate-400"
             >

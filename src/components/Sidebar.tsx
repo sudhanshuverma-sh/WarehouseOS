@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useApp } from '../context/AppContext';
+import { controlRoomSites, siteMatches } from '../lib/controlRoom/siteServiceStatus';
 import {
   LayoutDashboard,
   ClipboardCheck,
@@ -40,7 +41,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
     currentDate,
     resetToDefaultData,
     isServiceAccessible,
-    dataMode
+    dataMode,
+    serviceRegistryRows,
+    siteMasterRows
   } = useApp();
 
   const [isPinned, setIsPinned] = useState<boolean>(() => {
@@ -99,7 +102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
             {
               id: 'pocFiling',
               label: 'POC Daily Filing Desk',
-              subLabel: 'One-Tap 15-Service Hub',
+              subLabel: "Your site's services",
               icon: Smartphone,
               badge: 'Fast Filing',
               highlight: true
@@ -167,10 +170,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
             },
             {
               id: 'sheets',
-              label: '15 Operational Sheets',
+              label: 'Operational Sheets',
               subLabel: 'Service Catalog & Hub',
               icon: Layers,
-              badge: '15 Sheets'
+              badge: 'Sheets'
             },
             {
               id: 'diesel',
@@ -249,10 +252,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
           },
           {
             id: 'sheets',
-            label: '15 Operational Sheets',
+            label: 'Operational Sheets',
             subLabel: 'Catalog & Master Registry',
             icon: Layers,
-            badge: '15 Sheets'
+            badge: 'Sheets'
           },
           {
             id: 'diesel',
@@ -339,30 +342,53 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
    * Anything absent here (dashboards, explorers, master data) is governed by
    * the role branches above, not by service scope.
    */
-  const NAV_SERVICE = useMemo<Record<string, string>>(() => ({
-    dailyForm: 'SHEET_DAILY_SITE',
-    housekeeping: 'SHEET_HOUSEKEEPING',
-    dgPower: 'SHEET_EB_DG',
-    washing: 'SHEET_WASHING',
-    diesel: 'SHEET_DIESEL'
+  const NAV_SERVICE = useMemo<Record<string, { sheetId: string; codes: string[] }>>(() => ({
+    dailyForm: { sheetId: 'SHEET_DAILY_SITE', codes: ['SITE_ACTIVITY'] },
+    housekeeping: { sheetId: 'SHEET_HOUSEKEEPING', codes: ['HOUSEKEEPING'] },
+    dgPower: { sheetId: 'SHEET_EB_DG', codes: ['EB_DG'] },
+    washing: { sheetId: 'SHEET_WASHING', codes: ['WASHING', 'ADHOC'] },
+    diesel: { sheetId: 'SHEET_DIESEL', codes: ['DIESEL'] }
   }), []);
 
+  /** Active services in Master Data → Service_Registry. Empty until it is loaded. */
+  const registeredCodes = useMemo(
+    () => new Set(serviceRegistryRows.filter(s => s.Active === 'Yes').map(s => s.Service_Code)),
+    [serviceRegistryRows]
+  );
+
+  /** The services enabled at a pinned person's site (Site_Master Services_Enabled). */
+  const siteServices = useMemo<'ALL' | string[]>(() => {
+    if (currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'SERVICE_ADMIN') return 'ALL';
+    const own = [currentUser.warehouseId, ...(currentUser.siteCodes ?? [])].filter(Boolean) as string[];
+    const sites = controlRoomSites(siteMasterRows, warehouses).filter(s => own.some(id => siteMatches(s, id)));
+    if (sites.length === 0 || sites.some(s => s.services === 'ALL')) return 'ALL';
+    return [...new Set(sites.flatMap(s => s.services as string[]))];
+  }, [currentUser.role, currentUser.warehouseId, currentUser.siteCodes, siteMasterRows, warehouses]);
+
   /**
-   * Services-wise nav: a site POC is only offered the services actually
-   * enabled at their warehouse. Listing a form the site does not run invites
-   * a filing that nobody is expecting.
+   * Service links follow Master Data: a link shows only for a service that is
+   * active in Service_Registry, enabled at the person's site, and in their
+   * own grants. Before the registry is loaded, the older scope check applies.
    */
   const scopedNavItems = useMemo(() => {
+    const held = currentUser.serviceCodes;
     return navItems
       .map(group => ({
         ...group,
         items: group.items.filter(item => {
-          const sheetId = NAV_SERVICE[item.id];
-          return !sheetId || isServiceAccessible(sheetId);
+          const nav = NAV_SERVICE[item.id];
+          if (!nav) return true;
+          if (registeredCodes.size === 0) return isServiceAccessible(nav.sheetId);
+          return nav.codes.some(
+            code =>
+              registeredCodes.has(code) &&
+              (!held || held === 'ALL' || held.includes(code)) &&
+              (siteServices === 'ALL' || siteServices.includes(code))
+          );
         })
       }))
       .filter(group => group.items.length > 0);
-  }, [navItems, NAV_SERVICE, isServiceAccessible]);
+  }, [navItems, NAV_SERVICE, isServiceAccessible, registeredCodes, siteServices, currentUser.serviceCodes]);
 
   // The rail shows icons only; the flyout carries the labels. Flattening here
   // keeps the icon order identical to the labelled list, so the two never

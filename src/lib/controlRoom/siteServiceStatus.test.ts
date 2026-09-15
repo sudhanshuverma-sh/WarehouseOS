@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { Warehouse } from '../../types';
 import type { ServiceRegistry, SiteMaster } from '../../types/masterData';
 import {
+  appWarehouseIdFor,
+  siteMatches,
   computeSiteStatuses,
   controlRoomServices,
   controlRoomSites,
@@ -46,7 +48,33 @@ describe('sites', () => {
 
   it('falls back to the warehouse list when Master Data is not loaded', () => {
     const sites = controlRoomSites([], [{ id: 'WH_AP_VIZAG_B2C', code: 'VZG', name: 'Vizag WHS', city: 'Visakhapatnam', zone: 'South', channel: 'B2C', isActive: true } as Warehouse]);
-    expect(sites).toEqual([{ id: 'WH_AP_VIZAG_B2C', whCode: 'VZG', name: 'Vizag WHS', city: 'Visakhapatnam', zone: 'South', channel: 'B2C', services: 'ALL' }]);
+    expect(sites).toEqual([
+      { id: 'WH_AP_VIZAG_B2C', whCode: 'VZG', name: 'Vizag WHS', city: 'Visakhapatnam', zone: 'South', channel: 'B2C', services: 'ALL', aliases: ['WH_AP_VIZAG_B2C', 'VZG'] },
+    ]);
+  });
+
+  it('knows a Site_Master site by the app warehouse that is the same place', () => {
+    const vizagWh = { id: 'WH_AP_VIZAG_B2C', code: 'Vizag', sapCode: '1510953B24', name: 'Vizag WHS', city: 'Visakhapatnam', isActive: true } as Warehouse;
+    const other = { id: 'WH_DL_01', code: '', sapCode: '', name: 'Delhi', isActive: true } as Warehouse;
+    const [byWh] = controlRoomSites([site({ Site_Code: 'ZHPL-AP-01', WH_Code: 'vizag', SAP_Code: '', City: '' } as Partial<SiteMaster>)], [vizagWh, other]);
+    expect(byWh.aliases).toEqual(['ZHPL-AP-01', 'vizag', 'WH_AP_VIZAG_B2C', 'Vizag']);
+    expect(byWh.city).toBe('Visakhapatnam');
+    expect(siteMatches(byWh, 'wh_ap_vizag_b2c')).toBe(true);
+    expect(siteMatches(byWh, 'WH_DL_01')).toBe(false);
+    expect(appWarehouseIdFor(byWh, [vizagWh, other])).toBe('WH_AP_VIZAG_B2C');
+
+    const [bySap] = controlRoomSites([site({ Site_Code: 'ZHPL-AP-01', WH_Code: 'X', SAP_Code: '1510953B24' } as Partial<SiteMaster>)], [vizagWh, other]);
+    expect(siteMatches(bySap, 'WH_AP_VIZAG_B2C')).toBe(true);
+    // Blank codes never match a warehouse with blank codes.
+    expect(siteMatches(bySap, 'WH_DL_01')).toBe(false);
+  });
+
+  it('counts records filed under the app warehouse id for the Site_Master site', () => {
+    const vizagWh = { id: 'WH_AP_VIZAG_B2C', code: 'Vizag', sapCode: '1510953B24', isActive: true } as Warehouse;
+    const sites = controlRoomSites([site({ Site_Code: 'ZHPL-AP-01', WH_Code: 'Vizag' })], [vizagWh]);
+    const services = controlRoomServices([service('SITE_ACTIVITY', 'DAILY')], []);
+    const [s] = computeSiteStatuses(sites, services, { ...noRecords(), dailySiteLogs: [{ site: 'WH_AP_VIZAG_B2C', date: TODAY }] }, TODAY);
+    expect(s).toMatchObject({ done: 1, due: 1, state: 'complete' });
   });
 
   it('puts BOTH sites under B2B and B2C', () => {

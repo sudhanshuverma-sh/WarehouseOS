@@ -31,6 +31,12 @@ export interface ControlRoomSite {
   channel: 'B2B' | 'B2C' | 'BOTH';
   /** 'ALL', or the service codes enabled at this site. */
   services: 'ALL' | string[];
+  /**
+   * Every id this site is known by: its Site_Code, WH_Code and SAP_Code, and
+   * the id/code of the app warehouse that is the same place. Records, users
+   * and filters written with any of them count for this site.
+   */
+  aliases: string[];
 }
 
 export interface ControlRoomService {
@@ -80,19 +86,38 @@ function parseServices(raw: string | undefined): 'ALL' | string[] {
 
 const asChannel = (c: string | undefined): ControlRoomSite['channel'] => (c === 'B2B' || c === 'B2C' ? c : 'BOTH');
 
+const norm = (v: unknown) => String(v ?? '').trim().toLowerCase();
+const uniq = (values: (string | undefined)[]) => [...new Set(values.map((v) => String(v ?? '').trim()).filter(Boolean))];
+
+/**
+ * The app warehouses that are this Site_Master site: same WH_Code (warehouse
+ * `code`) or same SAP_Code (warehouse `sapCode`). The demo users and records
+ * use warehouse ids like WH_AP_VIZAG_B2C while Site_Master calls the same
+ * place ZHPL-AP-01; this is the join between them.
+ */
+function sameWarehouses(site: SiteMaster, warehouses: Warehouse[]): Warehouse[] {
+  const wh = norm(site.WH_Code);
+  const sap = norm(site.SAP_Code);
+  return warehouses.filter((w) => (wh && norm(w.code) === wh) || (sap && norm(w.sapCode) === sap));
+}
+
 /** Active Site_Master sites; the app's warehouse list only when none are loaded. */
 export function controlRoomSites(siteMaster: SiteMaster[], warehouses: Warehouse[]): ControlRoomSite[] {
   const active = siteMaster.filter((s) => s.Active === 'Yes' && s.Site_Code && s.Site_Code !== 'ALL');
   if (active.length) {
-    return active.map((s) => ({
-      id: s.Site_Code,
-      whCode: s.WH_Code || '',
-      name: s.Facility_Name || s.WH_Code || s.Site_Code,
-      city: s.City || s.State || '',
-      zone: s.Zone || '',
-      channel: asChannel(s.Channel),
-      services: parseServices(s.Services_Enabled),
-    }));
+    return active.map((s) => {
+      const matches = sameWarehouses(s, warehouses);
+      return {
+        id: s.Site_Code,
+        whCode: s.WH_Code || '',
+        name: s.Facility_Name || s.WH_Code || s.Site_Code,
+        city: s.City || matches[0]?.city || s.State || '',
+        zone: s.Zone || '',
+        channel: asChannel(s.Channel),
+        services: parseServices(s.Services_Enabled),
+        aliases: uniq([s.Site_Code, s.WH_Code, s.SAP_Code, ...matches.flatMap((w) => [w.id, w.code])]),
+      };
+    });
   }
   return warehouses
     .filter((w) => w.isActive !== false)
@@ -104,8 +129,17 @@ export function controlRoomSites(siteMaster: SiteMaster[], warehouses: Warehouse
       zone: w.zone || '',
       channel: asChannel(w.channel),
       services: 'ALL' as const,
+      aliases: uniq([w.id, w.code]),
     }));
 }
+
+/** True when `id` is any of the names this site goes by. */
+export const siteMatches = (site: ControlRoomSite, id: string | undefined): boolean =>
+  Boolean(id) && site.aliases.some((a) => norm(a) === norm(id));
+
+/** The id the app's existing forms know this site by: its warehouse id, else the Site_Code. */
+export const appWarehouseIdFor = (site: ControlRoomSite, warehouses: Warehouse[]): string =>
+  warehouses.find((w) => siteMatches(site, w.id))?.id ?? site.id;
 
 /** Active Service_Registry services, in registry order; built-in services when none are loaded. */
 export function controlRoomServices(registry: ServiceRegistry[], sheets: { id: string; title: string }[]): ControlRoomService[] {
@@ -193,7 +227,7 @@ export function indexRecords(records: ControlRoomRecords): RecordIndex {
 function countFor(index: RecordIndex, code: string, site: ControlRoomSite, [from, to]: [string, string]): number {
   const bySite = index.get(code);
   if (!bySite) return 0;
-  const keys = new Set([site.id, site.whCode].filter(Boolean));
+  const keys = new Set(site.aliases.length ? site.aliases : [site.id, site.whCode].filter(Boolean));
   let n = 0;
   for (const key of keys) for (const day of bySite.get(key) ?? []) if (day >= from && day <= to) n++;
   return n;

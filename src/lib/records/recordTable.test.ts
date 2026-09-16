@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldDefinition } from '../../types';
-import { columnsFor, compareCells, dayOf, describeCell, humanizeKey, isStatusColumn, newestFirst, siteOf, statusTone } from './recordTable';
+import { columnsFor, compareCells, dayOf, describeCell, humanizeKey, isStatusColumn, newestFirst, siteOf, statusTone, withUnit } from './recordTable';
 
 describe('reading any service’s rows', () => {
   it('finds the site and day whatever the service calls them', () => {
@@ -42,6 +42,12 @@ describe('columnsFor', () => {
 
   it('shows the form’s questions before anything is filed', () => {
     expect(columnsFor([], fields).map((c) => c.key)).toEqual(['date', 'site', 'reading']);
+  });
+
+  it('does not repeat a unit the question already names', () => {
+    expect(withUnit('UPS Availability (%)', '%')).toBe('UPS Availability (%)');
+    expect(withUnit('Chiller temp', '°C')).toBe('Chiller temp (°C)');
+    expect(withUnit('Remarks')).toBe('Remarks');
   });
 
   it('labels keys for people', () => {

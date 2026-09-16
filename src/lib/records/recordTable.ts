@@ -51,6 +51,13 @@ export function humanizeKey(key: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/** 'Reading' + 'V' → 'Reading (V)'. A label that already names its unit is left as it is. */
+export function withUnit(label: string, unit?: string): string {
+  const u = unit?.trim();
+  if (!u) return label;
+  return label.toLowerCase().includes(`(${u.toLowerCase()})`) ? label : `${label} (${u})`;
+}
+
 /** Where a row's site, date and bookkeeping live; shown once, or not at all. */
 const HANDLED = new Set([
   'date', 'Date', 'site', 'warehouseId', 'Site_Code', 'shift',
@@ -72,7 +79,7 @@ export function columnsFor(rows: RecordRow[], fields: FieldDefinition[] = []): R
   for (const f of fields) {
     if (taken.has(f.key)) continue;
     taken.add(f.key);
-    columns.push({ key: f.key, label: f.unit ? `${f.label} (${f.unit})` : f.label, value: (r) => r[f.key] });
+    columns.push({ key: f.key, label: withUnit(f.label, f.unit), value: (r) => r[f.key] });
   }
   // Values saved under names the form no longer lists still show.
   for (const r of rows) {

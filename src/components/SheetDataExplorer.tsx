@@ -48,6 +48,7 @@ import type { DieselLog } from '../types';
 import { PageHeader } from './common/PageHeader';
 import { ExportPanel } from './common/ExportPanel';
 import { ColumnFilter } from './common/ColumnFilter';
+import { ColumnsMenu, DragHandle, ExpandButton, TableFullscreen, useColumnLayout, visibleColumns } from './common/TableTools';
 
 /**
  * Records: every entry filed in the app, one form at a time.
@@ -230,7 +231,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
   );
   const raw = useMemo(() => (service ? entriesOf(service.code) : []), [service, entriesOf]);
 
-  const columns: RecordColumn[] = useMemo(() => {
+  const allColumns: RecordColumn[] = useMemo(() => {
     // Diesel shows its Google Sheet's own headers and values.
     if (isDiesel) {
       return DIESEL_EXPORT.columns.map((c) => ({ key: c.header, label: c.header, value: (r: RecordRow) => c.value(r as unknown as DieselLog) }));
@@ -248,14 +249,22 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
     );
   }, [isDiesel, raw, fields, siteByCode]);
 
+  // Each form remembers its own column order and which columns are hidden.
+  const { layout, move, toggle, reset, dragProps, customised } = useColumnLayout(
+    `records:${service?.code ?? 'none'}`,
+    useMemo(() => allColumns.map((c) => c.key), [allColumns]),
+  );
+  const columns = useMemo(() => visibleColumns(allColumns, layout), [allColumns, layout]);
+  const [expanded, setExpanded] = useState(false);
+
   const viewRows: ViewRow[] = useMemo(
     () =>
       [...raw].sort(newestFirst).map((r) => {
         const v: ViewRow = { __row: r };
-        for (const c of columns) v[c.key] = c.value(r);
+        for (const c of allColumns) v[c.key] = c.value(r);
         return v;
       }),
-    [raw, columns],
+    [raw, allColumns],
   );
 
   const scoped = useMemo(() => {
@@ -301,7 +310,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
       siteOf: (v) => siteOf(v.__row),
       columns: isDiesel
         ? DIESEL_EXPORT.columns.map((c) => ({ ...c, value: (v: ViewRow) => c.value(v.__row as unknown as DieselLog) }))
-        : columns.map((c) => ({
+        : allColumns.map((c) => ({
             header: c.label,
             value: (v: ViewRow) => {
               const x = v[c.key];
@@ -311,7 +320,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
             },
           })),
     }),
-    [service, isDiesel, columns],
+    [service, isDiesel, allColumns],
   );
 
   const decide = async (row: RecordRow, approve: boolean) => {
@@ -496,32 +505,40 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
               </div>
 
               {/* Table */}
-              <div className="bg-white border border-slate-200 rounded-(--r-card) shadow-xs overflow-hidden">
-                <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100 text-xs text-slate-500">
+              <TableFullscreen expanded={expanded} onCollapse={() => setExpanded(false)}>
+              <div className={`bg-white border border-slate-200 rounded-(--r-card) shadow-xs overflow-hidden ${expanded ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100 text-xs text-slate-500">
                   <span>
                     <strong className="font-mono text-slate-900">{filtered.length}</strong>
                     {narrowed && <span className="font-mono"> of {viewRows.length}</span>} {filtered.length === 1 ? 'entry' : 'entries'}
                     {activeColumnFilters > 0 && `, ${activeColumnFilters} column ${activeColumnFilters === 1 ? 'filter' : 'filters'}`}
                   </span>
-                  {filtered.length > 0 && <span className="hidden sm:inline">Select a row to see the full entry.</span>}
+                  <span className="flex items-center gap-2">
+                    {filtered.length > 0 && <span className="hidden lg:inline">Select a row to see the full entry.</span>}
+                    <ColumnsMenu columns={allColumns} layout={layout} onMove={move} onToggle={toggle} onReset={reset} customised={customised} />
+                    <ExpandButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} />
+                  </span>
                 </div>
 
-                  <div className="overflow-auto max-h-[70vh]">
+                  <div className={`overflow-auto ${expanded ? 'flex-1 min-h-0' : 'max-h-[70vh]'}`}>
                     <table className="w-full text-xs">
                       <thead className="sticky top-0 z-10 bg-slate-50">
                         <tr>
                           {columns.map((c, ci) => {
                             const sorted = sort?.key === c.key ? sort.dir : null;
                             const SortIcon = sorted === 'asc' ? ArrowUp : sorted === 'desc' ? ArrowDown : ArrowUpDown;
+                            const drag = dragProps(c.key);
                             return (
                               <th
                                 key={c.key}
                                 scope="col"
+                                {...drag}
                                 aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'}
-                                className={`px-3 py-2.5 text-left align-bottom font-semibold text-slate-600 bg-slate-50 border-b border-slate-200 ${stickyCell(ci, true)}`}
+                                className={`px-3 py-2.5 text-left align-bottom font-semibold text-slate-600 bg-slate-50 border-b border-slate-200 select-none ${stickyCell(ci, true)} ${drag.className}`}
                               >
                                 {/* Long questions wrap onto two lines instead of stretching the column. */}
                                 <span className="flex items-end gap-1 min-w-20 max-w-40">
+                                  <DragHandle />
                                   <button
                                     type="button"
                                     onClick={() => toggleSort(c.key)}
@@ -630,6 +647,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
                   </div>
                 )}
               </div>
+              </TableFullscreen>
             </section>
           )}
         </div>
@@ -681,7 +699,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
             )}
 
             <dl className="flex-1 overflow-y-auto px-5 py-2 divide-y divide-slate-100">
-              {columns
+              {allColumns
                 .filter((c) => describeCell(openRow[c.key]).kind !== 'empty')
                 .map((c) => (
                   <div key={c.key} className="grid grid-cols-[8.5rem_minmax(0,1fr)] gap-3 py-2.5 text-xs">
@@ -692,7 +710,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
                   </div>
                 ))}
             </dl>
-            {columns.some((c) => describeCell(openRow[c.key]).kind === 'empty') && (
+            {allColumns.some((c) => describeCell(openRow[c.key]).kind === 'empty') && (
               <p className="px-5 py-3 border-t border-slate-100 text-[11px] text-slate-500">Empty answers are hidden.</p>
             )}
           </div>

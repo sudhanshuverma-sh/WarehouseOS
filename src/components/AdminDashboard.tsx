@@ -43,6 +43,7 @@ import {
 import type { ExportSpec } from '../lib/export/exporter';
 import { PageHeader } from './common/PageHeader';
 import { ExportPanel } from './common/ExportPanel';
+import { ColumnsMenu, DragHandle, ExpandButton, TableFullscreen, useColumnLayout, visibleColumns } from './common/TableTools';
 import { DieselDashboard } from './diesel/DieselDashboard';
 import { LogCalendar, longDay, shortDay } from './adminHub/LogCalendar';
 
@@ -560,6 +561,71 @@ const ServiceSitesView: React.FC<{
   const doneWord = onRequest ? 'Filed' : 'Done';
   const pendingWord = onRequest ? 'Not filed' : 'Pending';
 
+  const [expanded, setExpanded] = useState(false);
+  const siteColumns = useMemo(
+    () => [
+      {
+        key: 'site',
+        label: 'Site',
+        cell: (r: SiteRow) => (
+          <>
+            <div className="font-semibold text-slate-900">{r.name}</div>
+            <div className="text-[11px] text-slate-500 font-mono">
+              {r.code}
+              {r.zone && `, ${r.zone}`}, {r.channel}
+            </div>
+          </>
+        ),
+      },
+      {
+        key: 'poc',
+        label: 'POC',
+        cell: (r: SiteRow) => (
+          <span className="block max-w-48 truncate text-slate-600" title={r.poc}>
+            {r.poc || '-'}
+          </span>
+        ),
+      },
+      {
+        key: 'status',
+        label: 'Status',
+        cell: (r: SiteRow) =>
+          r.done ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-(--color-filed-tint) text-(--color-ink)">
+              <CheckCircle2 className="w-3 h-3 text-(--color-filed)" /> {doneWord}
+              {r.count > 1 && <span className="font-mono text-slate-500">x{r.count}</span>}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-(--color-due-tint) text-(--color-ink)">
+              <Clock3 className="w-3 h-3 text-(--color-due)" /> {pendingWord}
+            </span>
+          ),
+      },
+      {
+        key: 'filedBy',
+        label: 'Filed by',
+        cell: (r: SiteRow) =>
+          r.at ? (
+            <span className="block whitespace-nowrap text-slate-600">
+              <span className="text-slate-800">{r.by || 'Unknown'}</span>
+              <span className="block text-[11px] text-slate-500">
+                {shortDay(r.at.slice(0, 10))}
+                {timeOf(r.at) && `, ${timeOf(r.at)}`}
+              </span>
+            </span>
+          ) : (
+            '-'
+          ),
+      },
+    ],
+    [doneWord, pendingWord],
+  );
+  const { layout, move, toggle, reset, dragProps, customised } = useColumnLayout(
+    `servicehub:${service.code}`,
+    siteColumns.map((c) => c.key),
+  );
+  const shownColumns = useMemo(() => visibleColumns(siteColumns, layout), [siteColumns, layout]);
+
   const exportSpec: ExportSpec<SiteRow> = {
     label: `${service.name} status`,
     serviceCode: service.code,
@@ -637,7 +703,8 @@ const ServiceSitesView: React.FC<{
           <DayLog title={day === today ? "Today's entries" : `Entries on ${shortDay(day)}`} entries={dayEntries} />
         </aside>
 
-        <section className="bg-white border border-slate-200 rounded-(--r-card) shadow-xs min-w-0">
+        <TableFullscreen expanded={expanded} onCollapse={() => setExpanded(false)}>
+        <section className={`bg-white border border-slate-200 rounded-(--r-card) shadow-xs min-w-0 ${expanded ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
           <div className="flex flex-wrap items-center gap-2 p-3 border-b border-slate-100">
             <div className="relative w-full sm:w-56">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -671,62 +738,41 @@ const ServiceSitesView: React.FC<{
             <span className="ml-auto flex items-center gap-2">
               <span className="text-xs text-slate-500 font-mono">{visible.length} sites</span>
               <ExportPanel rows={visible} spec={exportSpec} caps={caps} totalCount={rows.length} />
+              <ColumnsMenu columns={siteColumns} layout={layout} onMove={move} onToggle={toggle} onReset={reset} customised={customised} />
+              <ExpandButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} />
             </span>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className={`overflow-auto ${expanded ? 'flex-1 min-h-0' : ''}`}>
             <table className="w-full text-xs">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr className="text-left text-[11px] text-slate-500 bg-slate-50">
-                  <th className="px-4 py-2 font-semibold">Site</th>
-                  <th className="px-4 py-2 font-semibold">POC</th>
-                  <th className="px-4 py-2 font-semibold">Status</th>
-                  <th className="px-4 py-2 font-semibold">Filed by</th>
+                  {shownColumns.map((c) => {
+                    const drag = dragProps(c.key);
+                    return (
+                      <th key={c.key} {...drag} className={`px-4 py-2 font-semibold whitespace-nowrap select-none ${drag.className}`}>
+                        <span className="inline-flex items-center gap-1">
+                          <DragHandle />
+                          {c.label}
+                        </span>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody key={`${day}-${tab}-${state}-${zone}`} className="divide-y divide-slate-100 animate-settle">
                 {visible.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-4 py-10 text-center text-slate-500">No sites match these filters.</td>
+                    <td colSpan={shownColumns.length} className="px-4 py-10 text-center text-slate-500">No sites match these filters.</td>
                   </tr>
                 ) : (
                   visible.map((r) => (
                     <tr key={r.code} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-2.5">
-                        <div className="font-semibold text-slate-900">{r.name}</div>
-                        <div className="text-[11px] text-slate-500 font-mono">
-                          {r.code}
-                          {r.zone && `, ${r.zone}`}, {r.channel}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-600 max-w-48 truncate" title={r.poc}>
-                        {r.poc || '-'}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {r.done ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-(--color-filed-tint) text-(--color-ink)">
-                            <CheckCircle2 className="w-3 h-3 text-(--color-filed)" /> {doneWord}
-                            {r.count > 1 && <span className="font-mono text-slate-500">x{r.count}</span>}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-(--color-due-tint) text-(--color-ink)">
-                            <Clock3 className="w-3 h-3 text-(--color-due)" /> {pendingWord}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">
-                        {r.at ? (
-                          <>
-                            <span className="text-slate-800">{r.by || 'Unknown'}</span>
-                            <span className="block text-[11px] text-slate-500">
-                              {shortDay(r.at.slice(0, 10))}
-                              {timeOf(r.at) && `, ${timeOf(r.at)}`}
-                            </span>
-                          </>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
+                      {shownColumns.map((c) => (
+                        <td key={c.key} className="px-4 py-2.5 align-top">
+                          {c.cell(r)}
+                        </td>
+                      ))}
                     </tr>
                   ))
                 )}
@@ -734,6 +780,7 @@ const ServiceSitesView: React.FC<{
             </table>
           </div>
         </section>
+        </TableFullscreen>
       </div>
     </div>
   );

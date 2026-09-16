@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowUp, ArrowDown, ArrowUpDown, Search, MousePointerClick } from 'lucide-react';
 import { ColumnFilter } from '../common/ColumnFilter';
+import { ColumnsMenu, DragHandle, ExpandButton, TableFullscreen, useColumnLayout, visibleColumns } from '../common/TableTools';
 import {
   applyColumnFilters,
   cellValue,
@@ -42,6 +43,12 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({ rows, columns,
   const [filters, setFilters] = useState<ColumnFilters>({});
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<Sort>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  // Each tab keeps its own column arrangement; the key column names the tab.
+  const columnInfo = useMemo(() => columns.map((c) => ({ key: c, label: c })), [columns]);
+  const { layout, move, toggle, reset, dragProps, customised } = useColumnLayout(`master:${keyColumn}`, columns);
+  const shownColumns = useMemo(() => visibleColumns(columnInfo, layout).map((c) => c.key), [columnInfo, layout]);
 
   // Search narrows first, then column filters, then sort. The column filter
   // value lists are built from `searched`, so a search for "Delhi" leaves
@@ -83,7 +90,8 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({ rows, columns,
   ]);
 
   return (
-    <div>
+    <TableFullscreen expanded={expanded} onCollapse={() => setExpanded(false)}>
+    <div className={expanded ? 'flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-(--r-card) overflow-hidden' : ''}>
       <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 border-b border-slate-100 bg-slate-50/60">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
@@ -120,18 +128,28 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({ rows, columns,
           </span>
         )}
 
-        {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
+        <div className="ml-auto flex items-center gap-2">
+          {actions}
+          <ColumnsMenu columns={columnInfo} layout={layout} onMove={move} onToggle={toggle} onReset={reset} customised={customised} />
+          <ExpandButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} />
+        </div>
       </div>
 
-      <div className="overflow-auto max-h-[560px]">
+      <div className={`overflow-auto ${expanded ? 'flex-1 min-h-0' : 'max-h-[560px]'}`}>
         <table className="w-full text-left text-xs">
           <thead className="sticky top-0 z-10 bg-slate-50 text-slate-700 border-b border-slate-200">
             <tr>
-              {columns.map((col) => {
+              {shownColumns.map((col) => {
                 const sorted = sort?.column === col ? sort.dir : null;
+                const drag = dragProps(col);
                 return (
-                  <th key={col} className="py-2 px-3 whitespace-nowrap font-bold uppercase tracking-wider text-[10px]">
+                  <th
+                    key={col}
+                    {...drag}
+                    className={`py-2 px-3 whitespace-nowrap font-bold uppercase tracking-wider text-[10px] select-none ${drag.className}`}
+                  >
                     <span className="inline-flex items-center gap-0.5">
+                      <DragHandle />
                       <button
                         type="button"
                         onClick={() => cycleSort(col)}
@@ -160,7 +178,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({ rows, columns,
           <tbody key={filterSignature} className="divide-y divide-slate-100 text-slate-700 animate-settle">
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="py-10 text-center text-sm text-slate-400">
+                <td colSpan={shownColumns.length} className="py-10 text-center text-sm text-slate-400">
                   {rows.length === 0 ? 'No rows yet — sync or paste above to load them.' : 'No rows match these filters.'}
                 </td>
               </tr>
@@ -174,7 +192,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({ rows, columns,
                     onEditRow ? 'cursor-pointer hover:bg-teal-50/70 select-none' : 'hover:bg-slate-50'
                   } ${String(row.Active) === 'No' ? 'opacity-60' : ''}`}
                 >
-                  {columns.map((col) => {
+                  {shownColumns.map((col) => {
                     const val = row[col];
                     const empty = val === '' || val === undefined || val === null;
                     return (
@@ -202,5 +220,6 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({ rows, columns,
         </table>
       </div>
     </div>
+    </TableFullscreen>
   );
 };

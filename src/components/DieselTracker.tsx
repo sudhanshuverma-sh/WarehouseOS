@@ -34,6 +34,7 @@ import { SheetSyncPanel } from './common/SheetSyncPanel';
 import { capabilitiesFor } from '../lib/permissions';
 import { DIESEL_EXPORT } from '../lib/export/dieselExport';
 import { ColumnFilter } from './common/ColumnFilter';
+import { ColumnsMenu, DragHandle, ExpandButton, TableFullscreen, useColumnLayout, visibleColumns } from './common/TableTools';
 import { applyColumnFilters, countActiveFilters, clearAllFilters, type ColumnFilters } from '../lib/table/columnFilters';
 
 /**
@@ -68,6 +69,33 @@ const LEDGER_COLUMNS: { key: string; label: string; align?: string }[] = [
   { key: 'podUrl', label: "POD's", align: 'text-center' },
 ];
 
+const LEDGER_KEYS = LEDGER_COLUMNS.map((c) => c.key);
+
+/** How each ledger cell is styled. Kept by key, so columns can be rearranged. */
+const CELL_CLASS: Record<string, string> = {
+  timestamp: 'text-slate-500 whitespace-nowrap',
+  emailAddress: 'whitespace-nowrap text-slate-600 font-mono',
+  entity: 'whitespace-nowrap text-slate-700',
+  whNameB2B: 'whitespace-nowrap font-medium text-slate-900',
+  whNameB2C: 'whitespace-nowrap text-slate-700',
+  costCenter: 'whitespace-nowrap font-mono text-slate-600',
+  zone: 'whitespace-nowrap text-slate-700',
+  fuel: 'whitespace-nowrap text-slate-700',
+  type: 'whitespace-nowrap font-semibold text-slate-700',
+  vendorNamePayment: 'whitespace-nowrap text-slate-800',
+  quantity: 'font-mono text-right font-semibold text-slate-800',
+  ratePerLitre: 'font-mono text-right text-slate-600',
+  finalAmount: 'font-mono text-right font-bold text-slate-900',
+  qrCodeImageUrl: 'text-center whitespace-nowrap',
+  vendorNameDelivery: 'whitespace-nowrap text-slate-800',
+  orderQuantityLitres: 'font-mono text-right font-semibold text-slate-800',
+  uniqueId: 'font-mono font-bold text-indigo-700 whitespace-nowrap',
+  status: 'text-center whitespace-nowrap',
+  validation: 'text-center whitespace-nowrap',
+  deliveredQuantityLitres: 'font-mono text-right font-bold',
+  podUrl: 'text-center whitespace-nowrap',
+};
+
 interface DieselTrackerProps {
   onBack?: () => void;
 }
@@ -94,6 +122,10 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedLogForInspection, setSelectedLogForInspection] = useState<DieselLog | null>(null);
   const [columnFilters, setColumnFilters] = useState<ColumnFilters>({});
+  const [expanded, setExpanded] = useState(false);
+  // Declared before the early return below, so the hooks run on every render.
+  const { layout, move, toggle, reset, dragProps, customised } = useColumnLayout('diesel:ledger', LEDGER_KEYS);
+  const shownColumns = visibleColumns(LEDGER_COLUMNS, layout);
 
   // If viewMode is not dashboard, render DieselLogForm
   if (viewMode !== 'dashboard') {
@@ -295,7 +327,8 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
       </div>
 
       {/* Comprehensive Ledger Table with All 21 Google Form Fields */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+      <TableFullscreen expanded={expanded} onCollapse={() => setExpanded(false)}>
+      <div className={`bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden ${expanded ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
         <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-indigo-600" />
@@ -337,33 +370,39 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
             {/* Super Admin only (the panel hides itself otherwise): link the
                 Diesel Google Sheet, and re-send every request if rows are missing. */}
             <SheetSyncPanel sheetId="SHEET_DIESEL" serviceLabel="Diesel" caps={caps} />
+            <ColumnsMenu columns={LEDGER_COLUMNS} layout={layout} onMove={move} onToggle={toggle} onReset={reset} customised={customised} />
+            <ExpandButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} />
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className={`overflow-auto ${expanded ? 'flex-1 min-h-0' : ''}`}>
           <table className="w-full text-left text-xs border-collapse">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px] whitespace-nowrap">
                 {/* Column names & order match the ZHPL Diesel master sheet exactly, so this ledger
                     lines up 1:1 with the connected Google Sheet once live sync is on. */}
-                {LEDGER_COLUMNS.map(({ key, label, align }) => (
-                  <th key={key} className={`py-3 px-4 ${align ?? ''}`}>
-                    <span className="inline-flex items-center">
-                      {label}
-                      {/* Built from scopedLogs, so a column's value list is
-                          the same whichever order the columns are filtered
-                          in — narrowing Status should not hide vendors that
-                          would reappear once Status is cleared. */}
-                      <ColumnFilter
-                        columnKey={key}
-                        label={label}
-                        rows={scopedLogs as unknown as Record<string, unknown>[]}
-                        filters={columnFilters}
-                        onChange={setColumnFilters}
-                      />
-                    </span>
-                  </th>
-                ))}
+                {shownColumns.map((c) => {
+                  const drag = dragProps(c.key);
+                  return (
+                    <th key={c.key} {...drag} className={`py-3 px-4 select-none ${c.align ?? ''} ${drag.className}`}>
+                      <span className="inline-flex items-center gap-1">
+                        <DragHandle />
+                        {c.label}
+                        {/* Built from scopedLogs, so a column's value list is the
+                            same whichever order the columns are filtered in:
+                            narrowing Status should not hide vendors that would
+                            reappear once Status is cleared. */}
+                        <ColumnFilter
+                          columnKey={c.key}
+                          label={c.label}
+                          rows={scopedLogs as unknown as Record<string, unknown>[]}
+                          filters={columnFilters}
+                          onChange={setColumnFilters}
+                        />
+                      </span>
+                    </th>
+                  );
+                })}
                 <th className="py-3 px-4 text-center">Actions</th>
               </tr>
             </thead>
@@ -377,146 +416,102 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
             >
               {filteredLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={22} className="py-8 text-center text-slate-400">
+                  <td colSpan={shownColumns.length + 1} className="py-8 text-center text-slate-400">
                     No diesel procurement records match your filters.
                   </td>
                 </tr>
               ) : (
                 filteredLogs.map((log) => {
                   const isDiscrepancy = log.validation === 'Partial Delivered';
+                  // One cell per column key, so the ledger can be rearranged
+                  // without the row markup caring what order they are in.
+                  const cells: Record<string, React.ReactNode> = {
+                    timestamp: (
+                      <>
+                        {new Date(log.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}{' '}
+                        {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </>
+                    ),
+                    emailAddress: log.emailAddress || '-',
+                    entity: log.entity || '-',
+                    whNameB2B: log.whNameB2B || '-',
+                    whNameB2C: log.whNameB2C || '-',
+                    costCenter: log.costCenter || '-',
+                    zone: log.zone || '-',
+                    fuel: log.fuel,
+                    type: log.type,
+                    vendorNamePayment: log.vendorNamePayment || 'N/A',
+                    quantity: (log.quantity || 0).toLocaleString(),
+                    ratePerLitre: `₹${log.ratePerLitre.toFixed(2)}`,
+                    finalAmount: `₹${log.finalAmount.toLocaleString('en-IN')}`,
+                    qrCodeImageUrl: log.qrCodeImageUrl ? (
+                      <span className="text-emerald-600 font-bold">Attached</span>
+                    ) : (
+                      <span className="text-slate-400">N/A</span>
+                    ),
+                    vendorNameDelivery: log.vendorNameDelivery || 'N/A',
+                    orderQuantityLitres:
+                      log.orderQuantityLitres !== undefined ? log.orderQuantityLitres.toLocaleString() : 'N/A',
+                    uniqueId: log.uniqueId,
+                    status: (
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                        log.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' :
+                        log.status === 'Delivery Completed' ? 'bg-sky-100 text-sky-800' :
+                        log.status === 'Rejected' ? 'bg-rose-100 text-rose-800' :
+                        'bg-amber-100 text-amber-800 animate-pulse'
+                      }`}>
+                        {log.status}
+                      </span>
+                    ),
+                    validation: log.validation ? (
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold font-mono uppercase ${
+                        log.validation === 'Delivered' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        log.validation === 'Partial Delivered' ? 'bg-amber-50 text-amber-800 border border-amber-300' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>
+                        {log.validation === 'Delivered' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                        {log.validation === 'Partial Delivered' && <AlertTriangle className="w-3 h-3 text-amber-600" />}
+                        {log.validation}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">N/A</span>
+                    ),
+                    deliveredQuantityLitres: (
+                      <span className={isDiscrepancy ? 'text-amber-700' : 'text-slate-900'}>
+                        {log.deliveredQuantityLitres !== undefined ? log.deliveredQuantityLitres.toLocaleString() : 'N/A'}
+                      </span>
+                    ),
+                    podUrl: log.podUrl ? (
+                      <span className="inline-flex items-center gap-1 text-emerald-600 font-bold hover:underline">
+                        <Camera className="w-3.5 h-3.5" />
+                        Attached
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedLogIdForForm(log.id);
+                          setViewMode('pod');
+                        }}
+                        className="text-indigo-600 hover:text-indigo-800 font-bold hover:underline"
+                      >
+                        + Upload POD
+                      </button>
+                    ),
+                  };
+
                   return (
                     <tr
                       key={log.id}
                       className="hover:bg-indigo-50/30 transition-colors cursor-pointer group"
                       onClick={() => setSelectedLogForInspection(log)}
                     >
-                      {/* Timestamp */}
-                      <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
-                        {new Date(log.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })} {' '}
-                        {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </td>
-
-                      {/* Email Address */}
-                      <td className="py-3 px-4 whitespace-nowrap text-slate-600 font-mono">{log.emailAddress || '—'}</td>
-
-                      {/* Entity */}
-                      <td className="py-3 px-4 whitespace-nowrap text-slate-700">{log.entity || '—'}</td>
-
-                      {/* WH NAME (B2B) */}
-                      <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-900">{log.whNameB2B || '—'}</td>
-
-                      {/* WH NAME (B2C) */}
-                      <td className="py-3 px-4 whitespace-nowrap text-slate-700">{log.whNameB2C || '—'}</td>
-
-                      {/* COST CENTER */}
-                      <td className="py-3 px-4 whitespace-nowrap font-mono text-slate-600">{log.costCenter || '—'}</td>
-
-                      {/* Zone */}
-                      <td className="py-3 px-4 whitespace-nowrap text-slate-700">{log.zone || '—'}</td>
-
-                      {/* Fuel */}
-                      <td className="py-3 px-4 whitespace-nowrap text-slate-700">{log.fuel}</td>
-
-                      {/* Type */}
-                      <td className="py-3 px-4 whitespace-nowrap font-semibold text-slate-700">{log.type}</td>
-
-                      {/* Vendor Name(Payment) */}
-                      <td className="py-3 px-4 whitespace-nowrap text-slate-800">{log.vendorNamePayment || 'N/A'}</td>
-
-                      {/* Quantity */}
-                      <td className="py-3 px-4 font-mono text-right font-semibold text-slate-800">
-                        {(log.quantity || 0).toLocaleString()}
-                      </td>
-
-                      {/* Rate per Litres */}
-                      <td className="py-3 px-4 font-mono text-right text-slate-600">
-                        ₹{log.ratePerLitre.toFixed(2)}
-                      </td>
-
-                      {/* Final Amount */}
-                      <td className="py-3 px-4 font-mono text-right font-bold text-slate-900">
-                        ₹{log.finalAmount.toLocaleString('en-IN')}
-                      </td>
-
-                      {/* QR Code Image */}
-                      <td className="py-3 px-4 text-center whitespace-nowrap">
-                        {log.qrCodeImageUrl ? (
-                          <span className="text-emerald-600 font-bold">Attached</span>
-                        ) : (
-                          <span className="text-slate-400">N/A</span>
-                        )}
-                      </td>
-
-                      {/* Vendor Name(Delivery) */}
-                      <td className="py-3 px-4 whitespace-nowrap text-slate-800">{log.vendorNameDelivery || 'N/A'}</td>
-
-                      {/* Order Quantity */}
-                      <td className="py-3 px-4 font-mono text-right font-semibold text-slate-800">
-                        {log.orderQuantityLitres !== undefined ? log.orderQuantityLitres.toLocaleString() : 'N/A'}
-                      </td>
-
-                      {/* Unique ID */}
-                      <td className="py-3 px-4 font-mono font-bold text-indigo-700 whitespace-nowrap">
-                        {log.uniqueId}
-                      </td>
-
-                      {/* Status */}
-                      <td className="py-3 px-4 text-center whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                          log.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' :
-                          log.status === 'Delivery Completed' ? 'bg-sky-100 text-sky-800' :
-                          log.status === 'Rejected' ? 'bg-rose-100 text-rose-800' :
-                          'bg-amber-100 text-amber-800 animate-pulse'
-                        }`}>
-                          {log.status}
-                        </span>
-                      </td>
-
-                      {/* Validation */}
-                      <td className="py-3 px-4 text-center whitespace-nowrap">
-                        {log.validation ? (
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold font-mono uppercase ${
-                            log.validation === 'Delivered' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                            log.validation === 'Partial Delivered' ? 'bg-amber-50 text-amber-800 border border-amber-300' :
-                            'bg-slate-100 text-slate-600'
-                          }`}>
-                            {log.validation === 'Delivered' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
-                            {log.validation === 'Partial Delivered' && <AlertTriangle className="w-3 h-3 text-amber-600" />}
-                            {log.validation}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">N/A</span>
-                        )}
-                      </td>
-
-                      {/* Delivered Quantity */}
-                      <td className={`py-3 px-4 font-mono text-right font-bold ${
-                        isDiscrepancy ? 'text-amber-700' : 'text-slate-900'
-                      }`}>
-                        {log.deliveredQuantityLitres !== undefined ? log.deliveredQuantityLitres.toLocaleString() : 'N/A'}
-                      </td>
-
-                      {/* POD's Proof of Delivery */}
-                      <td className="py-3 px-4 text-center whitespace-nowrap">
-                        {log.podUrl ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-600 font-bold hover:underline">
-                            <Camera className="w-3.5 h-3.5" />
-                            Attached
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedLogIdForForm(log.id);
-                              setViewMode('pod');
-                            }}
-                            className="text-indigo-600 hover:text-indigo-800 font-bold hover:underline"
-                          >
-                            + Upload POD
-                          </button>
-                        )}
-                      </td>
+                      {shownColumns.map((c) => (
+                        <td key={c.key} className={`py-3 px-4 ${CELL_CLASS[c.key] ?? ''}`}>
+                          {cells[c.key]}
+                        </td>
+                      ))}
 
                       {/* Actions */}
                       <td className="py-3 px-4 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
@@ -551,6 +546,7 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
           </table>
         </div>
       </div>
+      </TableFullscreen>
 
       {/* Modal: Detailed POD & Audit Inspection View */}
       {selectedLogForInspection && (

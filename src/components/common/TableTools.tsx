@@ -11,6 +11,7 @@ import {
   toggleHidden,
   type ColumnLayout,
 } from '../../lib/table/columnLayout';
+import { Popover } from './Popover';
 
 /**
  * Shared table controls: arrange columns, hide the ones you do not need,
@@ -95,21 +96,7 @@ export const ColumnsMenu: React.FC<{
   customised: boolean;
 }> = ({ columns, layout, onMove, onToggle, onReset, customised }) => {
   const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!box.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  const trigger = useRef<HTMLButtonElement>(null);
 
   // The menu lists every column, in the order the table shows them.
   const ordered = useMemo(() => {
@@ -119,8 +106,9 @@ export const ColumnsMenu: React.FC<{
   const hiddenCount = layout.hidden.length;
 
   return (
-    <div ref={box} className="relative">
+    <div className="inline-block">
       <button
+        ref={trigger}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
@@ -133,11 +121,8 @@ export const ColumnsMenu: React.FC<{
         {hiddenCount > 0 && <span className="font-mono text-[11px] text-slate-500">{ordered.length - hiddenCount}/{ordered.length}</span>}
       </button>
 
-      {open && (
-        <div
-          className="animate-pop-in absolute right-0 top-full mt-1 z-30 w-72 max-h-96 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg p-2"
-          style={{ ['--pop-origin' as string]: 'top right' }}
-        >
+      <Popover open={open} onClose={() => setOpen(false)} anchor={trigger} align="right" width={288} label="Columns">
+        <div className="max-h-96 overflow-y-auto p-2">
           <p className="px-2 py-1 text-[11px] text-slate-500">Drag a header, or move columns here.</p>
           <ul>
             {ordered.map((c, i) => (
@@ -184,7 +169,7 @@ export const ColumnsMenu: React.FC<{
             </button>
           )}
         </div>
-      )}
+      </Popover>
     </div>
   );
 };

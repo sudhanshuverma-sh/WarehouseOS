@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Download, FileSpreadsheet, FileText, Loader2, AlertTriangle } from 'lucide-react';
 import type { Capabilities } from '../../lib/permissions';
 import { downloadExport, type ExportSpec, type ExportFormat } from '../../lib/export/exporter';
+import { Popover } from './Popover';
 
 /**
  * Export, as two choices and nothing else.
@@ -34,6 +35,7 @@ export function ExportPanel<T>({ rows, spec, caps, totalCount }: ExportPanelProp
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<ExportFormat | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
 
   if (!caps.canExport) return null;
 
@@ -55,8 +57,9 @@ export function ExportPanel<T>({ rows, spec, caps, totalCount }: ExportPanelProp
   const narrowed = totalCount !== undefined && totalCount !== rows.length;
 
   return (
-    <span className="relative inline-block">
+    <span className="inline-block">
       <button
+        ref={trigger}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border cursor-pointer
@@ -68,17 +71,9 @@ export function ExportPanel<T>({ rows, spec, caps, totalCount }: ExportPanelProp
         <Download className="w-3.5 h-3.5" /> Export
       </button>
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden="true" />
-
-          {/* Grows from the button that opened it. Without the origin it
-              scales from its own centre, which reads as a panel appearing
-              out of the page rather than out of the control. */}
-          <div
-            className="absolute right-0 z-50 mt-1.5 w-60 bg-white border border-slate-200 rounded-xl overflow-hidden elevate-3 animate-pop-in"
-            style={{ '--pop-origin': 'top right' } as React.CSSProperties}
-          >
+      {/* Portalled, so a table's own scrolling never clips it. */}
+      <Popover open={open} onClose={() => setOpen(false)} anchor={trigger} align="right" width={240} label="Export">
+          <div>
             {/* Says what is about to leave. When the table is filtered this
                 is the reassurance that the file matches the screen. */}
             <div className="px-3 py-2 bg-slate-50 border-b border-slate-100">
@@ -130,8 +125,7 @@ export function ExportPanel<T>({ rows, spec, caps, totalCount }: ExportPanelProp
               </p>
             )}
           </div>
-        </>
-      )}
+      </Popover>
     </span>
   );
 }

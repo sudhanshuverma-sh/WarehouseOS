@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Filter, Search, X, Check } from 'lucide-react';
 import {
   distinctValues,
   setColumnFilter,
   type ColumnFilters,
 } from '../../lib/table/columnFilters';
+import { Popover } from './Popover';
 
 /**
  * The little funnel in a column header, behaving the way a spreadsheet's
@@ -33,6 +34,7 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const trigger = useRef<HTMLButtonElement>(null);
 
   const active = filters[columnKey] ?? new Set<string>();
   const isActive = active.size > 0;
@@ -66,8 +68,9 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
   const clear = () => onChange(setColumnFilter(filters, columnKey, new Set()));
 
   return (
-    <span className="relative inline-flex">
+    <span className="inline-flex">
       <button
+        ref={trigger}
         type="button"
         onClick={(e) => {
           e.stopPropagation();   // headers are also sort buttons
@@ -84,17 +87,11 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
         <Filter className="w-3 h-3" />
       </button>
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden="true" />
-
-          {/* Origin top-left: this one hangs off a column header, so it
-              should look like it came out of that header's funnel. */}
-          <div
-            className="absolute left-0 top-6 z-50 w-64 bg-white border border-slate-200 rounded-xl overflow-hidden elevate-3 animate-pop-in"
-            style={{ '--pop-origin': 'top left' } as React.CSSProperties}
-            onClick={(e) => e.stopPropagation()}
-          >
+      {/* In a portal, not inside the header: a table that scrolls would
+          otherwise cut this panel off at its edge and draw it underneath
+          the sticky header and first columns. */}
+      <Popover open={open} onClose={() => setOpen(false)} anchor={trigger} align="left" width={256} label={`Filter ${label}`}>
+          <div onClick={(e) => e.stopPropagation()}>
             <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between gap-2">
               <span className="text-xs font-bold text-slate-900 truncate" title={label}>
                 {label}
@@ -177,8 +174,7 @@ export const ColumnFilter: React.FC<ColumnFilterProps> = ({
               )}
             </div>
           </div>
-        </>
-      )}
+      </Popover>
     </span>
   );
 };

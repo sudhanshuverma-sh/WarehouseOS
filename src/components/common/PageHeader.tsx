@@ -1,6 +1,5 @@
 import React from 'react';
-import { ArrowLeft, Home, ChevronRight, Building2, ShieldCheck, UserCheck } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { ArrowLeft, ChevronRight } from 'lucide-react';
 
 interface PageHeaderProps {
   title: string;
@@ -27,11 +26,8 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   backLabel = 'Back',
   breadcrumbs,
   actions,
-  showFacilityBadge = true
 }) => {
   const displaySubtitle = subtitle || description;
-  const { currentUser, warehouses, selectedWarehouseId } = useApp();
-  const activeWh = warehouses.find(w => w.id === selectedWarehouseId) || warehouses[0];
 
   return (
     <div className="bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200 shadow-xs mb-4 sm:mb-6 space-y-3 sm:space-y-4">
@@ -74,43 +70,9 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
           )}
         </div>
 
-        {/* User Role & Facility Context Indicator */}
-        <div className="flex items-center gap-1.5 text-xs shrink-0">
-          {showFacilityBadge && (
-            <div className="hidden sm:flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-xl font-medium text-slate-600">
-              <Building2 className="w-3.5 h-3.5 text-teal-600" />
-              <span>
-                {currentUser.role === 'SITE_POC' ? (
-                  <strong className="text-slate-900">{activeWh?.code} • {activeWh?.city}</strong>
-                ) : (
-                  <span>
-                    Facility: <strong className="text-slate-900">{selectedWarehouseId === 'ALL' ? 'All Hubs' : activeWh?.code}</strong>
-                  </span>
-                )}
-              </span>
-            </div>
-          )}
-
-          <div
-            className={`flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-xl text-[10px] sm:text-[11px] font-extrabold border ${
-              currentUser.role === 'SUPER_ADMIN'
-                ? 'bg-purple-50 text-purple-700 border-purple-200'
-                : 'bg-teal-50 text-teal-700 border-teal-200'
-            }`}
-          >
-            {currentUser.role === 'SUPER_ADMIN' ? (
-              <>
-                <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-purple-600" />
-                <span>Super Admin</span>
-              </>
-            ) : (
-              <>
-                <UserCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-teal-600" />
-                <span>Site POC</span>
-              </>
-            )}
-          </div>
-        </div>
+        {/* Who you are and which facility you are on are in the top bar,
+            above this. Repeating them on every page pushed the real page
+            title down and made two rows of chips saying the same thing. */}
       </div>
 
       {/* Main Title & Action Bar */}

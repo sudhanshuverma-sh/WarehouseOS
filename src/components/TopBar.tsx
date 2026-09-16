@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { NotificationCenterModal } from './NotificationCenterModal';
+import { usePendingWork } from './common/usePendingWork';
+import { pendingSummary } from '../lib/alerts/pendingWork';
 
 interface TopBarProps {
   currentView: string;
@@ -62,34 +64,10 @@ export const TopBar: React.FC<TopBarProps> = ({
     return warehouses.find(w => w.id === selectedWarehouseId) || warehouses[0];
   }, [warehouses, currentUser, selectedWarehouseId]);
 
-  // Real-time pending daily validation calculation for logged-in user / POC
-  const pendingAlertCount = useMemo(() => {
-    let count = 0;
-    const userWhId = currentUser.warehouseId || activeWarehouse.id;
-    const wh = warehouses.find(w => w.id === userWhId) || warehouses[0];
-
-    // Check Daily Site Report for today
-    const filedDaily = dailySiteLogs.some(l => l.site === wh.id && l.date === currentDate);
-    if (!filedDaily) count++;
-
-    // Check Housekeeping for today
-    const hkFiled = (sheetRecords['SHEET_HOUSEKEEPING'] || []).some(
-      r => (r.warehouseId === wh.id || r.warehouseId === wh.code) && r.date === currentDate
-    );
-    if (!hkFiled) count++;
-
-    // Check DG Power for today
-    const dgFiled = (sheetRecords['SHEET_DG_POWER_WATER'] || []).some(
-      r => (r.warehouseId === wh.id || r.warehouseId === wh.code) && r.date === currentDate
-    );
-    if (!dgFiled) count++;
-
-    // Check Diesel Inward POD needing site verification
-    const pendingDiesel = dieselLogs.filter(d => d.warehouseId === wh.id && (d.status === 'Approved' || d.validation === 'Pending Validation')).length;
-    count += pendingDiesel;
-
-    return count;
-  }, [currentUser, warehouses, currentDate, dailySiteLogs, sheetRecords, dieselLogs, activeWarehouse]);
+  // The same count the Alerts badge and the notification list use, over the
+  // sites this person can see and the facility they have chosen.
+  const work = usePendingWork();
+  const pendingAlertCount = work.total;
 
   const isHomeView =
     (currentUser.role === 'SUPER_ADMIN' && currentView === 'dashboard') ||
@@ -97,7 +75,9 @@ export const TopBar: React.FC<TopBarProps> = ({
     (currentUser.role === 'SITE_POC' && currentView === 'pocFiling');
 
   return (
-    <header className="soft-glass rounded-[var(--r-panel)] sticky top-4 z-20 font-sans mx-3 sm:mx-5 lg:mx-7 mt-4">
+    // Same width and gutters as <main>, so the bar lines up with the page
+    // instead of running edge to edge above narrower content.
+    <header className="soft-glass rounded-[var(--r-panel)] sticky top-4 z-20 font-sans w-full max-w-7xl mx-auto mt-4">
       {/* 1. Mobile Phone View Header (< md) */}
       <div className="md:hidden px-3.5 pt-2.5 pb-2 space-y-2">
         <div className="flex items-center justify-between gap-2">
@@ -269,9 +249,9 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* 2. Desktop View Header (>= md) */}
-      <div className="hidden md:flex flex-row items-center justify-between gap-3 px-6 py-2.5">
-        {/* Left Section: Back Button + Role Switcher + Facility Context */}
-        <div className="flex flex-wrap items-center gap-2.5">
+      <div className="hidden md:flex flex-row items-center justify-between gap-3 px-4 lg:px-5 py-2.5">
+        {/* Left: back, who you are, which facility. One line, never wrapping. */}
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           {canGoBack && onBack && !isHomeView && (
             <button
               onClick={onBack}
@@ -388,53 +368,53 @@ export const TopBar: React.FC<TopBarProps> = ({
 
           {/* Facility Context: Strict Lock for POC vs Selector for Admins */}
           {currentUser.role === 'SITE_POC' ? (
-            <div className="flex items-center gap-2 bg-teal-50/80 px-3 py-1.5 rounded-xl border border-teal-200 text-xs">
+            <div className="flex items-center gap-2 bg-teal-50/80 px-3 py-1.5 rounded-xl border border-teal-200 text-xs min-w-0">
               <Lock className="w-3.5 h-3.5 text-teal-700 shrink-0" />
-              <span className="font-semibold text-teal-800">My Assigned Site:</span>
-              <span className="font-black text-teal-950 truncate max-w-[220px]">
+              <span className="font-black text-teal-950 truncate">
                 {activeWarehouse.facilityName || activeWarehouse.name} ({activeWarehouse.code})
               </span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 text-xs">
+            <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 text-xs min-w-0">
               <Building2 className="w-3.5 h-3.5 text-teal-700 shrink-0" />
-              <span className="font-semibold text-slate-500">Facility Filter:</span>
               <select
                 value={selectedWarehouseId}
                 onChange={(e) => setSelectedWarehouseId(e.target.value)}
-                className="font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer text-xs"
+                aria-label="Facility"
+                className="font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer text-xs max-w-45 truncate"
               >
-                <option value="ALL">All Hubs (Nationwide Overview)</option>
+                <option value="ALL">All Hubs</option>
                 {warehouses.map(w => (
                   <option key={w.id} value={w.id}>
-                    {w.city} • {w.code} ({w.name})
+                    {w.code} ({w.city})
                   </option>
                 ))}
               </select>
             </div>
           )}
+        </div>
 
-          {/* Notification Alert Bell */}
+        {/* Right: what is pending, the date, and the fast actions. */}
+        <div className="flex items-center gap-2 text-xs shrink-0">
           <button
             type="button"
             onClick={() => setIsNotificationOpen(true)}
-            className="relative p-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-            title="Open Daily Alerts & Action Items"
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition cursor-pointer shadow-2xs ${
+              pendingAlertCount > 0
+                ? 'bg-amber-50 hover:bg-amber-100 border-amber-200/80 text-amber-950'
+                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
+            }`}
+            title={pendingAlertCount > 0 ? pendingSummary(work) : 'Nothing pending today'}
           >
-            <Bell className="w-4 h-4 text-amber-700" />
+            <Bell className={`w-4 h-4 ${pendingAlertCount > 0 ? 'text-amber-700' : 'text-slate-400'}`} />
             {pendingAlertCount > 0 && (
-              <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-black bg-rose-600 text-white rounded-full leading-none animate-pulse">
+              <span className="inline-flex items-center justify-center min-w-4 px-1 text-[10px] font-black bg-rose-600 text-white rounded-full leading-4">
                 {pendingAlertCount}
               </span>
             )}
-            <span className="hidden lg:inline text-xs font-bold text-amber-950">
-              {pendingAlertCount > 0 ? `${pendingAlertCount} Daily Validations Pending` : 'Daily Status OK'}
-            </span>
+            <span className="hidden xl:inline font-bold">{pendingAlertCount > 0 ? 'Pending' : 'All clear'}</span>
           </button>
-        </div>
 
-        {/* Right Section: Daily Date & Fast Actions (Shift removed) */}
-        <div className="flex items-center gap-2 text-xs">
           <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
             <Calendar className="w-3.5 h-3.5 text-slate-500" />
             <span className="font-bold text-slate-500 text-[11px]">Daily Date:</span>

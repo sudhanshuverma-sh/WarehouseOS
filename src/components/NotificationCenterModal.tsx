@@ -20,6 +20,18 @@ import {
   Droplet,
   Info
 } from 'lucide-react';
+import { usePendingWork } from './common/usePendingWork';
+import { pendingSummary } from '../lib/alerts/pendingWork';
+
+/** Which screen a service's outstanding work opens. */
+const VIEW_FOR: Record<string, string> = {
+  SITE_ACTIVITY: 'dailyForm',
+  HOUSEKEEPING: 'housekeeping',
+  EB_DG: 'ebDg',
+  DIESEL: 'diesel',
+  WASHING: 'washing',
+  ADHOC: 'washing',
+};
 
 interface NotificationCenterModalProps {
   isOpen: boolean;
@@ -47,122 +59,31 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   onClose,
   onNavigateToForm
 }) => {
-  const {
-    currentUser,
-    warehouses,
-    currentDate,
-    selectedShift,
-    dailySiteLogs,
-    sheetRecords,
-    dieselLogs,
-    setNotification
-  } = useApp();
+  const { currentUser, currentDate, setNotification } = useApp();
+
+  // Exactly what the bell counts, as a list to act on. This list used to be
+  // worked out here a second time, with its own rules, so the badge and the
+  // list could disagree on the same screen.
+  const work = usePendingWork();
 
   const [filterType, setFilterType] = useState<'ALL' | 'ACTIONABLE' | 'MISSED'>('ALL');
 
-  // Compute all smart alerts for the logged in user / site POC
-  const smartAlerts = useMemo(() => {
-    const alerts: SmartAlert[] = [];
-    const userWhId = currentUser.warehouseId || 'WH_001';
-    const wh = warehouses.find(w => w.id === userWhId) || warehouses[0];
-
-    // 1. Daily Site Activity Checklist Status Check
-    const siteDailyLogs = dailySiteLogs.filter(l => l.site === wh.id && l.date === currentDate);
-    if (siteDailyLogs.length === 0) {
-      alerts.push({
-        id: 'alert_daily_site_pending',
-        type: 'PENDING_TODAY',
-        urgency: 'HIGH',
-        title: 'Daily Site Activity Report Missing!',
-        description: `You haven't submitted today's (${currentDate}) mandatory 43-point checklist for ${wh.city} (${wh.code}). Please submit before shift handover.`,
-        targetView: 'dailyForm',
-        serviceId: 'SHEET_DAILY_SITE',
-        facility: wh.city,
-        facilityCode: wh.code,
-        deadline: 'Before 02:00 PM',
-        actionText: '⚡ Complete 43-Point Checklist'
-      });
-    }
-
-    // 2. Housekeeping Shift Manpower Check
-    const hkRecords = (sheetRecords['SHEET_HOUSEKEEPING'] || []).filter(
-      r => (r.warehouseId === wh.id || r.warehouseId === wh.code) && r.date === currentDate
-    );
-    if (hkRecords.length === 0) {
-      alerts.push({
-        id: 'alert_hk_pending',
-        type: 'MISSED_SHIFT',
-        urgency: 'HIGH',
-        title: 'Morning Housekeeping Headcount Unfiled',
-        description: `Contractor roster (SMS / Vedanta) attendance for Morning shift is still not recorded at ${wh.name}.`,
-        targetView: 'housekeeping',
-        serviceId: 'SHEET_HOUSEKEEPING',
-        facility: wh.city,
-        facilityCode: wh.code,
-        deadline: 'Overdue by 45 mins',
-        actionText: '👥 Record On-Ground Staff'
-      });
-    }
-
-    // 3. DG Power, EB Units & Water Balance
-    const dgRecords = (sheetRecords['SHEET_DG_POWER_WATER'] || []).filter(
-      r => (r.warehouseId === wh.id || r.warehouseId === wh.code) && r.date === currentDate
-    );
-    if (dgRecords.length === 0) {
-      alerts.push({
-        id: 'alert_dg_pending',
-        type: 'PENDING_TODAY',
-        urgency: 'MEDIUM',
-        title: 'Daily DG Run Hours & EB Units Pending',
-        description: `Dual 500 KVA generator fuel level, run hours, and main incomer grid kWh meters need to be updated.`,
-        targetView: 'dgPower',
-        serviceId: 'SHEET_DG_POWER_WATER',
-        facility: wh.city,
-        facilityCode: wh.code,
-        deadline: 'Shift End (02:00 PM)',
-        actionText: '⚡ Log Utility Meters'
-      });
-    }
-
-    // 4. Diesel Inward Verification & POD Upload (If any approved order needs site confirmation)
-    const pendingDeliveries = dieselLogs.filter(
-      d => d.warehouseId === wh.id && d.status === 'Approved'
-    );
-    pendingDeliveries.forEach(d => {
-      alerts.push({
-        id: `alert_diesel_pod_${d.id}`,
-        type: 'APPROVAL_NEEDED',
-        urgency: 'HIGH',
-        title: `Diesel Tanker Inward POD Required (${d.uniqueId})`,
-        description: `Admin approved ${(d.orderQuantityLitres || d.quantity || 0).toLocaleString()} L order. Please take a photo of the physical invoice/dipstick to complete Step 3.`,
-        targetView: 'diesel',
-        serviceId: 'SHEET_DIESEL',
-        facility: wh.city,
-        facilityCode: wh.code,
-        actionText: '📷 Snap POD & Confirm Litres'
-      });
-    });
-
-    // 5. If Super Admin is viewing, add nationwide missing summary alerts
-    if (currentUser.role === 'SUPER_ADMIN') {
-      const missingCount = warehouses.length - dailySiteLogs.filter(l => l.date === currentDate).length;
-      if (missingCount > 0) {
-        alerts.push({
-          id: 'alert_nationwide_missing',
-          type: 'CRITICAL_DEVIATION',
-          urgency: 'HIGH',
-          title: `${missingCount} Facilities Missing Daily Logs`,
-          description: `Out of ${warehouses.length} warehouse hubs, ${missingCount} hubs have not submitted today's operational telemetry. Send an automated nudge!`,
-          targetView: 'adminDashboard',
-          facility: 'Nationwide Network',
-          facilityCode: 'ALL',
-          actionText: '📢 Broadcast WhatsApp/Email Nudge'
-        });
-      }
-    }
-
-    return alerts;
-  }, [currentUser, warehouses, currentDate, dailySiteLogs, sheetRecords, dieselLogs]);
+  const smartAlerts = useMemo<SmartAlert[]>(
+    () =>
+      work.items.map((item, i) => ({
+        id: `${item.kind}-${item.siteCode}-${item.code}-${i}`,
+        type: item.kind === 'diesel' ? 'APPROVAL_NEEDED' : 'PENDING_TODAY',
+        urgency: item.kind === 'diesel' ? 'HIGH' : 'MEDIUM',
+        title: item.label,
+        description: `${item.site} (${item.siteCode}), ${currentDate}`,
+        targetView: VIEW_FOR[item.code] ?? 'pocFiling',
+        serviceId: item.code,
+        facility: item.site,
+        facilityCode: item.siteCode,
+        actionText: item.kind === 'diesel' ? 'Open the diesel ledger' : 'Open the form',
+      })),
+    [work, currentDate],
+  );
 
   const filteredAlerts = useMemo(() => {
     if (filterType === 'ACTIONABLE') return smartAlerts.filter(a => a.urgency === 'HIGH');
@@ -197,20 +118,19 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-400 relative">
               <Bell className="w-5 h-5" />
-              {smartAlerts.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-600 text-white font-black text-[9px] rounded-full flex items-center justify-center border-2 border-slate-900">
-                  {smartAlerts.length}
+              {work.total > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 bg-rose-600 text-white font-black text-[9px] rounded-full flex items-center justify-center border-2 border-slate-900">
+                  {work.total}
                 </span>
               )}
             </div>
             <div>
               <h3 className="font-black text-sm sm:text-base text-white flex items-center gap-2">
-                Action Alerts & Filing Reminders
+                What is pending
               </h3>
               <p className="text-[11px] text-slate-300">
-                {smartAlerts.length === 0
-                  ? 'All forms and shift checklists are up to date! 🎉'
-                  : `${smartAlerts.length} operational items require your attention`}
+                {pendingSummary(work)}
+                {work.total > smartAlerts.length && ` (showing the first ${smartAlerts.length})`}
               </p>
             </div>
           </div>
@@ -236,7 +156,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                   : 'text-slate-600 hover:bg-slate-200'
               }`}
             >
-              All Alerts ({smartAlerts.length})
+              All ({work.total})
             </button>
             <button
               type="button"

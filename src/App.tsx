@@ -25,6 +25,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { AccessDenied } from './components/common/AccessDenied';
 import { DemoModeBanner, StartupScreen } from './components/common/StartupScreen';
 import { capabilitiesFor } from './lib/permissions';
+import { usePendingWork } from './components/common/usePendingWork';
 
 const MainContent: React.FC = () => {
   const {
@@ -134,29 +135,8 @@ const MainContent: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const pendingAlertCount = useMemo(() => {
-    let count = 0;
-    const userWhId = currentUser.warehouseId || 'WH_001';
-    const wh = warehouses.find(w => w.id === userWhId) || warehouses[0];
-
-    const filedDaily = dailySiteLogs.some(l => l.site === wh.id && l.date === currentDate);
-    if (!filedDaily) count++;
-
-    const hkFiled = (sheetRecords['SHEET_HOUSEKEEPING'] || []).some(
-      r => (r.warehouseId === wh.id || r.warehouseId === wh.code) && r.date === currentDate
-    );
-    if (!hkFiled) count++;
-
-    const dgFiled = (sheetRecords['SHEET_DG_POWER_WATER'] || []).some(
-      r => (r.warehouseId === wh.id || r.warehouseId === wh.code) && r.date === currentDate
-    );
-    if (!dgFiled) count++;
-
-    const pendingDiesel = dieselLogs.filter(d => d.warehouseId === wh.id && d.status === 'Approved').length;
-    count += pendingDiesel;
-
-    return count;
-  }, [currentUser, warehouses, currentDate, dailySiteLogs, sheetRecords, dieselLogs]);
+  // One calculation, shared with the top bar's bell and the alert list.
+  const pendingAlertCount = usePendingWork().total;
 
   const isHomeView =
     (currentUser.role === 'SUPER_ADMIN' && currentView === 'dashboard') ||

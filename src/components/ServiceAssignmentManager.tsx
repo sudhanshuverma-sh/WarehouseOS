@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { ServiceAssignment } from '../types';
 import { PageHeader } from './common/PageHeader';
+import { ExpandButton, TableFullscreen } from './common/TableTools';
 
 interface ServiceAssignmentManagerProps {
   onNavigateTab?: (tab: string) => void;
@@ -47,6 +48,8 @@ export const ServiceAssignmentManager: React.FC<ServiceAssignmentManagerProps> =
   const [selectedAdminFilter, setSelectedAdminFilter] = useState('ALL');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('ALL');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('ALL');
+
+  const [expanded, setExpanded] = useState(false);
 
   // Modal States
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -488,20 +491,24 @@ export const ServiceAssignmentManager: React.FC<ServiceAssignmentManagerProps> =
       </div>
 
       {/* Master Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+      <TableFullscreen expanded={expanded} onCollapse={() => setExpanded(false)}>
+      <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden ${expanded ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
+        <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-slate-50/50">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-teal-600" />
             <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700">
               Service Responsibility Matrix ({filteredAssignments.length} Assignments)
             </h3>
           </div>
-          <span className="text-[11px] text-slate-400">
-            Click edit to reassign Admins or Site POCs
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="hidden lg:inline text-[11px] text-slate-400">
+              Click edit to reassign Admins or Site POCs
+            </span>
+            <ExpandButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} />
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className={`overflow-auto ${expanded ? 'flex-1 min-h-0' : ''}`}>
           <table className="w-full text-left text-xs border-collapse font-sans">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[10px]">
               <tr>
@@ -650,6 +657,7 @@ export const ServiceAssignmentManager: React.FC<ServiceAssignmentManagerProps> =
           </table>
         </div>
       </div>
+      </TableFullscreen>
 
       {/* MODAL: Add / Edit Service Assignment */}
       {isEditModalOpen && (

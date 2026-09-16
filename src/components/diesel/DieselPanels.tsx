@@ -10,6 +10,7 @@ import {
   type WarehouseBar,
   type WarehouseRow,
 } from '../../lib/diesel/dashboard';
+import { ExpandButton, TableFullscreen } from '../common/TableTools';
 
 /** Building blocks of the Diesel dashboard: cards, lists and tables. */
 
@@ -228,8 +229,17 @@ const ZONE_CHIP: Record<string, string> = {
 
 export const WarehouseTable: React.FC<{ rows: WarehouseRow[]; limit?: number; maxHeight?: string }> = ({ rows, limit, maxHeight = '22rem' }) => {
   const shown = limit ? rows.slice(0, limit) : rows;
+  const [expanded, setExpanded] = useState(false);
   return (
-    <div className="overflow-auto border border-slate-200 rounded-lg print:max-h-none print:overflow-visible" style={{ maxHeight }}>
+    <TableFullscreen expanded={expanded} onCollapse={() => setExpanded(false)}>
+    <div className="w-full space-y-2">
+      <div className="flex justify-end print:hidden">
+        <ExpandButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} />
+      </div>
+      <div
+        className="overflow-auto border border-slate-200 rounded-lg print:max-h-none print:overflow-visible"
+        style={{ maxHeight: expanded ? 'calc(100vh - 8rem)' : maxHeight }}
+      >
       <table className="w-full text-xs">
         <thead className="sticky top-0 bg-slate-50 z-10">
           <tr className="text-left text-[10px] uppercase tracking-wider text-slate-500">
@@ -271,7 +281,9 @@ export const WarehouseTable: React.FC<{ rows: WarehouseRow[]; limit?: number; ma
           )}
         </tbody>
       </table>
+      </div>
     </div>
+    </TableFullscreen>
   );
 };
 
@@ -281,6 +293,7 @@ export const MonthComparison: React.FC<{ months: MonthPoint[] }> = ({ months }) 
     return [0, 1, 2].map((i) => months[Math.max(0, n - 3 + i)]?.month ?? '');
   }, [months]);
   const [picked, setPicked] = useState<string[] | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const selection = picked && picked.every((m) => months.some((x) => x.month === m)) ? picked : defaults;
   const cols = selection.map((m) => months.find((x) => x.month === m));
 
@@ -295,11 +308,13 @@ export const MonthComparison: React.FC<{ months: MonthPoint[] }> = ({ months }) 
   ];
 
   return (
+    <TableFullscreen expanded={expanded} onCollapse={() => setExpanded(false)}>
     <Card
       title="Compare 3 months"
       actions={
         months.length > 0 && (
-          <div className="flex flex-wrap gap-2 print:hidden">
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <ExpandButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} />
             {[0, 1, 2].map((slot) => (
               <select
                 key={slot}
@@ -323,9 +338,12 @@ export const MonthComparison: React.FC<{ months: MonthPoint[] }> = ({ months }) 
       {months.length === 0 ? (
         <p className="text-xs text-slate-400 py-4">No monthly data.</p>
       ) : (
-        <div className="overflow-x-auto border border-slate-200 rounded-lg">
+        <div
+          className="overflow-auto border border-slate-200 rounded-lg"
+          style={expanded ? { maxHeight: 'calc(100vh - 12rem)' } : undefined}
+        >
           <table className="w-full text-xs">
-            <thead className="bg-slate-50">
+            <thead className="bg-slate-50 sticky top-0 z-10">
               <tr className="text-[10px] uppercase tracking-wider text-slate-500">
                 <th className="px-3 py-2 text-left font-bold">Metric</th>
                 {selection.map((m, i) => (
@@ -347,5 +365,6 @@ export const MonthComparison: React.FC<{ months: MonthPoint[] }> = ({ months }) 
         </div>
       )}
     </Card>
+    </TableFullscreen>
   );
 };

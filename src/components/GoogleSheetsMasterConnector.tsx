@@ -26,6 +26,7 @@ import {
   Sliders
 } from 'lucide-react';
 import { PageHeader } from './common/PageHeader';
+import { ExpandButton, TableFullscreen } from './common/TableTools';
 import { Warehouse, User } from '../types';
 import { Plus as PlusIcon } from 'lucide-react';
 import { Button } from './common/Button';
@@ -222,6 +223,7 @@ export const GoogleSheetsMasterConnector: React.FC<{ onBack?: () => void }> = ({
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string; added?: number; updated?: number } | null>(null);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
+  const [adminTableExpanded, setAdminTableExpanded] = useState<boolean>(false);
   const [isAssigningPoc, setIsAssigningPoc] = useState<boolean>(false);
   const [showMasterDataCode, setShowMasterDataCode] = useState<boolean>(false);
   const [copiedMasterDataCode, setCopiedMasterDataCode] = useState<boolean>(false);
@@ -1531,14 +1533,21 @@ function jsonResponse(data) {
             </div>
 
             {/* Current Configured Admins Table */}
-            <div className="space-y-2 pt-2">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                Currently Configured Administrators ({adminUsers.length})
-              </h4>
+            <TableFullscreen expanded={adminTableExpanded} onCollapse={() => setAdminTableExpanded(false)}>
+            <div className="w-full space-y-2 pt-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Currently Configured Administrators ({adminUsers.length})
+                </h4>
+                <ExpandButton expanded={adminTableExpanded} onToggle={() => setAdminTableExpanded((v) => !v)} />
+              </div>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <div
+                className="border border-slate-200 rounded-xl overflow-auto"
+                style={adminTableExpanded ? { maxHeight: 'calc(100vh - 10rem)' } : undefined}
+              >
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 uppercase tracking-wider text-[10px]">
+                  <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 uppercase tracking-wider text-[10px] sticky top-0 z-10">
                     <tr>
                       <th className="py-3 px-3">Admin User</th>
                       <th className="py-3 px-3">Role</th>
@@ -1595,6 +1604,7 @@ function jsonResponse(data) {
                 </table>
               </div>
             </div>
+            </TableFullscreen>
           </div>
         </div>
       )}

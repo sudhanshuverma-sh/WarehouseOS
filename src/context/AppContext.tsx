@@ -288,7 +288,7 @@ interface AppContextType {
   dropdownLists: Record<string, string[]>;
   lastMasterDataSyncAt: string | null;
   syncMasterData: (idOrAppsScriptUrl?: string) => Promise<{ ok: boolean; message: string; counts?: { poc: number; site: number; service: number } }>;
-  importMasterDataFromJson: (jsonText: string) => { ok: boolean; message: string; counts?: { poc: number; site: number; service: number } };
+  importMasterDataFromJson: (jsonText: string) => Promise<{ ok: boolean; message: string; counts?: { poc: number; site: number; service: number } }>;
   masterDataAppsScriptUrl: string;
   setMasterDataAppsScriptUrl: (url: string) => void;
   assignPocMasterRow: (row: Partial<PocMaster>) => Promise<{ success: boolean; message: string }>;
@@ -444,6 +444,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   /**
+   * Master Data is only connected once it reaches the database. A sync or a
+   * paste that stops in the browser is one person's screen: colleagues, the
+   * server and the next device all still see the old sites and POCs.
+   *
+   * So both paths end here. The server takes the whole snapshot, writes
+   * sites, then services, then POCs, and keeps rows that were edited in the
+   * app rather than overwriting them. It is Super Admin only, checked there
+   * whatever this does. In demo mode there is nothing to save to.
+   */
+  const saveMasterToDatabase = async (snapshot: {
+    siteMaster: SiteMaster[];
+    serviceRegistry: ServiceRegistry[];
+    pocMaster: PocMaster[];
+  }): Promise<{ ok: boolean; message: string }> => {
+    if (dataMode !== 'api') return { ok: true, message: '' };
+    try {
+      const report = await api.post<{
+        sites: { written: number; kept: number };
+        services: { written: number; kept: number };
+        pocs: { written: number; kept: number };
+        warnings: string[];
+        skipped: string[];
+      }>('/master/import', snapshot);
+      const kept = report.sites.kept + report.services.kept + report.pocs.kept;
+      const extra = [
+        kept ? `${kept} rows edited in the app were left as they are.` : '',
+        report.skipped.length ? `${report.skipped.length} rows skipped.` : ''
+      ].filter(Boolean);
+      return {
+        ok: true,
+        message:
+          ` Saved: ${report.sites.written} sites, ${report.services.written} services, ${report.pocs.written} POCs.` +
+          (extra.length ? ` ${extra.join(' ')}` : '')
+      };
+    } catch (err) {
+      return { ok: false, message: ` Not saved to the database: ${errorText(err)}` };
+    }
+  };
+
+  /**
    * Accepts either a bare Spreadsheet ID (gviz, read-only) or a
    * script.google.com Apps Script URL (reads + writes). Both are best-effort
    * for reads — see the top of masterDataSync.ts for why, and why the
@@ -483,9 +523,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const warning = failedTabs.length
         ? ` (Couldn't read: ${failedTabs.map(([tab, msg]) => `${tab} — ${msg}`).join('; ')})`
         : '';
+      const saved = await saveMasterToDatabase({ siteMaster, serviceRegistry, pocMaster });
       return {
-        ok: true,
-        message: summary + warning,
+        ok: saved.ok,
+        message: summary + warning + saved.message,
         counts: { poc: pocMaster.length, site: siteMaster.length, service: serviceRegistry.length }
       };
     } catch (err: any) {
@@ -499,7 +540,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    * not live) — the reliable path since live reads hit Google's own
    * X-Frame-Options wall on anything embedded (see masterDataSync.ts).
    */
-  const importMasterDataFromJson = (jsonText: string) => {
+  const importMasterDataFromJson = async (jsonText: string) => {
     try {
       const { pocMaster, siteMaster, serviceRegistry, masterAudit, dropdowns } = parseMasterDataJson(jsonText);
 
@@ -516,13 +557,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setMasterAuditRows(masterAudit);
       setDropdownLists(dropdowns);
       setLastMasterDataSyncAt(new Date().toISOString());
+      const saved = await saveMasterToDatabase({ siteMaster, serviceRegistry, pocMaster });
       return {
-        ok: true,
-        message: [
-          formatRowDiff('POC_Master', pocDiff),
-          formatRowDiff('Site_Master', siteDiff),
-          formatRowDiff('Service_Registry', serviceDiff)
-        ].join(' · '),
+        ok: saved.ok,
+        message:
+          [
+            formatRowDiff('POC_Master', pocDiff),
+            formatRowDiff('Site_Master', siteDiff),
+            formatRowDiff('Service_Registry', serviceDiff)
+          ].join(' · ') + saved.message,
         counts: { poc: pocMaster.length, site: siteMaster.length, service: serviceRegistry.length }
       };
     } catch (err: any) {

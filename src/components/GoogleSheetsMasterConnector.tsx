@@ -126,6 +126,7 @@ export const GoogleSheetsMasterConnector: React.FC<{ onBack?: () => void }> = ({
   const [showMasterDataPasteModal, setShowMasterDataPasteModal] = useState(false);
   const [masterDataViewTab, setMasterDataViewTab] = useState<'POC_Master' | 'Site_Master' | 'Service_Registry' | 'Master_Audit' | 'Dropdowns'>('POC_Master');
   const [masterDataPasteText, setMasterDataPasteText] = useState('');
+  const [isImportingMasterData, setIsImportingMasterData] = useState(false);
 
   // Site_Master / Service_Registry editor. `initial` is captured once per
   // open, so the drawer's dirty check compares against what was opened —
@@ -210,8 +211,10 @@ export const GoogleSheetsMasterConnector: React.FC<{ onBack?: () => void }> = ({
     setIsSyncingMasterData(false);
   };
 
-  const handleMasterDataPaste = () => {
-    const res = importMasterDataFromJson(masterDataPasteText.trim());
+  const handleMasterDataPaste = async () => {
+    setIsImportingMasterData(true);
+    const res = await importMasterDataFromJson(masterDataPasteText.trim());
+    setIsImportingMasterData(false);
     setMasterDataSyncResult({ ok: res.ok, message: res.message });
     notify(res.ok ? 'success' : 'error', res.ok ? 'Master Data Imported' : 'Import Failed', res.message);
     if (res.ok) {
@@ -1832,10 +1835,10 @@ function jsonResponse(data) {
               <button
                 type="button"
                 onClick={handleMasterDataPaste}
-                disabled={!masterDataPasteText.trim()}
+                disabled={!masterDataPasteText.trim() || isImportingMasterData}
                 className="px-4 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-xs disabled:opacity-50"
               >
-                Import
+                {isImportingMasterData ? 'Importing' : 'Import'}
               </button>
             </div>
           </div>

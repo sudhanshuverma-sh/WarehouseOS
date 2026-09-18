@@ -16,7 +16,7 @@
  */
 
 import type { DailySiteLog, DieselLog, TaskSubmission, Warehouse } from '../../types';
-import type { ServiceRegistry, SiteMaster } from '../../types/masterData';
+import type { PocMaster, ServiceRegistry, SiteMaster } from '../../types/masterData';
 import { serviceCodeFor, SHEET_TO_SERVICE, sheetIdFor } from '../services/serviceCodes';
 
 export type Cadence = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'EVENT_DRIVEN';
@@ -146,6 +146,22 @@ export function controlRoomSites(siteMaster: SiteMaster[], warehouses: Warehouse
 /** True when `id` is any of the names this site goes by. */
 export const siteMatches = (site: ControlRoomSite, id: string | undefined): boolean =>
   Boolean(id) && site.aliases.some((a) => norm(a) === norm(id));
+
+/**
+ * The people who file for this site: live POC_Master rows for it, matched by
+ * any of the site's codes. Admin rows are not site POCs, and a row that was
+ * switched off is not someone to call. Pass a service code to narrow it to
+ * the POCs who hold that service.
+ */
+export function sitePocs(site: ControlRoomSite, pocRows: PocMaster[], serviceCode?: string): PocMaster[] {
+  return pocRows.filter((p) => {
+    if (p.Active !== 'Yes' || p.Role !== 'SITE_POC') return false;
+    if (!siteMatches(site, p.Site_Code)) return false;
+    if (!serviceCode) return true;
+    const held = String(p.Service_Codes ?? '').trim().toUpperCase();
+    return held === 'ALL' || held.split(/[,\s]+/).includes(serviceCode.toUpperCase());
+  });
+}
 
 /** The id the app's existing forms know this site by: its warehouse id, else the Site_Code. */
 export const appWarehouseIdFor = (site: ControlRoomSite, warehouses: Warehouse[]): string =>

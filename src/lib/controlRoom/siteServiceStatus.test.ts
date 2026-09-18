@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Warehouse } from '../../types';
-import type { ServiceRegistry, SiteMaster } from '../../types/masterData';
+import type { PocMaster, ServiceRegistry, SiteMaster } from '../../types/masterData';
 import {
   activityByDay,
   monthGrid,
@@ -15,6 +15,7 @@ import {
   lastDays,
   periodFor,
   siteProgressByDay,
+  sitePocs,
   sortByAttention,
   summarise,
   type ControlRoomRecords,
@@ -99,6 +100,43 @@ describe('services', () => {
     expect(list.find((s) => s.code === 'HOUSEKEEPING')?.name).toBe('Housekeeping Roster');
     expect(list.find((s) => s.code === 'DIESEL')?.cadence).toBe('EVENT_DRIVEN');
     expect(list.filter((s) => s.code === 'EB_DG')).toHaveLength(1);
+  });
+});
+
+describe('sitePocs', () => {
+  const poc = (over: Partial<PocMaster>): PocMaster =>
+    ({
+      Access_ID: 'AC-0001',
+      POC_Name: 'Asha',
+      POC_Email: 'asha@example.com',
+      Site_Code: 'ZHPL-HR-03',
+      Role: 'SITE_POC',
+      Service_Codes: 'ALL',
+      Contact_Number: '+91 98000 00001',
+      Active: 'Yes',
+      ...over,
+    }) as PocMaster;
+
+  const [hr] = controlRoomSites([site({ WH_Code: 'GGN3' })], []);
+
+  it('finds live site POCs by any of the site’s codes', () => {
+    const rows = [
+      poc({}),
+      poc({ Access_ID: 'AC-0002', POC_Name: 'Ravi', Site_Code: 'GGN3' }), // same site, WH_Code
+      poc({ Access_ID: 'AC-0003', POC_Name: 'Left', Active: 'No' }),
+      poc({ Access_ID: 'AC-0004', POC_Name: 'Admin', Role: 'SUPER_ADMIN', Site_Code: 'ALL' }),
+      poc({ Access_ID: 'AC-0005', POC_Name: 'Elsewhere', Site_Code: 'ZHPL-DL-01' }),
+    ];
+    expect(sitePocs(hr, rows).map((p) => p.POC_Name)).toEqual(['Asha', 'Ravi']);
+  });
+
+  it('narrows to the POCs who hold a service', () => {
+    const rows = [
+      poc({ POC_Name: 'Everything', Service_Codes: 'ALL' }),
+      poc({ Access_ID: 'AC-0002', POC_Name: 'Diesel only', Service_Codes: 'DIESEL, EB_DG' }),
+      poc({ Access_ID: 'AC-0003', POC_Name: 'Housekeeping only', Service_Codes: 'HOUSEKEEPING' }),
+    ];
+    expect(sitePocs(hr, rows, 'DIESEL').map((p) => p.POC_Name)).toEqual(['Everything', 'Diesel only']);
   });
 });
 

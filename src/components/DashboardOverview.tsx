@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Building2, 
@@ -22,7 +22,20 @@ import {
 import { DailySiteLog, SiteHealthStatus, Warehouse } from '../types';
 import { PageHeader } from './common/PageHeader';
 import { SiteServiceBoard } from './controlRoom/SiteServiceBoard';
-import { computeSiteStatuses, controlRoomServices, controlRoomSites } from '../lib/controlRoom/siteServiceStatus';
+import { computeSiteStatuses, controlRoomServices, controlRoomSites, siteMatches, sitePocs } from '../lib/controlRoom/siteServiceStatus';
+
+/** One labelled fact in the drawer. A blank says where it would come from. */
+const Detail: React.FC<{ label: string; value?: string; mono?: boolean }> = ({ label, value, mono }) => {
+  const shown = String(value ?? '').trim();
+  return (
+    <div className="flex items-start justify-between gap-3 p-3">
+      <span className="shrink-0 text-[11px] font-semibold text-slate-500">{label}</span>
+      <span className={`text-right ${mono ? 'font-mono' : ''} ${shown ? 'text-slate-800' : 'text-slate-400'}`}>
+        {shown || 'Not in Master Data'}
+      </span>
+    </div>
+  );
+};
 
 interface DashboardOverviewProps {
   onNavigateTab: (tab: string) => void;
@@ -34,6 +47,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
   const {
     warehouses,
     siteMasterRows,
+    pocMasterRows,
     currentUser,
     currentDate,
     dailySiteLogs,
@@ -79,17 +93,37 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
   const [shareData, setShareData] = useState<{ subject: string; html: string; plain: string; composeUrl: string } | null>(null);
   const [copySuccess, setCopySuccess] = useState<boolean>(false);
 
+  // Esc closes the drawer, the same as clicking away from it.
+  useEffect(() => {
+    if (!selectedDrawerSite) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelectedDrawerSite(null);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedDrawerSite]);
+
   // Whether the board is counting the real network or the app's warehouse list.
   const usingMasterData = siteMasterRows.some(s => s.Active === 'Yes');
 
   const complianceData = getComplianceMatrix(currentDate, 21);
   const briefingData = getBriefing(currentDate);
 
-  // Drawer site detail
-  const drawerSiteLog = selectedDrawerSite ? dailySiteLogs.find(l => l.site === selectedDrawerSite && l.date === currentDate) : null;
-  const drawerSiteHistory = selectedDrawerSite ? getSiteHistory(selectedDrawerSite, 35) : null;
-  const drawerWarehouse = selectedDrawerSite ? warehouses.find(w => w.id === selectedDrawerSite) : null;
+  // Drawer site detail. Records and warehouses are matched by every name the
+  // site goes by: the board's ids are Site_Codes, while logs and warehouses
+  // still carry app ids like WH_AP_VIZAG_B2C, so exact equality found nothing.
   const drawerStatus = selectedDrawerSite ? siteStatuses.find(s => s.site.id === selectedDrawerSite) : null;
+  const matchesDrawer = (id: string | undefined) =>
+    drawerStatus ? siteMatches(drawerStatus.site, id) : id === selectedDrawerSite;
+  const drawerWarehouse = selectedDrawerSite ? warehouses.find(w => matchesDrawer(w.id)) : null;
+  const drawerSiteLog = selectedDrawerSite
+    ? dailySiteLogs.find(l => matchesDrawer(l.site) && l.date === currentDate)
+    : null;
+  const drawerSiteHistory = selectedDrawerSite ? getSiteHistory(drawerWarehouse?.id ?? selectedDrawerSite, 35) : null;
+  const drawerSite = selectedDrawerSite ? siteMasterRows.find(s => s.Site_Code === selectedDrawerSite) : null;
+  const drawerPocs = drawerStatus ? sitePocs(drawerStatus.site, pocMasterRows) : [];
+  const drawerAddress = [drawerSite?.Address, drawerSite?.City, drawerSite?.State, drawerSite?.Pincode]
+    .map(v => String(v ?? '').trim())
+    .filter(Boolean)
+    .join(', ');
 
   const handleOpenShare = (logId: string) => {
     const share = buildShareMailHtml(logId);
@@ -305,37 +339,86 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
 
       {/* Site Detail Drawer */}
       {selectedDrawerSite && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in duration-150">
-          <div className="w-full max-w-lg bg-white h-full shadow-2xl overflow-y-auto p-6 space-y-6 flex flex-col justify-between">
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in duration-150"
+          onMouseDown={() => setSelectedDrawerSite(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${drawerStatus?.site.name ?? selectedDrawerSite}, site details`}
+        >
+          {/* Mousedown, not click: text selected inside and released outside
+              should not count as clicking away. */}
+          <div
+            className="w-full max-w-lg bg-white h-full shadow-2xl overflow-y-auto p-6 space-y-6 flex flex-col justify-between"
+            onMouseDown={e => e.stopPropagation()}
+          >
             <div className="space-y-5">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-                <div>
+              <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-4">
+                <div className="min-w-0">
                   <h2 className="text-lg font-bold text-slate-900">{drawerStatus?.site.name || drawerWarehouse?.name || selectedDrawerSite}</h2>
-                  <span className="font-mono text-xs font-bold text-teal-700">{selectedDrawerSite} • {drawerStatus?.site.city || drawerWarehouse?.city}</span>
-                  {drawerStatus && (
-                    <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                      {drawerStatus.services.map(s => (
-                        <li key={s.code} className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 text-xs">
-                          <span className="truncate text-slate-700">{s.name}</span>
-                          <span
-                            className={`shrink-0 text-[10px] font-semibold ${
-                              s.state === 'done' ? 'text-(--color-filed)' : s.state === 'pending' ? 'text-(--color-due)' : 'text-slate-500'
-                            }`}
-                          >
-                            {s.state === 'done' ? 'Done' : s.state === 'pending' ? 'Pending' : s.count ? `${s.count} today` : 'None today'}
-                          </span>
+                  <p className="font-mono text-xs text-slate-500 truncate">
+                    {[selectedDrawerSite, drawerSite?.WH_Code, drawerStatus?.site.channel, drawerStatus?.site.zone]
+                      .map(v => String(v ?? '').trim())
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedDrawerSite(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer shrink-0"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Who to call, and where the place is */}
+              <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 text-xs">
+                <div className="p-3">
+                  <p className="text-[11px] font-semibold text-slate-500">Site POC{drawerPocs.length === 1 ? '' : 's'}</p>
+                  {drawerPocs.length === 0 ? (
+                    <p className="mt-1 text-slate-400">Nobody is listed for this site in POC Master.</p>
+                  ) : (
+                    <ul className="mt-1.5 space-y-1.5 max-h-40 overflow-y-auto">
+                      {drawerPocs.map(p => (
+                        <li key={p.Access_ID} className="flex items-center justify-between gap-3">
+                          <span className="truncate text-slate-800">{p.POC_Name}</span>
+                          {String(p.Contact_Number ?? '').trim() ? (
+                            <a
+                              href={`tel:${String(p.Contact_Number).replace(/\s+/g, '')}`}
+                              className="shrink-0 font-mono text-slate-700 hover:text-slate-900 underline underline-offset-2"
+                            >
+                              {p.Contact_Number}
+                            </a>
+                          ) : (
+                            <span className="shrink-0 text-slate-400">No number</span>
+                          )}
                         </li>
                       ))}
                     </ul>
                   )}
                 </div>
-                <button
-                  onClick={() => setSelectedDrawerSite(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <Detail label="SAP code" value={drawerSite?.SAP_Code} mono />
+                <Detail label="GSTIN" value={drawerSite?.GSTIN} mono />
+                <Detail label="Address" value={drawerAddress} />
               </div>
+
+              {drawerStatus && (
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {drawerStatus.services.map(s => (
+                    <li key={s.code} className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 text-xs">
+                      <span className="truncate text-slate-700">{s.name}</span>
+                      <span
+                        className={`shrink-0 text-[10px] font-semibold ${
+                          s.state === 'done' ? 'text-(--color-filed)' : s.state === 'pending' ? 'text-(--color-due)' : 'text-slate-500'
+                        }`}
+                      >
+                        {s.state === 'done' ? 'Done' : s.state === 'pending' ? 'Pending' : s.count ? `${s.count} today` : 'None today'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
               {drawerSiteLog ? (
                 <div className="space-y-4 text-xs">

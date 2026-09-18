@@ -32,6 +32,7 @@ import {
   monthGrid,
   periodFor,
   siteMatches,
+  sitePocs,
   summarise,
   type ChannelTab,
   type ControlRoomRecords,
@@ -40,6 +41,7 @@ import {
   type DayActivity,
   type Filing,
 } from '../lib/controlRoom/siteServiceStatus';
+import type { PocMaster } from '../types/masterData';
 import type { ExportSpec } from '../lib/export/exporter';
 import { PageHeader } from './common/PageHeader';
 import { ExportPanel } from './common/ExportPanel';
@@ -489,7 +491,7 @@ const ServiceSitesView: React.FC<{
   onDay: (day: string) => void;
   month: string;
   onMonth: (month: string) => void;
-  pocRows: { Site_Code: string; POC_Name: string; Service_Codes: string; Role: string; Active: string }[];
+  pocRows: PocMaster[];
   caps: ReturnType<typeof capabilitiesFor>;
 }> = ({ service, sites, records, today, day, onDay, month, onMonth, pocRows, caps }) => {
   const [tab, setTab] = useState<ChannelTab>('ALL');
@@ -517,15 +519,7 @@ const ServiceSitesView: React.FC<{
       computeSiteStatuses(inTab, only, records, day).map(({ site, services }) => {
         const count = services[0]?.count ?? 0;
         const last = filings.find((f) => siteMatches(site, f.site) && f.day >= from && f.day <= to);
-        const pocs = pocRows
-          .filter(
-            (p) =>
-              p.Active === 'Yes' &&
-              p.Role === 'SITE_POC' &&
-              siteMatches(site, p.Site_Code) &&
-              (p.Service_Codes === 'ALL' || p.Service_Codes.split(/[,\s]+/).includes(service.code)),
-          )
-          .map((p) => p.POC_Name);
+        const pocs = sitePocs(site, pocRows, service.code).map((p) => p.POC_Name);
         return {
           code: site.id,
           name: site.name,

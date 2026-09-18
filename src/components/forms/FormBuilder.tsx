@@ -16,6 +16,7 @@ import {
   Percent,
   Plus,
   Smartphone,
+  Table,
   Thermometer,
   Trash2,
   Type,
@@ -34,9 +35,11 @@ import {
   OWN_SCREEN_SERVICES,
   blankField,
   cleanForSave,
+  columnsToFields,
   fieldKeyFrom,
   fieldTypeLabel,
   isNumericType,
+  parseList,
   problemCount,
   serviceCodeFrom,
   validateDraft,
@@ -107,6 +110,8 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
   const [dirty, setDirty] = useState(false);
   const [tryValues, setTryValues] = useState<Record<string, unknown>>({});
   const [tryEvidence, setTryEvidence] = useState<Record<string, EvidenceValue | null>>({});
+  const [columnText, setColumnText] = useState('');
+  const [previewMode, setPreviewMode] = useState<'form' | 'sheet'>('form');
 
   const labelInputs = useRef(new Map<number, HTMLInputElement>());
   const focusNext = useRef<number | null>(null);
@@ -220,6 +225,16 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
   const copyFrom = (sheetId: string) => {
     const source = operationalSheets.find((s) => s.id === sheetId);
     if (source?.fieldsConfig) replaceQuestions(source.fieldsConfig);
+  };
+
+  /** A header row copied out of a spreadsheet becomes the questions. */
+  const addFromColumns = () => {
+    const made = columnsToFields(columnText, taken(fields));
+    if (!made.length) return;
+    setDirty(true);
+    setFields((prev) => [...prev, ...made]);
+    setColumnText('');
+    setOpen(null);
   };
 
   const cancel = () => {
@@ -378,26 +393,41 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
 
               <div className="sm:col-span-2">
                 <span className={LABEL} id="fb-cadence">How often is it filed?</span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl" role="radiogroup" aria-labelledby="fb-cadence">
-                  {CADENCE_OPTIONS.map((c) => (
-                    <button
-                      key={c.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={cadence === c.value}
-                      onClick={() => {
-                        setDirty(true);
-                        setCadence(c.value);
-                      }}
-                      className={`h-9 rounded-lg text-xs font-semibold transition active:scale-[0.98] cursor-pointer ${
-                        cadence === c.value ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      {c.label}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-labelledby="fb-cadence">
+                  {CADENCE_OPTIONS.map((c) => {
+                    const picked = cadence === c.value;
+                    return (
+                      <button
+                        key={c.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={picked}
+                        onClick={() => {
+                          setDirty(true);
+                          setCadence(c.value);
+                        }}
+                        className={`text-left p-3 rounded-xl border transition active:scale-[0.99] cursor-pointer ${
+                          picked ? 'border-(--color-ink) bg-slate-50 shadow-xs' : 'border-slate-200 hover:border-slate-400'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span
+                            className={`w-3.5 h-3.5 rounded-full border-4 shrink-0 ${
+                              picked ? 'border-(--color-ink) bg-white' : 'border-slate-300 bg-white'
+                            }`}
+                          />
+                          <span className="text-sm font-semibold text-slate-900">{c.label}</span>
+                        </span>
+                        <span className="mt-1 block text-[11px] text-slate-600">{c.hint}</span>
+                        <span className="mt-1 block text-[11px] text-slate-500">{c.effect}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <p className="mt-1 text-[11px] text-slate-500">{CADENCE_OPTIONS.find((c) => c.value === cadence)?.hint}</p>
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Saved in Master Data as this service's <code className="font-mono text-slate-700">Cadence</code>, so the Control Room, the POC
+                  desk and the Admin Service Hub all judge it the same way.
+                </p>
               </div>
             </div>
 
@@ -443,6 +473,34 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
                 </select>
               </div>
             )}
+
+            {/* The form usually exists as a sheet already. Its header row is
+                the question list, so paste it instead of retyping it. */}
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <label htmlFor="fb-columns" className={LABEL}>Or paste the column names from your sheet</label>
+              <textarea
+                id="fb-columns"
+                rows={2}
+                value={columnText}
+                onChange={(e) => setColumnText(e.target.value)}
+                placeholder="Paste a header row: Date, Chiller temp, Door seal, Remarks, Photo"
+                className={`${INPUT} h-auto py-2`}
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={addFromColumns}
+                  disabled={parseList(columnText).length === 0}
+                  className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-(--color-ink) hover:bg-(--color-ink-soft) disabled:opacity-40 disabled:cursor-default active:scale-[0.98] transition cursor-pointer"
+                >
+                  Add {parseList(columnText).length || ''} {parseList(columnText).length === 1 ? 'question' : 'questions'}
+                </button>
+                <span className="text-[11px] text-slate-500">
+                  Copy the header row out of Excel or Google Sheets. Tabs, commas or one per line all work, and each answer type is
+                  guessed from the wording.
+                </span>
+              </div>
+            </div>
           </section>
 
           {/* Questions */}
@@ -550,6 +608,49 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
                             />
                           </div>
 
+                          {f.type !== 'evidence' && (
+                            <div className="sm:col-span-2">
+                              <label htmlFor={`fb-d-${i}`} className={LABEL}>Starts with (optional)</label>
+                              {f.type === 'select' ? (
+                                <select
+                                  id={`fb-d-${i}`}
+                                  value={String(f.defaultValue ?? '')}
+                                  onChange={(e) => updateField(i, { defaultValue: e.target.value || undefined })}
+                                  className={INPUT}
+                                >
+                                  <option value="">Nothing chosen</option>
+                                  {(f.options ?? []).filter(Boolean).map((o) => (
+                                    <option key={o} value={o}>{o}</option>
+                                  ))}
+                                </select>
+                              ) : f.type === 'boolean' ? (
+                                <select
+                                  id={`fb-d-${i}`}
+                                  value={String(f.defaultValue ?? '')}
+                                  onChange={(e) => updateField(i, { defaultValue: e.target.value || undefined })}
+                                  className={INPUT}
+                                >
+                                  <option value="">Nothing chosen</option>
+                                  <option value="Yes">Yes</option>
+                                  <option value="No">No</option>
+                                </select>
+                              ) : (
+                                <input
+                                  id={`fb-d-${i}`}
+                                  type={isNumericType(f.type) ? 'number' : f.type === 'date' ? 'date' : f.type === 'time' ? 'time' : 'text'}
+                                  step="any"
+                                  value={String(f.defaultValue ?? '')}
+                                  onChange={(e) => updateField(i, { defaultValue: e.target.value === '' ? undefined : e.target.value })}
+                                  placeholder={isNumericType(f.type) ? 'e.g. 100' : 'Left empty'}
+                                  className={INPUT}
+                                />
+                              )}
+                              <p className="mt-1 text-[11px] text-slate-500">
+                                The answer the form opens with. Useful when it is nearly always the same, like 100%.
+                              </p>
+                            </div>
+                          )}
+
                           {isNumericType(f.type) && (
                             <div className="sm:col-span-2 grid grid-cols-3 gap-3">
                               <div>
@@ -612,44 +713,135 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
           </section>
         </div>
 
-        {/* Preview */}
+        {/* Preview, either way round: the form a POC fills, or the sheet it becomes. */}
         <aside className="lg:sticky lg:top-4">
-          <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-slate-600">
-            <Smartphone className="w-4 h-4" /> What the POC sees
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-xs font-semibold text-slate-600">Preview</span>
+            <div className="inline-flex p-0.5 bg-slate-100 rounded-lg" role="group" aria-label="Preview as">
+              {(
+                [
+                  ['form', 'Form', Smartphone],
+                  ['sheet', 'Sheet', Table],
+                ] as const
+              ).map(([value, label, Icon]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={previewMode === value}
+                  onClick={() => setPreviewMode(value)}
+                  className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    previewMode === value ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
+
           <div className="rounded-(--r-card) border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-100">
               <p className="text-base font-semibold text-slate-900 truncate">{name.trim() || 'Untitled form'}</p>
-              <p className="text-xs text-slate-500">Their site, {dateLabel}</p>
+              <p className="text-xs text-slate-500">
+                {previewMode === 'form' ? `Their site, ${dateLabel}` : `${previewFields.length + 3} columns in Records and in exports`}
+              </p>
             </div>
-            <div className="p-4 max-h-[60vh] overflow-y-auto">
-              {previewFields.length === 0 ? (
-                <p className="py-8 text-center text-xs text-slate-500">Questions you add appear here.</p>
-              ) : (
-                <ServiceFieldList
-                  fields={previewFields}
-                  values={tryValues}
-                  onValue={(k, v) => setTryValues((p) => ({ ...p, [k]: v }))}
-                  evidence={tryEvidence}
-                  onEvidence={(k, v) => setTryEvidence((p) => ({ ...p, [k]: v }))}
-                  serviceCode={serviceCode || 'NEW'}
-                  preview
-                  idPrefix="preview"
-                />
-              )}
-            </div>
-            <div className="p-4 pt-0">
-              <button type="button" disabled className="w-full h-11 rounded-xl bg-(--color-ink) text-white text-sm font-semibold opacity-80">
-                File {name.trim() || 'form'}
-              </button>
-            </div>
+
+            {previewMode === 'form' ? (
+              <>
+                <div className="p-4 max-h-[60vh] overflow-y-auto">
+                  {previewFields.length === 0 ? (
+                    <p className="py-8 text-center text-xs text-slate-500">Questions you add appear here.</p>
+                  ) : (
+                    <ServiceFieldList
+                      fields={previewFields}
+                      values={tryValues}
+                      onValue={(k, v) => setTryValues((p) => ({ ...p, [k]: v }))}
+                      evidence={tryEvidence}
+                      onEvidence={(k, v) => setTryEvidence((p) => ({ ...p, [k]: v }))}
+                      serviceCode={serviceCode || 'NEW'}
+                      preview
+                      idPrefix="preview"
+                    />
+                  )}
+                </div>
+                <div className="p-4 pt-0">
+                  <button type="button" disabled className="w-full h-11 rounded-xl bg-(--color-ink) text-white text-sm font-semibold opacity-80">
+                    File {name.trim() || 'form'}
+                  </button>
+                </div>
+              </>
+            ) : previewFields.length === 0 ? (
+              <p className="p-4 py-8 text-center text-xs text-slate-500">Questions you add become columns here.</p>
+            ) : (
+              <div className="overflow-auto max-h-[60vh]">
+                <table className="w-full text-[11px]">
+                  <thead className="sticky top-0 bg-slate-50">
+                    <tr>
+                      {['Date', 'Site', ...previewFields.map((f) => f.label), 'Filed by'].map((head, i) => (
+                        <th
+                          key={`${head}-${i}`}
+                          className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap border-b border-slate-200"
+                        >
+                          {head}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="text-slate-700">
+                      <td className="px-3 py-2 whitespace-nowrap">{currentDate}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">Their site</td>
+                      {previewFields.map((f) => (
+                        <td key={f.key} className="px-3 py-2 whitespace-nowrap text-slate-500">
+                          {sampleValue(f, currentDate)}
+                        </td>
+                      ))}
+                      <td className="px-3 py-2 whitespace-nowrap text-slate-500">The POC</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">Try the answers here. Nothing is saved from the preview.</p>
+          <p className="mt-2 text-[11px] text-slate-500">
+            {previewMode === 'form'
+              ? 'Try the answers here. Nothing is saved from the preview.'
+              : 'One row per filing. Date, Site and Filed by are added for you.'}
+          </p>
         </aside>
       </div>
     </div>
   );
 };
+
+/** What one answer looks like in the sheet preview. */
+function sampleValue(field: FieldDefinition, today: string): string {
+  if (field.defaultValue !== undefined && field.defaultValue !== '') return String(field.defaultValue);
+  switch (field.type) {
+    case 'number':
+      return field.unit ? `12 ${field.unit}` : '12';
+    case 'percentage':
+      return '100';
+    case 'temperature':
+      return '4';
+    case 'boolean':
+      return 'Yes';
+    case 'select':
+      return field.options?.find(Boolean) ?? 'One option';
+    case 'date':
+      return today;
+    case 'time':
+      return '09:30';
+    case 'evidence':
+      return 'Drive link';
+    case 'textarea':
+      return 'Any remarks';
+    default:
+      return 'Text';
+  }
+}
 
 const Switch: React.FC<{ label: string; checked: boolean; onChange: (value: boolean) => void }> = ({ label, checked, onChange }) => (
   <button
@@ -667,6 +859,8 @@ const Switch: React.FC<{ label: string; checked: boolean; onChange: (value: bool
 );
 
 const OptionsEditor: React.FC<{ index: number; options: string[]; onChange: (options: string[]) => void }> = ({ index, options, onChange }) => {
+  const [pasting, setPasting] = useState(false);
+  const [pasted, setPasted] = useState('');
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
   const focusLast = useRef(false);
   useEffect(() => {
@@ -714,14 +908,49 @@ const OptionsEditor: React.FC<{ index: number; options: string[]; onChange: (opt
           </li>
         ))}
       </ul>
-      <button
-        type="button"
-        onClick={add}
-        id={`fb-add-option-${index}`}
-        className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 cursor-pointer"
-      >
-        <Plus className="w-3.5 h-3.5" /> Add option
-      </button>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={add}
+          id={`fb-add-option-${index}`}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5" /> Add option
+        </button>
+        <button
+          type="button"
+          onClick={() => setPasting((v) => !v)}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+        >
+          <Table className="w-3.5 h-3.5" /> Paste a list
+        </button>
+      </div>
+      {pasting && (
+        <div className="mt-2">
+          <textarea
+            rows={2}
+            value={pasted}
+            onChange={(e) => setPasted(e.target.value)}
+            placeholder="Good, Needs repair, Not working"
+            aria-label="Paste options"
+            className={`${INPUT} h-auto py-2`}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const list = parseList(pasted, 200);
+              if (!list.length) return;
+              onChange(list);
+              setPasted('');
+              setPasting(false);
+            }}
+            disabled={parseList(pasted, 200).length === 0}
+            className="mt-2 h-8 px-3 rounded-lg text-xs font-semibold text-white bg-(--color-ink) disabled:opacity-40 disabled:cursor-default active:scale-[0.98] transition cursor-pointer"
+          >
+            Replace with these
+          </button>
+        </div>
+      )}
       <p className="mt-1 text-[11px] text-slate-500">Press Enter to add the next option.</p>
     </div>
   );

@@ -40,11 +40,40 @@ export const fieldTypeLabel = (type: FieldType) => FIELD_TYPES.find((t) => t.typ
 
 export const isNumericType = (type: FieldType) => type === 'number' || type === 'percentage' || type === 'temperature';
 
-export const CADENCE_OPTIONS: readonly { value: Cadence; label: string; hint: string }[] = [
-  { value: 'DAILY', label: 'Daily', hint: 'Filed every day. Shows as pending until it is.' },
-  { value: 'WEEKLY', label: 'Weekly', hint: 'Filed once a week, Monday to Sunday.' },
-  { value: 'MONTHLY', label: 'Monthly', hint: 'Filed once a month.' },
-  { value: 'EVENT_DRIVEN', label: 'On request', hint: 'Filed when needed. Never shows as pending.' },
+export interface CadenceOption {
+  value: Cadence;
+  label: string;
+  /** What it means for the person filing it. */
+  hint: string;
+  /** What it means on the Control Room and the POC desk. */
+  effect: string;
+}
+
+export const CADENCE_OPTIONS: readonly CadenceOption[] = [
+  {
+    value: 'DAILY',
+    label: 'Every day',
+    hint: 'A reading or check that happens daily, like a meter or a temperature.',
+    effect: 'Shows as pending at every site until it is filed that day.',
+  },
+  {
+    value: 'WEEKLY',
+    label: 'Every week',
+    hint: 'Filed once between Monday and Sunday, like a safety walk.',
+    effect: 'Shows as pending until someone files it that week.',
+  },
+  {
+    value: 'MONTHLY',
+    label: 'Every month',
+    hint: 'Filed once in the calendar month, like a service visit.',
+    effect: 'Shows as pending until someone files it that month.',
+  },
+  {
+    value: 'EVENT_DRIVEN',
+    label: 'When needed',
+    hint: 'No fixed day. It is filled in when the event happens, like a breakdown, a delivery or an ad-hoc job.',
+    effect: 'Never shows as pending. The screens count how many were filed instead.',
+  },
 ];
 
 export const cadenceLabel = (cadence: Cadence) => CADENCE_OPTIONS.find((c) => c.value === cadence)?.label ?? cadence;
@@ -171,6 +200,62 @@ export function cleanForSave(fields: FieldDefinition[]): FieldDefinition[] {
     if (f.defaultValue !== undefined && f.defaultValue !== '' && f.type !== 'evidence') out.defaultValue = f.defaultValue;
     if (f.isCritical) out.isCritical = true;
     return out;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Building a form from a spreadsheet header
+//
+// Most of these forms already exist as a sheet with a header row. Retyping
+// forty column names as questions is the slowest part of the job, so a
+// pasted header row becomes the questions, with each answer type guessed
+// from the wording. A guess that is wrong is one dropdown away from right.
+// ---------------------------------------------------------------------------
+
+/** Ordered: the first pattern that matches a column name wins. */
+const TYPE_HINTS: readonly [RegExp, FieldType][] = [
+  [/photo|image|proof|\bpod\b|attach|invoice|receipt|\blink\b|\burl\b|document/i, 'evidence'],
+  [/remark|comment|note|observation|description|reason|issue|action taken/i, 'textarea'],
+  [/%|percent|availability|uptime/i, 'percentage'],
+  [/temperature|\btemp\b|celsius|°c/i, 'temperature'],
+  [/^(is|are|was|has|have|any)\b|\bdone\b|\bok\b|yes\s*\/\s*no|\by\/n\b|working|available\?/i, 'boolean'],
+  [/\bdate\b|dated|\bday\b/i, 'date'],
+  [/\btime\b|\bclock\b|\bhh:mm\b/i, 'time'],
+  [
+    /quantity|\bqty\b|count|number of|no\.? of|litre|liter|\bltr\b|\bl\)|kwh|\bkw\b|reading|meter|level|pressure|voltage|\bvolt|\bamp|hours|\bhrs\b|\bkg\b|\bkm\b|amount|rate|score/i,
+    'number',
+  ],
+];
+
+/** The answer type a column name suggests. Falls back to a short answer. */
+export function guessFieldType(label: string): FieldType {
+  for (const [pattern, type] of TYPE_HINTS) if (pattern.test(label)) return type;
+  return 'text';
+}
+
+/** Splits a pasted header row, list or column of text into clean names. */
+export function parseList(text: string, limit = 100): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of text.split(/[\n\r\t,;|]+/)) {
+    const value = raw.trim().replace(/^["']|["']$/g, '').trim();
+    if (!value) continue;
+    const fingerprint = value.toLowerCase();
+    if (seen.has(fingerprint)) continue;
+    seen.add(fingerprint);
+    out.push(value);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** A pasted header row as ready-made questions. */
+export function columnsToFields(text: string, taken: Iterable<string> = []): FieldDefinition[] {
+  const keys = [...taken];
+  return parseList(text).map((label) => {
+    const key = fieldKeyFrom(label, keys);
+    keys.push(key);
+    return withType({ key, label, type: 'text', required: false }, guessFieldType(label));
   });
 }
 

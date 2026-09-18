@@ -4,7 +4,10 @@ import {
   FORM_TEMPLATES,
   blankField,
   cleanForSave,
+  columnsToFields,
   fieldKeyFrom,
+  guessFieldType,
+  parseList,
   problemCount,
   serviceCodeFrom,
   validateDraft,
@@ -92,6 +95,38 @@ describe('cleanForSave', () => {
       { key: 'b', label: 'Litres', type: 'number', required: false, unit: 'L', max: 500 },
       { key: 'c', label: 'Photo', type: 'evidence', required: false },
     ]);
+  });
+});
+
+describe('building from a spreadsheet header', () => {
+  it('guesses the answer type from the column name', () => {
+    expect(guessFieldType('POD photo')).toBe('evidence');
+    expect(guessFieldType('Drive link')).toBe('evidence');
+    expect(guessFieldType('Remarks')).toBe('textarea');
+    expect(guessFieldType('UPS Availability (%)')).toBe('percentage');
+    expect(guessFieldType('Chiller temperature')).toBe('temperature');
+    expect(guessFieldType('Is the DG working')).toBe('boolean');
+    expect(guessFieldType('Date of service')).toBe('date');
+    expect(guessFieldType('Start time')).toBe('time');
+    expect(guessFieldType('Diesel quantity (L)')).toBe('number');
+    expect(guessFieldType('DG run hrs')).toBe('number');
+    expect(guessFieldType('Vendor name')).toBe('text');
+  });
+
+  it('splits a pasted header row however it was copied', () => {
+    expect(parseList('Date\tSite\tRemarks')).toEqual(['Date', 'Site', 'Remarks']);
+    expect(parseList('Date, Site; Remarks | Photo')).toEqual(['Date', 'Site', 'Remarks', 'Photo']);
+    expect(parseList('Date\nSite\n\n  Date  ')).toEqual(['Date', 'Site']);
+    expect(parseList('"Cost Center"')).toEqual(['Cost Center']);
+    expect(parseList('a,b,c', 2)).toEqual(['a', 'b']);
+  });
+
+  it('turns a header row into questions with unique saved names', () => {
+    const fields = columnsToFields('Chiller temp\tRemarks\tChiller temp', ['reading']);
+    expect(fields.map((f) => f.key)).toEqual(['chillerTemp', 'remarks']);
+    expect(fields.map((f) => f.type)).toEqual(['temperature', 'textarea']);
+    expect(fields[0].unit).toBe('°C');
+    expect(problemCount(validateDraft({ name: 'Cold room', code: 'COLD', fields }, [], 'create'))).toBe(0);
   });
 });
 

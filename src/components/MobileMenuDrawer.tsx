@@ -4,7 +4,6 @@ import {
   X,
   Building2,
   ShieldCheck,
-  Sparkles,
   LayoutDashboard,
   Smartphone,
   Award,
@@ -27,7 +26,6 @@ interface MobileMenuDrawerProps {
   onClose: () => void;
   currentView: string;
   onNavigate: (view: string) => void;
-  onOpenArchitecture: () => void;
 }
 
 export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
@@ -35,7 +33,6 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
   onClose,
   currentView,
   onNavigate,
-  onOpenArchitecture
 }) => {
   const {
     currentUser,
@@ -79,21 +76,21 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
     if (currentUser.role === 'SERVICE_ADMIN') {
       return [
         {
-          title: 'Admin Service Management',
+          title: 'My services',
           items: [
             { id: 'adminDashboard', label: 'Admin Service Hub', icon: Award, color: 'text-amber-600', bg: 'bg-amber-50' },
             { id: 'sheets', label: 'Operational Sheets', icon: Layers, color: 'text-slate-700', bg: 'bg-slate-100' },
-            { id: 'diesel', label: 'Diesel Requisition & POD Audit', icon: Fuel, color: 'text-amber-600', bg: 'bg-amber-50' },
-            { id: 'dgPower', label: 'DG Power, EB Units & Water', icon: Zap, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-            { id: 'housekeeping', label: 'Housekeeping & Staff Roster', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50' },
-            { id: 'dailyForm', label: 'Daily Site Master Logs', icon: ClipboardCheck, color: 'text-sky-600', bg: 'bg-sky-50' },
-            { id: 'washing', label: 'Crate Washing & Adhoc Tasks', icon: Droplet, color: 'text-cyan-600', bg: 'bg-cyan-50' }
+            { id: 'diesel', label: 'Diesel', icon: Fuel, color: 'text-amber-600', bg: 'bg-amber-50' },
+            { id: 'dgPower', label: 'EB and DG', icon: Zap, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { id: 'housekeeping', label: 'Housekeeping', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50' },
+            { id: 'dailyForm', label: 'Daily Site Report', icon: ClipboardCheck, color: 'text-sky-600', bg: 'bg-sky-50' },
+            { id: 'washing', label: 'Crate Washing', icon: Droplet, color: 'text-cyan-600', bg: 'bg-cyan-50' }
           ]
         },
         {
-          title: 'Data Explorer',
+          title: 'Records',
           items: [
-            { id: 'database', label: 'Sheet Data Explorer', icon: Database, color: 'text-blue-600', bg: 'bg-blue-50' }
+            { id: 'database', label: 'Records', icon: Database, color: 'text-blue-600', bg: 'bg-blue-50' }
           ]
         }
       ];
@@ -101,32 +98,32 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
 
     return [
       {
-        title: 'Daily Operations & Checklists',
+        title: 'Filing',
         items: [
-          { id: 'pocFiling', label: 'POC Fast Filing Desk', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
-          { id: 'dailyForm', label: 'Daily Site Checklist (43 Pts)', icon: ClipboardCheck, color: 'text-sky-600', bg: 'bg-sky-50' },
-          { id: 'housekeeping', label: 'Housekeeping & Staff Roster', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50' },
-          { id: 'dgPower', label: 'DG Power, EB Units & Water', icon: Zap, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { id: 'diesel', label: 'Diesel Requisition & POD Audit', icon: Fuel, color: 'text-amber-600', bg: 'bg-amber-50' },
-          { id: 'washing', label: 'Crate Washing & Adhoc Tasks', icon: Droplet, color: 'text-cyan-600', bg: 'bg-cyan-50' }
+          { id: 'pocFiling', label: 'Filing Desk', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
+          { id: 'dailyForm', label: 'Daily Site Report', icon: ClipboardCheck, color: 'text-sky-600', bg: 'bg-sky-50' },
+          { id: 'housekeeping', label: 'Housekeeping', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50' },
+          { id: 'dgPower', label: 'EB and DG', icon: Zap, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { id: 'diesel', label: 'Diesel', icon: Fuel, color: 'text-amber-600', bg: 'bg-amber-50' },
+          { id: 'washing', label: 'Crate Washing', icon: Droplet, color: 'text-cyan-600', bg: 'bg-cyan-50' }
         ]
       },
       {
-        title: 'Executive Intelligence & Sync',
+        title: 'Monitor',
         items: [
-          { id: 'dashboard', label: 'Control Room & Network Matrix', icon: LayoutDashboard, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+          { id: 'dashboard', label: 'Control Room', icon: LayoutDashboard, color: 'text-indigo-600', bg: 'bg-indigo-50' },
           { id: 'adminDashboard', label: 'Admin Service Hub', icon: Award, color: 'text-amber-600', bg: 'bg-amber-50' },
           { id: 'sheets', label: 'Operational Sheets', icon: Layers, color: 'text-slate-700', bg: 'bg-slate-100' },
-          { id: 'database', label: 'Sheet Data Explorer', icon: Database, color: 'text-blue-600', bg: 'bg-blue-50' },
+          { id: 'database', label: 'Records', icon: Database, color: 'text-blue-600', bg: 'bg-blue-50' },
           { id: 'createForm', label: 'New Form', icon: PlusCircle, color: 'text-teal-600', bg: 'bg-teal-50' }
         ]
       },
       {
-        title: 'Master Data & Allocations',
+        title: 'Master Data',
         items: [
-          { id: 'masterData', label: 'MasterData — POC · Site · Service', icon: Database, color: 'text-teal-600', bg: 'bg-teal-50' },
-          { id: 'serviceAssignments', label: 'Service & Admin Assignment Matrix', icon: ShieldCheck, color: 'text-blue-600', bg: 'bg-blue-50' },
-          { id: 'templates', label: 'Form Schema & Field Manager', icon: Sliders, color: 'text-slate-700', bg: 'bg-slate-100' }
+          { id: 'masterData', label: 'Master Data', icon: Database, color: 'text-teal-600', bg: 'bg-teal-50' },
+          { id: 'serviceAssignments', label: 'Service Assignments', icon: ShieldCheck, color: 'text-blue-600', bg: 'bg-blue-50' },
+          { id: 'templates', label: 'Form Fields', icon: Sliders, color: 'text-slate-700', bg: 'bg-slate-100' }
         ]
       }
     ];
@@ -151,7 +148,7 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
             </div>
             <div>
               <h2 className="font-extrabold text-sm text-white">Warehouse Portal</h2>
-              <p className="text-[10px] text-teal-300 font-medium">15-Sheet Digital Ecosystem</p>
+              <p className="text-[10px] text-teal-300 font-medium">Sites, services and filings</p>
             </div>
           </div>
           <button
@@ -224,18 +221,6 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
 
         {/* Drawer Footer */}
         <div className="p-3 bg-slate-50 border-t border-slate-200 space-y-2">
-          <button
-            type="button"
-            onClick={() => {
-              onClose();
-              onOpenArchitecture();
-            }}
-            className="w-full py-2 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-xs font-bold transition flex items-center justify-center gap-2"
-          >
-            <Sparkles className="w-4 h-4 text-teal-600" />
-            <span>Architecture & Security Rules</span>
-          </button>
-
           <button
             type="button"
             onClick={() => {

@@ -123,7 +123,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
         backLabel="Back"
         breadcrumbs={[
           { label: 'Portal' },
-          { label: activeAdminTab === 'today' ? "Today's Pulse" : activeAdminTab === 'compliance' ? 'Compliance Matrix' : 'Director Briefing' }
+          { label: activeAdminTab === 'today' ? 'Today' : activeAdminTab === 'compliance' ? 'Compliance' : 'Summary' }
         ]}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -138,7 +138,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
                       : 'text-[var(--text-muted)] hover:text-[var(--color-ink)]'
                   }`}
                 >
-                  {tab === 'today' ? "Today's Pulse" : tab === 'compliance' ? 'Compliance' : 'Director Brief'}
+                  {tab === 'today' ? 'Today' : tab === 'compliance' ? 'Compliance' : 'Summary'}
                 </button>
               ))}
             </div>

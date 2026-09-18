@@ -101,8 +101,8 @@ export const HousekeepingForm: React.FC<HousekeepingFormProps> = ({ onBack, onSu
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header Banner */}
       <PageHeader
-        title="Housekeeping Deployment & Agency Roster"
-        subtitle={`Reconciles approved contractual headcounts vs actual onground deployment by manpower agency for ${activeWh.name}.`}
+        title="Housekeeping"
+        subtitle={`Agreed headcount against who actually turned up, by agency, at ${activeWh.name}.`}
         categoryBadge="OPS_02_HK"
         categoryColor="bg-indigo-50 text-indigo-700 border-indigo-200"
         onBack={onBack}
@@ -343,7 +343,7 @@ export const HousekeepingForm: React.FC<HousekeepingFormProps> = ({ onBack, onSu
         {/* Prior 5 Submissions Timeline */}
         <SubmissionHistoryTimeline 
           sheetId="SHEET_HOUSEKEEPING" 
-          title="Previous Housekeeping Entries (Last 5)"
+          title="Last 5 entries"
         />
 
         {/* Submit Bar */}

@@ -171,9 +171,6 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
             </button>
           </div>
 
-          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider hidden sm:inline">
-            Live Site Pulse
-          </span>
         </div>
 
         {/* Notification Alert List */}

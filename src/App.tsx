@@ -17,7 +17,6 @@ import { TemplateManager } from './components/TemplateManager';
 import { ServiceAssignmentManager } from './components/ServiceAssignmentManager';
 import { AdminDashboard } from './components/AdminDashboard';
 import { GoogleSheetsMasterConnector } from './components/GoogleSheetsMasterConnector';
-import { ArchitectureModal } from './components/ArchitectureModal';
 import { ToastNotification } from './components/ToastNotification';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { NotificationCenterModal } from './components/NotificationCenterModal';
@@ -48,7 +47,6 @@ const MainContent: React.FC = () => {
   });
 
   const [viewHistory, setViewHistory] = useState<string[]>([]);
-  const [isArchitectureModalOpen, setIsArchitectureModalOpen] = useState<boolean>(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
   // The form the builder is editing; unset means a new form.
   const [editFormId, setEditFormId] = useState<string | undefined>();
@@ -148,7 +146,6 @@ const MainContent: React.FC = () => {
       <Sidebar
         currentView={currentView}
         onSelectView={navigateTo}
-        onOpenArchitecture={() => setIsArchitectureModalOpen(true)}
       />
 
       {/* Main App Canvas */}
@@ -291,18 +288,7 @@ const MainContent: React.FC = () => {
         {/* Minimal Footer */}
         <footer className="py-4 px-6 text-xs text-[var(--text-muted)] flex flex-col sm:flex-row items-center justify-between gap-2 mt-auto mb-14 md:mb-0">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-[var(--text-secondary)]">Warehouse Management Portal</span>
-            <span>•</span>
-            <span>AS_DailyLog + 15-Sheet Digital Operations Ecosystem</span>
-          </div>
-
-          <div className="flex items-center gap-3 text-slate-400">
-            <button
-              onClick={() => setIsArchitectureModalOpen(true)}
-              className="text-teal-700 hover:text-teal-800 hover:underline font-semibold cursor-pointer"
-            >
-              Firestore Security Rules & Schema
-            </button>
+            <span className="font-bold text-[var(--text-secondary)]">WarehouseOS</span>
           </div>
         </footer>
       </div>
@@ -312,14 +298,7 @@ const MainContent: React.FC = () => {
         currentView={currentView}
         onNavigate={navigateTo}
         onOpenNotifications={() => setIsNotificationModalOpen(true)}
-        onOpenArchitecture={() => setIsArchitectureModalOpen(true)}
         pendingAlertCount={pendingAlertCount}
-      />
-
-      {/* Architecture & Security Rules Modal */}
-      <ArchitectureModal
-        isOpen={isArchitectureModalOpen}
-        onClose={() => setIsArchitectureModalOpen(false)}
       />
 
       {/* Action Alerts & Filing Reminders Modal */}

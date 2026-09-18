@@ -257,7 +257,7 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({ onBack }) => {
 
               <div>
                 <h4 className="font-bold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                  Raw Firestore Schema Map:
+                  Field definitions:
                 </h4>
                 <pre className="p-3 bg-slate-900 text-slate-200 rounded-lg font-mono text-[11px] overflow-x-auto">
                   {JSON.stringify(selectedTemplateForSchema.fieldsConfig, null, 2)}

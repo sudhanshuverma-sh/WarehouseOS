@@ -1085,7 +1085,7 @@ function jsonResponse(data) {
     <div className="space-y-6 pb-12 max-w-7xl mx-auto">
       {/* Top Header */}
       <PageHeader
-        title="MasterData"
+        title="Master Data"
         description="POC_Master, Site_Master & Service_Registry — the single source for POC, site and service allocation. Paste-sync from your Master Data sheet below."
         icon={FileSpreadsheet}
         actions={
@@ -1993,7 +1993,7 @@ function jsonResponse(data) {
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 disabled:opacity-60"
               >
                 <option value="">— Select a site —</option>
-                <option value="ALL">ALL — Nationwide</option>
+                <option value="ALL">ALL (every site)</option>
                 {siteMasterRows
                   .slice()
                   .sort((a, b) => a.Facility_Name.localeCompare(b.Facility_Name))

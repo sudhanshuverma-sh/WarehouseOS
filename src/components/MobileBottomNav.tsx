@@ -16,7 +16,6 @@ interface MobileBottomNavProps {
   currentView: string;
   onNavigate: (view: string) => void;
   onOpenNotifications: () => void;
-  onOpenArchitecture?: () => void;
   pendingAlertCount: number;
 }
 
@@ -24,7 +23,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   currentView,
   onNavigate,
   onOpenNotifications,
-  onOpenArchitecture,
   pendingAlertCount
 }) => {
   const { currentUser } = useApp();
@@ -129,7 +127,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         onClose={() => setIsMenuOpen(false)}
         currentView={currentView}
         onNavigate={onNavigate}
-        onOpenArchitecture={onOpenArchitecture || (() => {})}
       />
     </>
   );

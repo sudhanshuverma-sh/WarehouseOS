@@ -174,7 +174,7 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
     <div className="space-y-6 pb-12 max-w-7xl mx-auto">
       {/* Top Header */}
       <PageHeader
-        title="Diesel & Fuel Procurement"
+        title="Diesel"
         description="Audit ledger, volume tracking, and delivery verification for site fuel management."
         icon={Fuel}
         actions={

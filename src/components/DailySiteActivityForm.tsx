@@ -259,8 +259,8 @@ export const DailySiteActivityForm: React.FC<{
     <div className="max-w-4xl mx-auto space-y-6 pb-24 font-sans animate-in fade-in duration-200">
       {/* Top Banner Header with Back Navigation */}
       <PageHeader
-        title="Daily Site Activity Master Report"
-        subtitle="43-column operational standard for facility equipment, PM checklists, routine gemba inspections, and active work orders."
+        title="Daily Site Report"
+        subtitle="Equipment availability, routine checks, preventive maintenance and today's work."
         categoryBadge="OPS_01_DAILY"
         categoryColor="bg-teal-50 text-teal-700 border-teal-200"
         onBack={onBack || onNavigateToDashboard}
@@ -737,7 +737,7 @@ export const DailySiteActivityForm: React.FC<{
             07
           </span>
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800">
-            Executive Highlights & Notes
+            Notes
           </h2>
         </div>
 
@@ -753,7 +753,7 @@ export const DailySiteActivityForm: React.FC<{
       {/* Prior 5 Submissions Timeline */}
       <SubmissionHistoryTimeline 
         sheetId="SHEET_DAILY_SITE" 
-        title="Previous Daily Site Activity Submissions (Last 5)"
+        title="Last 5 reports"
       />
 
       {/* Sticky Bottom Action Bar */}

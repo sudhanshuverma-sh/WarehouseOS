@@ -228,7 +228,7 @@ export const TaskChecklists: React.FC<TaskChecklistsProps> = ({ onBack }) => {
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-indigo-300 shrink-0" />
           <span>
-            Target Firestore Document Key Formula: <code className="bg-indigo-950 px-2 py-0.5 rounded text-amber-300 font-mono text-[11px]">SUB_{currentDate.replace(/-/g, '')}_{activeWarehouseId}_&#123;templateId&#125;_{selectedShift}</code>
+            Entry key:<code className="bg-indigo-950 px-2 py-0.5 rounded text-amber-300 font-mono text-[11px]">SUB_{currentDate.replace(/-/g, '')}_{activeWarehouseId}_&#123;templateId&#125;_{selectedShift}</code>
           </span>
         </div>
         <span className="text-[11px] text-indigo-300">

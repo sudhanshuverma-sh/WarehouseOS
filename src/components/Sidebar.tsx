@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useApp } from '../context/AppContext';
 import { controlRoomSites, siteMatches } from '../lib/controlRoom/siteServiceStatus';
+import { usePendingWork } from './common/usePendingWork';
 import {
   LayoutDashboard,
   ClipboardCheck,
@@ -13,7 +14,6 @@ import {
   ShieldCheck,
   UserCheck,
   Layers,
-  Sparkles,
   RotateCcw,
   Users,
   Zap,
@@ -27,18 +27,15 @@ import {
 interface SidebarProps {
   currentView: string;
   onSelectView: (view: string) => void;
-  onOpenArchitecture: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onOpenArchitecture }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) => {
   const {
     currentUser,
     setCurrentUser,
     users,
     warehouses,
     setSelectedWarehouseId,
-    dailySiteLogs,
-    currentDate,
     resetToDefaultData,
     isServiceAccessible,
     dataMode,
@@ -88,67 +85,69 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
 
   const isExpanded = isPinned || isHovered;
 
-  // Compute pending/critical status
-  const todaysFiledCount = dailySiteLogs.filter(l => l.date === currentDate).length;
-  const criticalCount = dailySiteLogs.filter(l => l.date === currentDate && l.worstStatus === 'critical').length;
+  // The same outstanding work the bell counts. A nav badge that counted one
+  // service against the legacy warehouse list read "0/61" while the board it
+  // opens showed 120 sites; one number, or none, is worth more than that.
+  const pending = usePendingWork().total;
+  const pendingBadge = pending > 0 ? `${pending} pending` : undefined;
+  /** Active sites from Master Data: the same list every screen counts. */
+  const siteCount = useMemo(() => controlRoomSites(siteMasterRows, warehouses).length, [siteMasterRows, warehouses]);
 
   // Nav items dynamically filtered strictly by role
   const navItems = useMemo(() => {
     if (currentUser.role === 'SITE_POC') {
       return [
         {
-          group: 'MY SITE OPERATIONS & FILING',
+          group: 'MY SITE',
           items: [
             {
               id: 'pocFiling',
-              label: 'POC Daily Filing Desk',
+              label: 'Filing Desk',
               subLabel: "Your site's services",
               icon: Smartphone,
-              badge: 'Fast Filing',
+              badge: pendingBadge,
               highlight: true
             },
             {
               id: 'diesel',
-              label: 'My Site Diesel & Inward',
-              subLabel: 'Fuel Consumption & POD',
-              icon: Fuel,
-              badge: 'Diesel'
+              label: 'Diesel',
+              subLabel: 'Requests, approvals, PODs',
+              icon: Fuel
             },
             {
               id: 'dailyForm',
-              label: 'Daily Site Report (43-Pt)',
-              subLabel: 'Utility & MHE Checklist',
+              label: 'Daily Site Report',
+              subLabel: 'The 43 point checklist',
               icon: ClipboardCheck
             },
             {
               id: 'housekeeping',
-              label: 'Housekeeping Roster',
-              subLabel: 'SMS / Vedanta Agency',
+              label: 'Housekeeping',
+              subLabel: 'Agency headcount',
               icon: Users
             },
             {
               id: 'dgPower',
-              label: 'DG, EB & Water Sheet',
-              subLabel: '500KVA x2 Fuel & Grid',
+              label: 'EB and DG',
+              subLabel: 'Meter readings and fuel',
               icon: Zap
             },
             {
               id: 'washing',
-              label: 'Crate Washing & Adhoc',
-              subLabel: 'Sanitization & Repairs',
+              label: 'Crate Washing',
+              subLabel: 'Washing and ad-hoc jobs',
               icon: Droplet
             }
           ]
         },
         {
-          group: 'MY SITE AUDIT LOGS',
+          group: 'RECORDS',
           items: [
             {
               id: 'database',
-              label: 'My Site Records',
-              subLabel: 'Filtered to Assigned Hub',
-              icon: Database,
-              badge: 'Site Logs'
+              label: 'Records',
+              subLabel: 'Everything filed at your site',
+              icon: Database
             }
           ]
         }
@@ -158,65 +157,62 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
     if (currentUser.role === 'SERVICE_ADMIN') {
       return [
         {
-          group: 'ADMIN SERVICE HUB',
+          group: 'MY SERVICES',
           items: [
             {
               id: 'adminDashboard',
               label: 'Admin Service Hub',
-              subLabel: 'Service-Wise KPIs & Radar',
+              subLabel: 'Each service across sites',
               icon: Award,
-              badge: 'Admin Hub',
+              badge: pendingBadge,
               highlight: true
             },
             {
               id: 'sheets',
               label: 'Operational Sheets',
-              subLabel: 'Service Catalog & Hub',
-              icon: Layers,
-              badge: 'Sheets'
+              subLabel: 'Forms POCs fill',
+              icon: Layers
             },
             {
               id: 'diesel',
-              label: 'Diesel & Fuel Management',
-              subLabel: 'Inward & Vendor POD Audit',
-              icon: Fuel,
-              badge: 'Diesel Admin'
+              label: 'Diesel',
+              subLabel: 'Requests, approvals, PODs',
+              icon: Fuel
             },
             {
               id: 'dgPower',
-              label: 'DG, EB & Water Power',
-              subLabel: '500KVA x2 Fuel & Grid Units',
+              label: 'EB and DG',
+              subLabel: 'Meter readings and fuel',
               icon: Zap
             },
             {
               id: 'housekeeping',
-              label: 'Housekeeping Roster',
-              subLabel: 'SMS / Vedanta Headcount',
+              label: 'Housekeeping',
+              subLabel: 'Agency headcount',
               icon: Users
             },
             {
               id: 'dailyForm',
-              label: 'Daily Site Master Logs',
-              subLabel: '43-Col Checklist Records',
+              label: 'Daily Site Report',
+              subLabel: 'The 43 point checklist',
               icon: ClipboardCheck
             },
             {
               id: 'washing',
-              label: 'Crate Washing & Adhoc',
-              subLabel: 'Sanitization & Repairs',
+              label: 'Crate Washing',
+              subLabel: 'Washing and ad-hoc jobs',
               icon: Droplet
             }
           ]
         },
         {
-          group: 'DATA & AUDIT LOGS',
+          group: 'RECORDS',
           items: [
             {
               id: 'database',
-              label: 'Database Explorer',
-              subLabel: 'Nationwide Service Records',
-              icon: Database,
-              badge: 'Live Data'
+              label: 'Records',
+              subLabel: 'Every entry filed',
+              icon: Database
             }
           ]
         }
@@ -226,116 +222,114 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
     // Super Admin: Full network visibility and all administrative consoles
     return [
       {
-        group: 'EXECUTIVE CONTROL ROOM',
+        group: 'MONITOR',
         items: [
           {
             id: 'dashboard',
             label: 'Control Room',
-            subLabel: 'Nationwide Matrix & Pulse',
+            subLabel: 'Every site, every service, today',
             icon: LayoutDashboard,
-            badge: criticalCount > 0 ? `${criticalCount} at risk` : `${todaysFiledCount}/${warehouses.length}`
+            badge: pendingBadge
           },
           {
             id: 'adminDashboard',
             label: 'Admin Service Hub',
-            subLabel: 'Service-Wise KPIs & Radar',
+            subLabel: 'Each service across sites',
             icon: Award,
-            badge: 'Admin Hub',
             highlight: true
           },
           {
             id: 'pocFiling',
-            label: 'POC Fast Filing Desk',
-            subLabel: 'Site-Level Filing Simulator',
-            icon: Smartphone,
-            badge: 'POC Desk'
-          },
+            label: 'Filing Desk',
+            subLabel: 'What a POC sees at one site',
+            icon: Smartphone
+          }
+        ]
+      },
+      {
+        group: 'SERVICES',
+        items: [
           {
             id: 'sheets',
             label: 'Operational Sheets',
-            subLabel: 'Catalog & Master Registry',
-            icon: Layers,
-            badge: 'Sheets'
+            subLabel: 'Forms POCs fill',
+            icon: Layers
           },
           {
             id: 'diesel',
-            label: 'Diesel & Fuel Logs',
-            subLabel: 'Inward & POD Audit',
+            label: 'Diesel',
+            subLabel: 'Requests, approvals, PODs',
             icon: Fuel
           },
           {
             id: 'dailyForm',
             label: 'Daily Site Report',
-            subLabel: '43-Col Master Form',
+            subLabel: 'The 43 point checklist',
             icon: ClipboardCheck
           },
           {
             id: 'housekeeping',
-            label: 'Housekeeping Roster',
-            subLabel: 'SMS / Vedanta Agency',
+            label: 'Housekeeping',
+            subLabel: 'Agency headcount',
             icon: Users
           },
           {
             id: 'dgPower',
-            label: 'DG, EB & Water Sheet',
-            subLabel: '500KVA x2 Fuel & Grid',
+            label: 'EB and DG',
+            subLabel: 'Meter readings and fuel',
             icon: Zap
           },
           {
             id: 'washing',
-            label: 'Crate Washing & Adhoc',
-            subLabel: 'Sanitization & Repairs',
+            label: 'Crate Washing',
+            subLabel: 'Washing and ad-hoc jobs',
             icon: Droplet
           }
         ]
       },
       {
-        group: 'DATA & CUSTOM FORMS',
+        group: 'RECORDS & FORMS',
         items: [
           {
             id: 'database',
-            label: 'Database Explorer',
-            subLabel: 'Sheet-wise Data Viewer',
-            icon: Database,
-            badge: 'Live'
+            label: 'Records',
+            subLabel: 'Every entry filed',
+            icon: Database
           },
           {
             id: 'createForm',
-            label: 'Add New Form',
-            subLabel: 'Custom Sheet Builder',
-            icon: PlusCircle,
-            badge: 'Builder'
+            label: 'New Form',
+            subLabel: 'Build a form to file',
+            icon: PlusCircle
           }
         ]
       },
       {
-        group: 'MASTER DATA & ALLOCATION',
+        group: 'MASTER DATA',
         items: [
           {
             id: 'masterData',
-            label: 'MasterData',
-            subLabel: 'POC · Site · Service Allocation',
+            label: 'Master Data',
+            subLabel: 'POC, Site and Service',
             icon: Database,
-            badge: 'Master Data',
             highlight: true
           },
           {
             id: 'serviceAssignments',
             label: 'Service Assignments',
-            subLabel: 'Assign Services to Admins/POCs',
-            icon: ShieldCheck,
-            badge: 'Admin Matrix'
+            subLabel: 'Who owns which service',
+            icon: ShieldCheck
           },
           {
             id: 'templates',
-            label: 'Form Schemas',
-            subLabel: 'Field Definitions',
+            label: 'Form Fields',
+            subLabel: 'Checklist field definitions',
             icon: Sliders
           }
         ]
       }
     ];
-  }, [currentUser.role, criticalCount, todaysFiledCount, warehouses.length]);
+  }, [currentUser.role, pendingBadge]);
 
   /**
    * Nav entries that open a service form, mapped to the sheet they file.
@@ -436,7 +430,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
                     aria-current={isActive ? 'page' : undefined}
                   >
                     <Icon className="w-[1.15rem] h-[1.15rem]" />
-                    {item.id === 'dashboard' && criticalCount > 0 && (
+                    {item.id === 'dashboard' && pending > 0 && (
                       <span className="rail-dot" aria-hidden="true" />
                     )}
                   </button>
@@ -446,13 +440,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
           </nav>
 
           <div className="flex flex-col items-center gap-1 pt-3 mt-2 border-t border-white/10 w-full px-3">
-            <button
-              onClick={onOpenArchitecture}
-              className="rail-item shrink-0 cursor-pointer"
-              title="Firestore schema & security rules"
-            >
-              <Sparkles className="w-[1.15rem] h-[1.15rem]" />
-            </button>
             <button
               onClick={resetToDefaultData}
               className="rail-item shrink-0 cursor-pointer"
@@ -484,7 +471,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, onO
                     WarehouseOS
                   </h1>
                   <p className="code-chip mt-0.5">
-                    {warehouses.length} sites · {todaysFiledCount} filed today
+                    {siteCount} sites{pending > 0 ? ` · ${pending} pending` : ''}
                   </p>
                 </div>
                 <button

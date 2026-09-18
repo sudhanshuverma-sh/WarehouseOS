@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ArrowUp,
   Calendar,
+  Check,
   CheckSquare,
   ChevronDown,
   Clock,
@@ -13,6 +14,7 @@ import {
   Hash,
   Link2,
   List,
+  Loader2,
   Percent,
   Plus,
   Smartphone,
@@ -107,6 +109,7 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
   const [open, setOpen] = useState<number | null>(null);
   const [attempted, setAttempted] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [tryValues, setTryValues] = useState<Record<string, unknown>>({});
   const [tryEvidence, setTryEvidence] = useState<Record<string, EvidenceValue | null>>({});
@@ -275,7 +278,10 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
     setSaving(false);
     if (res.ok) {
       setDirty(false);
-      onSaved(mode === 'edit' && editing ? editing.id : sheetIdFor(serviceCode));
+      // The tick answers the press. It stays long enough to be read, then
+      // the screen moves on by itself.
+      setSaved(true);
+      window.setTimeout(() => onSaved(mode === 'edit' && editing ? editing.id : sheetIdFor(serviceCode)), 600);
     }
   };
 
@@ -323,10 +329,22 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
           <button
             type="button"
             onClick={publish}
-            disabled={saving}
-            className="h-10 px-5 rounded-xl text-sm font-semibold text-white bg-(--color-ink) hover:bg-(--color-ink-soft) disabled:opacity-60 active:scale-[0.98] transition cursor-pointer whitespace-nowrap"
+            disabled={saving || saved}
+            className="press inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl text-sm font-semibold text-white bg-(--color-ink) hover:bg-(--color-ink-soft) disabled:opacity-60 cursor-pointer whitespace-nowrap"
           >
-            {saving ? 'Saving' : mode === 'edit' ? 'Save changes' : 'Publish form'}
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Saving
+              </>
+            ) : saved ? (
+              <>
+                <Check className="w-4 h-4" /> {mode === 'edit' ? 'Saved' : 'Published'}
+              </>
+            ) : mode === 'edit' ? (
+              'Save changes'
+            ) : (
+              'Publish form'
+            )}
           </button>
         </div>
       </div>

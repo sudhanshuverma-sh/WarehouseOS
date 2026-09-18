@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   ArrowLeft,
   Download,
+  Loader2,
   Search,
   Layers
 } from 'lucide-react';
@@ -123,6 +124,8 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
   const [selectedLogForInspection, setSelectedLogForInspection] = useState<DieselLog | null>(null);
   const [columnFilters, setColumnFilters] = useState<ColumnFilters>({});
   const [expanded, setExpanded] = useState(false);
+  /** True while a decision is in flight, so neither button can be pressed twice. */
+  const [deciding, setDeciding] = useState(false);
   // Declared before the early return below, so the hooks run on every render.
   const { layout, move, toggle, reset, dragProps, customised } = useColumnLayout('diesel:ledger', LEDGER_KEYS);
   const shownColumns = visibleColumns(LEDGER_COLUMNS, layout);
@@ -626,26 +629,39 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
                     <button
                       type="button"
+                      disabled={deciding}
                       onClick={async () => {
-                        const res = await rejectDieselLog(selectedLogForInspection.id, 'Rejected by Admin from Audit View');
-                        if (res.success) setSelectedLogForInspection(prev => res.log ?? (prev ? { ...prev, status: 'Rejected' } : null));
+                        setDeciding(true);
+                        try {
+                          const res = await rejectDieselLog(selectedLogForInspection.id, 'Rejected by Admin from Audit View');
+                          if (res.success) setSelectedLogForInspection(prev => res.log ?? (prev ? { ...prev, status: 'Rejected' } : null));
+                        } finally {
+                          setDeciding(false);
+                        }
                       }}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition cursor-pointer"
+                      className="press px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-60 cursor-pointer"
                     >
                       Reject (Trigger Mail #2)
                     </button>
                     <button
                       type="button"
+                      disabled={deciding}
                       onClick={async () => {
-                        const res = await approveDieselLog(selectedLogForInspection.id, 'Authorized by Admin from Audit View');
-                        if (res.success) {
-                          setSelectedLogForInspection(prev =>
-                            res.log ?? (prev ? { ...prev, status: prev.type === 'Delivery Only' ? 'Ready for Delivery' : 'Payment Processing' } : null)
-                          );
+                        setDeciding(true);
+                        try {
+                          const res = await approveDieselLog(selectedLogForInspection.id, 'Authorized by Admin from Audit View');
+                          if (res.success) {
+                            setSelectedLogForInspection(prev =>
+                              res.log ?? (prev ? { ...prev, status: prev.type === 'Delivery Only' ? 'Ready for Delivery' : 'Payment Processing' } : null)
+                            );
+                          }
+                        } finally {
+                          setDeciding(false);
                         }
                       }}
-                      className="px-4 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition cursor-pointer"
+                      className="press inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs disabled:opacity-60 cursor-pointer"
                     >
+                      {deciding && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                       Approve & Authorize (Trigger Mail #2)
                     </button>
                   </div>

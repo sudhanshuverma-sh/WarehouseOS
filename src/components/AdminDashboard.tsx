@@ -43,6 +43,7 @@ import {
 import type { ExportSpec } from '../lib/export/exporter';
 import { PageHeader } from './common/PageHeader';
 import { ExportPanel } from './common/ExportPanel';
+import { Reveal } from './common/Reveal';
 import { ColumnsMenu, DragHandle, ExpandButton, TableFullscreen, useColumnLayout, visibleColumns } from './common/TableTools';
 import { DieselDashboard } from './diesel/DieselDashboard';
 import { LogCalendar, longDay, shortDay } from './adminHub/LogCalendar';
@@ -389,12 +390,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab, o
                 const pending = s.total - s.done;
                 const requests = statuses.reduce((n, st) => n + (st.services.find((x) => x.code === s.code)?.count ?? 0), 0);
                 return (
+                  <Reveal key={s.code} index={i} className="min-w-0">
                   <button
-                    key={s.code}
                     type="button"
                     onClick={() => setOpenCode(s.code)}
-                    style={{ animationDelay: `${Math.min(i, 9) * 30}ms` }}
-                    className="animate-settle group text-left bg-white border border-slate-200 rounded-(--r-card) p-5 shadow-xs hover:shadow-md hover:-translate-y-0.5 hover:border-slate-300 active:translate-y-0 active:scale-[0.99] transition cursor-pointer"
+                    className="press group w-full h-full text-left bg-white border border-slate-200 rounded-(--r-card) p-5 shadow-xs hover:shadow-md hover:-translate-y-0.5 hover:border-slate-300 transition cursor-pointer"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <span className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 transition group-hover:bg-(--color-ink) group-hover:text-white">
@@ -453,6 +453,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab, o
                       </span>
                     </div>
                   </button>
+                  </Reveal>
                 );
               })}
             </div>

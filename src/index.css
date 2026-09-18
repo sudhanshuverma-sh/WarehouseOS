@@ -377,6 +377,36 @@
 .lift-on-hover { transition: transform var(--motion-base) var(--ease-out-soft), box-shadow var(--motion-base) var(--ease-out-soft); }
 .lift-on-hover:hover { transform: translateY(-2px); box-shadow: var(--elevation-3); }
 
+/* =========================================================================
+   Entrances, presses and hovers.
+
+   Three jobs, and nothing beyond them. A card fading up as it arrives says
+   "this is new since you last looked". A control that compresses under the
+   pointer says "I got that". An arrow that shifts says "this goes
+   somewhere". None of them move the page: scrolling stays exactly as far
+   as the wheel says, which is what keeps long tables usable.
+   ========================================================================= */
+
+/* Paired with <Reveal>: hidden until it comes into view, then the same
+   fade-and-lift used everywhere else. */
+.reveal { opacity: 0; }
+.reveal-in { animation: fade-in-up var(--motion-slow) var(--ease-out-soft) both; }
+
+/* Press and spring back. Instant on the way down, eased on the way out,
+   which is what makes it read as a physical push rather than a resize. */
+.press {
+  transition: transform var(--motion-fast) var(--ease-spring);
+}
+.press:active:not(:disabled) {
+  transform: scale(0.97);
+  transition-duration: var(--motion-instant);
+}
+
+/* Hover shifts (an arrow or underline reacting to the cursor) are already
+   handled where they belong, on the element itself, with group-hover and a
+   direction that suits it: forward on "Open", backward on "Back". A second
+   way to say the same thing would only be a class nobody reaches for. */
+
 button:focus-visible, a:focus-visible, input:focus-visible,
 select:focus-visible, textarea:focus-visible {
   outline: 2px solid var(--primary-accent);
@@ -608,4 +638,9 @@ select:focus-visible, textarea:focus-visible {
      they are a transform rather than an animation. */
   .lift-on-hover:hover,
   .soft-kpi:hover { transform: none !important; }
+
+  /* An entrance nobody asked for becomes no entrance: the content is
+     simply there, at full opacity, with nothing to wait through. */
+  .reveal { opacity: 1 !important; }
+  .reveal-in { animation: none !important; opacity: 1 !important; }
 }

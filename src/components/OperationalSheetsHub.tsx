@@ -3,12 +3,14 @@ import {
   Activity,
   AlertCircle,
   ArrowRight,
+  CheckCircle2,
   ClipboardCheck,
   ClipboardList,
   Database,
   Droplets,
   Flame,
   Fuel,
+  Loader2,
   Pencil,
   Plus,
   Search,
@@ -37,6 +39,7 @@ import { CADENCE_OPTIONS, OWN_SCREEN_SERVICES, cadenceLabel } from '../lib/servi
 import type { FieldDefinition } from '../types';
 import type { EvidenceValue } from './common/EvidenceInput';
 import { PageHeader } from './common/PageHeader';
+import { Reveal } from './common/Reveal';
 import { ServiceFieldList, collectEntry } from './forms/ServiceFieldList';
 
 /**
@@ -225,10 +228,11 @@ export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ onSe
           const noQuestions = !ownScreen && questions === 0;
           const selected = activeSheetId === sheetIdFor(s.code);
           return (
-            <article
+            <Reveal
               key={s.code}
-              style={{ animationDelay: `${Math.min(i, 9) * 25}ms` }}
-              className={`animate-settle flex flex-col bg-white border rounded-(--r-card) p-5 shadow-xs hover:shadow-md transition ${
+              as="article"
+              index={i}
+              className={`flex flex-col bg-white border rounded-(--r-card) p-5 shadow-xs hover:shadow-md transition ${
                 selected ? 'border-slate-400' : 'border-slate-200'
               }`}
             >
@@ -300,7 +304,7 @@ export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ onSe
                   </button>
                 </div>
               </div>
-            </article>
+            </Reveal>
           );
         })}
 
@@ -352,6 +356,7 @@ const FillDialog: React.FC<{ service: ControlRoomService; fields: FieldDefinitio
   const [evidence, setEvidence] = useState<Record<string, EvidenceValue | null>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [justFiled, setJustFiled] = useState(false);
   const site = sites.find((s) => s.id === siteId);
 
   const submit = async (e: React.FormEvent) => {
@@ -365,7 +370,8 @@ const FillDialog: React.FC<{ service: ControlRoomService; fields: FieldDefinitio
     setSaving(false);
     if (!res.ok) return;
     notify('success', `${service.name} filed`, `Saved for ${site.name}.`);
-    onClose();
+    setJustFiled(true);
+    window.setTimeout(onClose, 700);
   };
 
   return (
@@ -417,10 +423,20 @@ const FillDialog: React.FC<{ service: ControlRoomService; fields: FieldDefinitio
             <div className="p-5 pt-0">
               <button
                 type="submit"
-                disabled={saving || !site}
-                className="w-full h-11 rounded-xl bg-(--color-ink) hover:bg-(--color-ink-soft) disabled:opacity-60 text-white text-sm font-semibold active:scale-[0.99] transition cursor-pointer"
+                disabled={saving || justFiled || !site}
+                className="press inline-flex items-center justify-center gap-2 w-full h-11 rounded-xl bg-(--color-ink) hover:bg-(--color-ink-soft) disabled:opacity-60 text-white text-sm font-semibold cursor-pointer"
               >
-                {saving ? 'Saving' : `File ${service.name}`}
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Filing
+                  </>
+                ) : justFiled ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" /> Filed
+                  </>
+                ) : (
+                  `File ${service.name}`
+                )}
               </button>
             </div>
           </>

@@ -10,6 +10,7 @@ import {
   type SiteStatus,
   type SiteServiceStatus,
 } from '../../lib/controlRoom/siteServiceStatus';
+import { Reveal } from '../common/Reveal';
 
 /**
  * The Control Room board: every site, and inside each site every service
@@ -61,7 +62,7 @@ const SiteCard: React.FC<{ status: SiteStatus; highlight?: string; onOpen: () =>
     <button
       type="button"
       onClick={onOpen}
-      className="group relative text-left bg-white border border-slate-200 rounded-(--r-card) p-4 pl-5 shadow-xs hover:shadow-md hover:border-slate-300 transition overflow-hidden flex flex-col cursor-pointer"
+      className="press group relative w-full h-full text-left bg-white border border-slate-200 rounded-(--r-card) p-4 pl-5 shadow-xs hover:shadow-md hover:border-slate-300 transition overflow-hidden flex flex-col cursor-pointer"
     >
       <span className={`absolute left-0 inset-y-0 w-1 ${meta.accent}`} aria-hidden="true" />
 
@@ -190,15 +191,15 @@ export const SiteServiceBoard: React.FC<Props> = ({ statuses, services, dateLabe
 
       {/* Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {tiles.map((t) => {
+        {tiles.map((t, i) => {
           const Icon = t.icon;
           const active = t.filter !== '' && stateFilter === t.filter;
           return (
+            <Reveal key={t.label} index={i} className="min-w-0">
             <button
-              key={t.label}
               type="button"
               onClick={() => setStateFilter(t.filter === '' || active ? '' : t.filter)}
-              className={`text-left bg-white border rounded-(--r-card) p-4 shadow-xs transition cursor-pointer ${
+              className={`press w-full h-full text-left bg-white border rounded-(--r-card) p-4 shadow-xs transition cursor-pointer ${
                 active ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-200 hover:border-slate-300'
               }`}
             >
@@ -213,6 +214,7 @@ export const SiteServiceBoard: React.FC<Props> = ({ statuses, services, dateLabe
                 </div>
               )}
             </button>
+            </Reveal>
           );
         })}
       </div>
@@ -314,8 +316,10 @@ export const SiteServiceBoard: React.FC<Props> = ({ statuses, services, dateLabe
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
-          {visible.map((s) => (
-            <SiteCard key={s.site.id} status={s} highlight={serviceFilter} onOpen={() => onOpenSite(s.site.id)} />
+          {visible.map((s, i) => (
+            <Reveal key={s.site.id} index={i} className="min-w-0">
+              <SiteCard status={s} highlight={serviceFilter} onOpen={() => onOpenSite(s.site.id)} />
+            </Reveal>
           ))}
         </div>
       )}

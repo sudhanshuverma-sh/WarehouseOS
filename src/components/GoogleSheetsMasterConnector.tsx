@@ -1836,8 +1836,9 @@ function jsonResponse(data) {
                 type="button"
                 onClick={handleMasterDataPaste}
                 disabled={!masterDataPasteText.trim() || isImportingMasterData}
-                className="px-4 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-xs disabled:opacity-50"
+                className="press inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-xs disabled:opacity-50 cursor-pointer"
               >
+                {isImportingMasterData && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                 {isImportingMasterData ? 'Importing' : 'Import'}
               </button>
             </div>

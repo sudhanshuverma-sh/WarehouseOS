@@ -9,6 +9,7 @@ import {
   Droplets,
   Flame,
   Fuel,
+  Loader2,
   MapPin,
   Shield,
   Snowflake,
@@ -200,6 +201,7 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
   const [evidence, setEvidence] = useState<Record<string, EvidenceValue | null>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [justFiled, setJustFiled] = useState(false);
 
   const formFields = useMemo(() => {
     if (!filing) return [];
@@ -239,7 +241,13 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
     setSaving(false);
     if (!res.ok) return; // the reason is already on screen; the form stays filled
     notify('success', `${filing.name} filed`, `Saved for ${site.name}.`);
-    setFiling(null);
+    // Filing is the whole job on this screen, so the button says it landed
+    // before the sheet closes itself.
+    setJustFiled(true);
+    window.setTimeout(() => {
+      setJustFiled(false);
+      setFiling(null);
+    }, 700);
   };
 
   // ---------------------------------------------------------------- render
@@ -478,10 +486,20 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
             <div className="p-5 pt-0">
               <button
                 type="submit"
-                disabled={saving}
-                className="w-full h-11 rounded-xl bg-(--color-ink) hover:bg-(--color-ink-soft) disabled:opacity-60 text-white text-sm font-semibold cursor-pointer"
+                disabled={saving || justFiled}
+                className="press inline-flex items-center justify-center gap-2 w-full h-11 rounded-xl bg-(--color-ink) hover:bg-(--color-ink-soft) disabled:opacity-60 text-white text-sm font-semibold cursor-pointer"
               >
-                {saving ? 'Saving…' : `File ${filing.name}`}
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Filing
+                  </>
+                ) : justFiled ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" /> Filed
+                  </>
+                ) : (
+                  `File ${filing.name}`
+                )}
               </button>
             </div>
           </form>

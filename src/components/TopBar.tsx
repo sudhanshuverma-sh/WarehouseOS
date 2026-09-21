@@ -3,28 +3,30 @@ import { useApp } from '../context/AppContext';
 import {
   Calendar,
   Building2,
-  Filter,
   PlusCircle,
   Database,
-  Search,
-  Sparkles,
-  Layers,
   ArrowLeft,
   ShieldCheck,
   UserCheck,
   ChevronDown,
-  LayoutDashboard,
-  Smartphone,
   Bell,
   Lock,
-  Fuel,
   Award
 } from 'lucide-react';
-import { User } from '../types';
+import { User, UserRole } from '../types';
 import { appWarehouseIdFor, controlRoomSites } from '../lib/controlRoom/siteServiceStatus';
 import { NotificationCenterModal } from './NotificationCenterModal';
 import { usePendingWork } from './common/usePendingWork';
 import { usePersonas } from './common/usePersonas';
+import { Button } from './common/Button';
+
+/** What each role is called on screen, matching the sidebar. */
+const ROLE_LABEL: Record<UserRole, string> = {
+  SUPER_ADMIN: 'Admin',
+  SERVICE_ADMIN: 'Service',
+  WAREHOUSE_ADMIN: 'Site admin',
+  SITE_POC: 'POC',
+};
 import { pendingSummary } from '../lib/alerts/pendingWork';
 
 interface TopBarProps {
@@ -65,14 +67,22 @@ export const TopBar: React.FC<TopBarProps> = ({
    * selectedWarehouseId keeps working.
    */
   const sites = useMemo(() => {
-    const seen = new Set<string>();
+    const taken = new Set<string>();
     return controlRoomSites(siteMasterRows, warehouses)
-      .map(site => ({
-        value: appWarehouseIdFor(site, warehouses),
-        label: site.name,
-        note: site.whCode && site.whCode !== site.name ? site.whCode : site.city,
-      }))
-      .filter(o => (seen.has(o.value) ? false : (seen.add(o.value), true)))
+      .map(site => {
+        // Prefer the id the records carry. Two Master Data sites can resolve
+        // to one app warehouse, and dropping the loser cost a real site: the
+        // list read 119 while the sidebar counted 120, and that site could
+        // not be chosen at all. The second one keeps its own Site_Code.
+        const preferred = appWarehouseIdFor(site, warehouses);
+        const value = taken.has(preferred) ? site.id : preferred;
+        taken.add(value);
+        return {
+          value,
+          label: site.name,
+          note: site.whCode && site.whCode !== site.name ? site.whCode : site.city,
+        };
+      })
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [siteMasterRows, warehouses]);
 
@@ -102,9 +112,12 @@ export const TopBar: React.FC<TopBarProps> = ({
     (currentUser.role === 'SITE_POC' && currentView === 'pocFiling');
 
   return (
-    // Same width and gutters as <main>, so the bar lines up with the page
-    // instead of running edge to edge above narrower content.
-    <header className="soft-glass rounded-[var(--r-panel)] sticky top-4 z-20 font-sans w-full max-w-7xl mx-auto mt-4">
+    // The gutters are <main>'s own (p-3 sm:p-5 lg:p-7 in App.tsx), so the
+    // panel's edges line up with the cards underneath it. Carrying only the
+    // width and not the padding left the bar 28px wider on each side at
+    // desktop, which is what read as "not aligned with the page".
+    <div className="sticky top-4 z-20 w-full max-w-7xl mx-auto mt-4 px-3 sm:px-5 lg:px-7">
+    <header className="soft-glass rounded-[var(--r-panel)] font-sans">
       {/* 1. Mobile Phone View Header (< md) */}
       <div className="md:hidden px-3.5 pt-2.5 pb-2 space-y-2">
         <div className="flex items-center justify-between gap-2">
@@ -130,25 +143,17 @@ export const TopBar: React.FC<TopBarProps> = ({
               <button
                 type="button"
                 onClick={() => setShowRoleMenu(!showRoleMenu)}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-extrabold border transition ${
-                  currentUser.role === 'SUPER_ADMIN'
-                    ? 'bg-purple-50 text-purple-800 border-purple-200'
-                    : currentUser.role === 'SERVICE_ADMIN'
-                    ? 'bg-amber-50 text-amber-900 border-amber-200'
-                    : 'bg-teal-50 text-teal-800 border-teal-200'
-                }`}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold border bg-slate-50 text-slate-900 border-slate-200 transition"
               >
                 {currentUser.role === 'SUPER_ADMIN' ? (
-                  <ShieldCheck className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                  <ShieldCheck className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                 ) : currentUser.role === 'SERVICE_ADMIN' ? (
-                  <Award className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <Award className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                 ) : (
-                  <UserCheck className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                  <UserCheck className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                 )}
-                <span className="truncate max-w-[110px]">
-                  {currentUser.role === 'SUPER_ADMIN' ? 'Super Admin' : currentUser.role === 'SERVICE_ADMIN' ? 'Service Admin' : currentUser.fullName.split(' ')[0]}
-                </span>
-                <ChevronDown className="w-3 h-3 opacity-60" />
+                <span className="truncate max-w-[110px]">{currentUser.fullName.split(' ')[0]}</span>
+                <ChevronDown className="w-3 h-3 text-slate-400" />
               </button>
 
               {/* Role Dropdown */}
@@ -283,7 +288,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <button
               onClick={onBack}
               type="button"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition shadow-2xs group cursor-pointer"
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold transition group cursor-pointer shrink-0"
               title="Go back to previous screen"
             >
               <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
@@ -293,31 +298,25 @@ export const TopBar: React.FC<TopBarProps> = ({
 
           {/* Quick Persona / Role Switcher Pill */}
           <div className="relative">
+            {/* The person, then their role. One neutral chip: a different
+                background per role made the bar change colour on a persona
+                switch, which said nothing the words did not. */}
             <button
               onClick={() => setShowRoleMenu(!showRoleMenu)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-extrabold border transition cursor-pointer ${
-                currentUser.role === 'SUPER_ADMIN'
-                  ? 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
-                  : currentUser.role === 'SERVICE_ADMIN'
-                  ? 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
-                  : 'bg-teal-50 text-teal-800 border-teal-200 hover:bg-teal-100'
-              }`}
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-xl text-xs font-semibold bg-slate-50 border border-slate-200 text-slate-900 hover:bg-slate-100 transition cursor-pointer min-w-0"
             >
               {currentUser.role === 'SUPER_ADMIN' ? (
-                <ShieldCheck className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                <ShieldCheck className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               ) : currentUser.role === 'SERVICE_ADMIN' ? (
-                <Award className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <Award className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               ) : (
-                <UserCheck className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                <UserCheck className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               )}
-              <span className="truncate">
-                {currentUser.role === 'SUPER_ADMIN'
-                  ? 'Super Admin (Full Network)'
-                  : currentUser.role === 'SERVICE_ADMIN'
-                  ? `Service Admin (${currentUser.fullName.split(' ')[0]})`
-                  : `Site POC: ${currentUser.fullName.split(' ')[0]}`}
+              <span className="truncate max-w-36">{currentUser.fullName}</span>
+              <span className="hidden lg:inline shrink-0 px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] font-semibold text-slate-600">
+                {ROLE_LABEL[currentUser.role]}
               </span>
-              <ChevronDown className="w-3 h-3 text-slate-500" />
+              <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
             </button>
 
             {/* Role dropdown */}
@@ -393,22 +392,20 @@ export const TopBar: React.FC<TopBarProps> = ({
             )}
           </div>
 
-          {/* Facility Context: Strict Lock for POC vs Selector for Admins */}
+          {/* The site in view: fixed for a POC, chosen by everyone else. */}
           {currentUser.role === 'SITE_POC' ? (
-            <div className="flex items-center gap-2 bg-teal-50/80 px-3 py-1.5 rounded-xl border border-teal-200 text-xs min-w-0">
-              <Lock className="w-3.5 h-3.5 text-teal-700 shrink-0" />
-              <span className="font-black text-teal-950 truncate">
-                {activeSite.name} ({activeSite.code})
-              </span>
+            <div className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs min-w-0">
+              <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span className="font-semibold text-slate-900 truncate">{activeSite.name}</span>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 text-xs min-w-0">
-              <Building2 className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+            <div className="inline-flex items-center gap-1.5 h-8 pl-2.5 pr-1 rounded-xl bg-slate-50 border border-slate-200 text-xs min-w-0">
+              <Building2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               <select
                 value={selectedWarehouseId}
                 onChange={(e) => setSelectedWarehouseId(e.target.value)}
-                aria-label="Facility"
-                className="font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer text-xs max-w-45 truncate"
+                aria-label="Site in view"
+                className="font-semibold text-slate-900 bg-transparent focus:outline-none cursor-pointer text-xs max-w-44 truncate"
               >
                 <option value="ALL">All sites ({sites.length})</option>
                 {sites.map(s => (
@@ -422,54 +419,57 @@ export const TopBar: React.FC<TopBarProps> = ({
           )}
         </div>
 
-        {/* Right: what is pending, the date, and the fast actions. */}
+        {/* Right: what is pending, the date, and the fast actions. One
+            primary action, and amber only when something is actually due.
+            Five accent colours across six controls made every one of them
+            look like the important one. */}
         <div className="flex items-center gap-2 text-xs shrink-0">
           <button
             type="button"
             onClick={() => setIsNotificationOpen(true)}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition cursor-pointer shadow-2xs ${
+            className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-xl border transition cursor-pointer ${
               pendingAlertCount > 0
-                ? 'bg-amber-50 hover:bg-amber-100 border-amber-200/80 text-amber-950'
+                ? 'bg-(--color-due-tint) border-(--color-due)/30 text-(--color-ink) hover:brightness-95'
                 : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
             }`}
             title={pendingAlertCount > 0 ? pendingSummary(work) : 'Nothing pending today'}
           >
-            <Bell className={`w-4 h-4 ${pendingAlertCount > 0 ? 'text-amber-700' : 'text-slate-400'}`} />
-            {pendingAlertCount > 0 && (
-              <span className="inline-flex items-center justify-center min-w-4 px-1 text-[10px] font-black bg-rose-600 text-white rounded-full leading-4">
-                {pendingAlertCount}
+            <Bell className={`w-3.5 h-3.5 ${pendingAlertCount > 0 ? 'text-(--color-due)' : 'text-slate-400'}`} />
+            {/* The count, said once. A rose badge next to the word "Pending"
+                was the same fact three times, in the colour for failure. */}
+            {pendingAlertCount > 0 ? (
+              <span className="font-semibold">
+                <span className="font-mono tabular-nums">{pendingAlertCount}</span>
+                <span className="hidden xl:inline"> pending</span>
               </span>
+            ) : (
+              <span className="hidden xl:inline font-semibold">All clear</span>
             )}
-            <span className="hidden xl:inline font-bold">{pendingAlertCount > 0 ? 'Pending' : 'All clear'}</span>
           </button>
 
-          <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-            <Calendar className="w-3.5 h-3.5 text-slate-500" />
-            <span className="font-bold text-slate-500 text-[11px]">Daily Date:</span>
-            <input
-              type="date"
-              value={currentDate}
-              onChange={(e) => setCurrentDate(e.target.value)}
-              className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer text-xs"
-            />
-          </div>
+          {/* No "Daily Date:" label and no calendar icon: the field carries
+              its own picker, and both said what the control already says. */}
+          <input
+            type="date"
+            aria-label="Date in view"
+            value={currentDate}
+            onChange={(e) => setCurrentDate(e.target.value)}
+            className="h-8 px-2.5 rounded-xl bg-slate-50 border border-slate-200 font-semibold text-slate-900 text-xs focus:outline-none focus:border-slate-400 cursor-pointer"
+          />
 
-          <button
-            onClick={() => onNavigate('database')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl font-bold transition cursor-pointer shadow-2xs"
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span>{currentUser.role === 'SITE_POC' ? 'My Site Data' : 'Database'}</span>
-          </button>
+          <Button size="sm" icon={<Database className="w-3.5 h-3.5" />} onClick={() => onNavigate('database')}>
+            {currentUser.role === 'SITE_POC' ? 'My data' : 'Records'}
+          </Button>
 
           {currentUser.role === 'SUPER_ADMIN' && (
-            <button
+            <Button
+              size="sm"
+              variant="primary"
+              icon={<PlusCircle className="w-3.5 h-3.5" />}
               onClick={() => onNavigate('createForm')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold shadow-2xs transition cursor-pointer"
             >
-              <PlusCircle className="w-3.5 h-3.5" />
-              <span>+ Add Form</span>
-            </button>
+              Add form
+            </Button>
           )}
         </div>
       </div>
@@ -481,6 +481,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         onNavigateToForm={onNavigate}
       />
     </header>
+    </div>
   );
 };
 

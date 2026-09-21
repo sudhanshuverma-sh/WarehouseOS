@@ -53,6 +53,39 @@ export function pocServiceScope(user: User, pocRows: PocMaster[], site?: Control
   return held;
 }
 
+/** Every site this person holds, not just the one currently in view. */
+function sitesOf(user: User, sites: ControlRoomSite[]): ControlRoomSite[] {
+  const ids = [user.warehouseId, ...(user.siteCodes ?? [])].filter(Boolean) as string[];
+  const held = sites.filter((s) => ids.some((id) => siteMatches(s, id)));
+  // No site on the row is a data gap, not permission to file nowhere: the
+  // caller's own scoping already decided they may see this app.
+  return held.length > 0 ? held : [];
+}
+
+/**
+ * Whether this person may file this service AT this site: the site's own
+ * Services_Enabled and the person's POC_Master row for that site must both
+ * allow it. Diesel-only at Patna P1 stays diesel-only at Patna P1, even
+ * when the same person holds everything at Patna P2.
+ */
+export function holdsAt(user: User, pocRows: PocMaster[], site: ControlRoomSite, code: string): boolean {
+  const siteScope: ServiceScope = site.services === 'ALL' ? 'ALL' : new Set(site.services.map(norm));
+  if (!inScope(siteScope, code)) return false;
+  const ownScope = pocServiceScope(user, pocRows, site);
+  return ownScope === null || inScope(ownScope, code);
+}
+
+/** The sheet ids this person may file at one site. */
+export function servicesAt(
+  user: User,
+  site: ControlRoomSite | undefined,
+  pocRows: PocMaster[],
+  allSheetIds: string[],
+): string[] {
+  if (user.role === 'SUPER_ADMIN' || !site) return allSheetIds;
+  return allSheetIds.filter((id) => holdsAt(user, pocRows, site, serviceCodeFor(id)));
+}
+
 /**
  * The sheet ids this person may file, narrowest scope that the data supports.
  * `allSheetIds` is the catalogue to filter — everything the app knows about.
@@ -65,15 +98,14 @@ export function servicesForUser(
 ): string[] {
   if (user.role === 'SUPER_ADMIN') return allSheetIds;
 
-  const site = user.warehouseId ? sites.find((s) => siteMatches(s, user.warehouseId)) : undefined;
-  const siteScope: ServiceScope = site ? (site.services === 'ALL' ? 'ALL' : new Set(site.services.map(norm))) : 'ALL';
-  const ownScope = pocServiceScope(user, pocRows, site);
+  const ownScope = pocServiceScope(user, pocRows);
 
   if (user.role === 'SITE_POC') {
-    return allSheetIds.filter((id) => {
-      const code = serviceCodeFor(id);
-      return inScope(siteScope, code) && (ownScope === null || inScope(ownScope, code));
-    });
+    // A POC covering two warehouses may hold different services at each, so
+    // this is the union across their sites: what they can file SOMEWHERE,
+    // which is the right question for a menu. The filing desk narrows it to
+    // the site actually chosen, via servicesAt() below.
+    return allSheetIds.filter((id) => sitesOf(user, sites).some((s) => holdsAt(user, pocRows, s, serviceCodeFor(id))));
   }
 
   // An admin's scope is what Master Data gives them, plus anything the app

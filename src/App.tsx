@@ -178,7 +178,13 @@ const MainContent: React.FC = () => {
               />
             )}
 
+            {/* Gated at the route, not just hidden from the menus: this
+                console shapes the forms every site files, and view state
+                survives a persona switch and back-history. */}
             {currentView === 'sheets' && (
+              !caps.canEditSchema ? (
+                <AccessDenied what="the operational sheets console" onBack={handleGoBack} />
+              ) : (
               <OperationalSheetsHub
                 onSelectSheet={handleSelectSheetFromHub}
                 onOpenCreateForm={() => navigateTo('createForm')}
@@ -189,6 +195,7 @@ const MainContent: React.FC = () => {
                 onOpenDatabase={handleOpenDatabaseForSheet}
                 onBack={handleGoBack}
               />
+              )
             )}
 
             {currentView === 'dailyForm' && (

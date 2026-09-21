@@ -100,6 +100,16 @@ describe('personasFromMaster()', () => {
     expect(admin.warehouseId).toBeUndefined();
     expect(admin.siteCodes).toBeUndefined();
   });
+
+  it('pins a nationwide person to no site, whatever their role', () => {
+    // A service admin holding every site had Site_Code 'ALL' copied into
+    // warehouseId, so the sidebar labelled their site "ALL" and every site
+    // filter compared against a warehouse id that does not exist.
+    const [lead] = personasFromMaster([row({ Role: 'SERVICE_ADMIN', Site_Code: 'ALL', Service_Codes: 'DIESEL' })], sites, warehouses);
+    expect(lead.warehouseId).toBeUndefined();
+    expect(lead.siteCodes).toBeUndefined();
+    expect(lead.serviceCodes).toEqual(['DIESEL']);
+  });
 });
 
 describe('initialsOf()', () => {

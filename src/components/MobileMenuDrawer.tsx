@@ -77,7 +77,8 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
           title: 'My services',
           items: [
             { id: 'adminDashboard', label: 'Admin Service Hub', icon: Award, color: 'text-amber-600', bg: 'bg-amber-50' },
-            { id: 'sheets', label: 'Operational Sheets', icon: Layers, color: 'text-slate-700', bg: 'bg-slate-100' },
+            // No Operational Sheets: shaping a service's form is canEditSchema,
+            // which a service admin does not hold. See Sidebar.
             { id: 'diesel', label: 'Diesel', icon: Fuel, color: 'text-amber-600', bg: 'bg-amber-50' },
             { id: 'dgPower', label: 'EB and DG', icon: Zap, color: 'text-emerald-600', bg: 'bg-emerald-50' },
             { id: 'housekeeping', label: 'Housekeeping', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50' },

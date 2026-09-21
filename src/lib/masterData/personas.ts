@@ -50,8 +50,13 @@ export function personasFromMaster(
     seen.add(key);
 
     const role: UserRole = (ROLES as readonly string[]).includes(row.Role) ? (row.Role as UserRole) : 'SITE_POC';
-    const site = sites.find((s) => siteMatches(s, row.Site_Code));
     const scope = parseServiceCodes(row.Service_Codes);
+
+    // 'ALL' in Site_Code means every site, so this person is pinned to none.
+    // Carrying the literal made the sidebar label their site "ALL" and every
+    // site filter compare against a warehouse id that does not exist.
+    const nationwide = role === 'SUPER_ADMIN' || String(row.Site_Code ?? '').trim().toUpperCase() === 'ALL';
+    const site = nationwide ? undefined : sites.find((s) => siteMatches(s, row.Site_Code));
 
     people.push({
       id: row.Access_ID,
@@ -61,8 +66,8 @@ export function personasFromMaster(
       // The id the app's records and filters know this site by, so switching
       // person moves the whole app to their site rather than to a code
       // nothing has been filed against.
-      warehouseId: role === 'SUPER_ADMIN' ? undefined : site ? appWarehouseIdFor(site, warehouses as Warehouse[]) : row.Site_Code,
-      siteCodes: role === 'SUPER_ADMIN' || row.Site_Code === 'ALL' ? undefined : [row.Site_Code],
+      warehouseId: nationwide ? undefined : site ? appWarehouseIdFor(site, warehouses as Warehouse[]) : row.Site_Code,
+      siteCodes: nationwide ? undefined : [row.Site_Code],
       serviceCodes: scope === 'ALL' ? 'ALL' : [...scope],
       isActive: true,
       createdAt: row.Access_Start_Date || '',

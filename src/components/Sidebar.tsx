@@ -5,7 +5,15 @@ import { controlRoomSites, siteMatches } from '../lib/controlRoom/siteServiceSta
 import { usePendingWork } from './common/usePendingWork';
 import { usePersonas } from './common/usePersonas';
 import { Avatar } from './common/Avatar';
-import type { User } from '../types';
+import type { User, UserRole } from '../types';
+
+/** What each role is called on screen. */
+const ROLE_LABEL: Record<UserRole, string> = {
+  SUPER_ADMIN: 'Admin',
+  SERVICE_ADMIN: 'Service',
+  WAREHOUSE_ADMIN: 'Site admin',
+  SITE_POC: 'POC',
+};
 import {
   LayoutDashboard,
   ClipboardCheck,
@@ -102,9 +110,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
 
   /** Their site, named the way Master Data names it. */
   const siteLabelFor = (u: User) => {
-    if (u.role === 'SUPER_ADMIN') return 'ALL SITES';
+    if (!u.warehouseId) return 'ALL SITES';
     const site = sites.find(s => siteMatches(s, u.warehouseId));
-    return site?.name ?? u.warehouseId ?? 'No site';
+    return site?.name ?? u.warehouseId;
   };
 
   const shownPersonas = useMemo(() => {
@@ -193,12 +201,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
               badge: pendingBadge,
               highlight: true
             },
-            {
-              id: 'sheets',
-              label: 'Operational Sheets',
-              subLabel: 'Forms POCs fill',
-              icon: Layers
-            },
+            // Not Operational Sheets: that console shapes the forms every
+            // service uses, which is canEditSchema, and a service admin does
+            // not have it. Their own services are the Hub above.
             {
               id: 'diesel',
               label: 'Diesel',
@@ -514,16 +519,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
                       <div className="text-xs font-bold text-[var(--color-ink)] truncate">
                         {currentUser.fullName}
                       </div>
-                      <div className="code-chip truncate">
-                        {currentUser.role === 'SUPER_ADMIN' ? 'ALL SITES' : currentUser.warehouseId}
-                      </div>
+                      <div className="code-chip truncate">{siteLabelFor(currentUser)}</div>
                     </div>
-                    <span
-                      className={`chip shrink-0 ${
-                        currentUser.role === 'SUPER_ADMIN' ? 'chip-missing' : 'chip-filed'
-                      }`}
-                    >
-                      {currentUser.role === 'SUPER_ADMIN' ? 'Admin' : 'POC'}
+                    {/* Four roles, not two: a service admin used to be
+                        labelled POC, which is the one thing they are not. */}
+                    <span className={`chip shrink-0 ${currentUser.role === 'SITE_POC' ? 'chip-filed' : 'chip-missing'}`}>
+                      {ROLE_LABEL[currentUser.role]}
                     </span>
                   </button>
 

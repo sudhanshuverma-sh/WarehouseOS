@@ -127,7 +127,12 @@ export async function queueSheetCopy(
  * The extra questions an admin added to a service that has its own screen,
  * ready to store as jsonb.
  *
- * Only keys the service's form defines survive, the same way the Daily Site
+ * Only the questions marked `isExtra` count. The rest of a form row describes
+ * the columns that screen already collects — a diesel request's rate, entity
+ * and timestamp — and they are neither asked of the POC nor expected here, so
+ * validating against them would refuse every submission.
+ *
+ * Of those, only keys the form defines survive, the same way the Daily Site
  * Report keeps only the readings it knows: a client cannot widen its own row
  * by inventing keys. What is kept is checked against the field definitions,
  * so an answer the form would refuse cannot arrive by another route.
@@ -137,7 +142,8 @@ export async function extrasFor(c: Queryable, serviceCode: string, raw: unknown)
   if (!isPlainObject(raw)) throw new HttpError(400, 'extras must be an object of field values.');
 
   const { rows } = await c.query('select fields from service_form where service_code = $1', [serviceCode]);
-  const fields: FieldDefinition[] = rows[0]?.fields ?? [];
+  const saved: FieldDefinition[] = rows[0]?.fields ?? [];
+  const fields = saved.filter((f) => f.isExtra === true);
   if (fields.length === 0) return '{}';
 
   const kept: Record<string, unknown> = {};

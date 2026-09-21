@@ -101,6 +101,10 @@ export function cleanFormFields(input: unknown): FieldDefinition[] {
       max: numberOrUndefined(f.max),
       defaultValue: f.defaultValue,
       isCritical: f.isCritical === true || undefined,
+      // Which questions were added to a service that has its own screen. Drop
+      // this and every extra becomes invisible after a save — and worse, the
+      // service's own columns start being asked for as if they were questions.
+      isExtra: f.isExtra === true || undefined,
     };
   });
 }

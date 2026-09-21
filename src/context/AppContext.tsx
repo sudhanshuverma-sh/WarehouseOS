@@ -21,6 +21,7 @@ import {
 import { PocMaster, SiteMaster, ServiceRegistry, MasterAudit } from '../types/masterData';
 import { fetchMasterData, fetchMasterDataFromAppsScript, parseMasterDataJson, diffRows, formatRowDiff } from '../lib/masterDataSync';
 import { servicesForUser } from '../lib/services/servicesForUser';
+import { BUILT_IN_FORM_SERVICES } from '../lib/services/formBuilder';
 import { controlRoomSites } from '../lib/controlRoom/siteServiceStatus';
 import { buildDieselSheetBatch, buildDieselSheetPayload } from '../lib/sheetSync/dieselSheet';
 import { validateSite, validateService, type EditMode, type MasterWriteResult } from '../lib/masterData/validate';
@@ -3216,8 +3217,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const builtIn = await Promise.all(
           OPERATIONAL_SHEETS.map(async sheet => {
             const code = serviceCodeFor(sheet.id);
-            if (DEDICATED_SERVICES.has(code)) return sheet;
             const fields = await formFor(code);
+            // A service with a screen of its own keeps the columns this app
+            // ships for it, and takes only the questions an admin ADDED from
+            // the saved form. Replacing the array would both lose columns the
+            // server's sanitiser drops and start asking a POC for the rest.
+            if (BUILT_IN_FORM_SERVICES.has(code)) {
+              const own = sheet.fieldsConfig ?? [];
+              const keys = new Set(own.map(f => f.key));
+              const added = fields.filter(f => f.isExtra === true && !keys.has(f.key));
+              if (!added.length) return sheet;
+              const merged = [...own, ...added];
+              return { ...sheet, fieldsConfig: merged, fieldsCount: merged.length };
+            }
             return fields.length ? { ...sheet, fieldsConfig: fields, fieldsCount: fields.length } : sheet;
           })
         );

@@ -25,6 +25,18 @@ const SERVICE_CODE = /^[A-Z][A-Z0-9_]*$/;
  */
 export const BUILT_IN_FORM_SERVICES: ReadonlySet<string> = new Set(['SITE_ACTIVITY', 'DIESEL', 'EB_DG', 'HOUSEKEEPING', 'WASHING', 'ADHOC']);
 
+/**
+ * The two halves of one of those services' `fieldsConfig`.
+ *
+ * A built-in column is a description of what that screen already asks — the
+ * diesel request's rate and quantity, the report's 43 points. Asking a POC
+ * for one of those again is the bug this split exists to prevent, so only
+ * `extraFields` is ever rendered as a question at the end of a screen.
+ */
+export const extraFields = (fields: readonly FieldDefinition[] = []): FieldDefinition[] => fields.filter((f) => f.isExtra === true);
+
+export const builtInFields = (fields: readonly FieldDefinition[] = []): FieldDefinition[] => fields.filter((f) => f.isExtra !== true);
+
 export interface FieldTypeInfo {
   type: FieldType;
   label: string;
@@ -155,10 +167,12 @@ export interface DraftProblems {
 export const problemCount = (p: DraftProblems) =>
   [p.name, p.code, p.form].filter(Boolean).length + Object.keys(p.fields).length;
 
-function fieldProblem(f: FieldDefinition, seen: Set<string>): string | undefined {
+function fieldProblem(f: FieldDefinition, seen: Set<string>, asked: Map<string, string>): string | undefined {
   if (!f.label.trim()) return 'Write the question.';
   if (!FIELD_KEY.test(f.key)) return 'This question has an invalid saved name.';
   if (seen.has(f.key)) return 'Two questions share the same saved name.';
+  const already = asked.get(f.key.toLowerCase()) ?? asked.get(f.label.trim().toLowerCase());
+  if (already) return `This screen already asks for “${already}”. Nobody should have to fill it twice.`;
   if (f.type === 'select') {
     const options = (f.options ?? []).map((o) => o.trim()).filter(Boolean);
     if (!options.length) return 'Add at least one option.';
@@ -170,8 +184,17 @@ function fieldProblem(f: FieldDefinition, seen: Set<string>): string | undefined
   return undefined;
 }
 
-/** Everything that would stop a draft being published. Codes are checked only when creating. */
-export function validateDraft(draft: FormDraft, existingCodes: readonly string[], mode: 'create' | 'edit'): DraftProblems {
+/**
+ * Everything that would stop a draft being published. Codes are checked only
+ * when creating; `asked` is what the service's own screen already puts on the
+ * page, which a new question may not repeat.
+ */
+export function validateDraft(
+  draft: FormDraft,
+  existingCodes: readonly string[],
+  mode: 'create' | 'edit',
+  asked: readonly FieldDefinition[] = [],
+): DraftProblems {
   const problems: DraftProblems = { fields: {} };
   if (!draft.name.trim()) problems.name = 'Give the form a name.';
 
@@ -183,17 +206,26 @@ export function validateDraft(draft: FormDraft, existingCodes: readonly string[]
   }
 
   if (!draft.fields.length) problems.form = 'Add at least one question.';
+  const alreadyAsked = new Map<string, string>();
+  for (const f of asked) {
+    alreadyAsked.set(f.key.toLowerCase(), f.label);
+    alreadyAsked.set(f.label.trim().toLowerCase(), f.label);
+  }
   const seen = new Set<string>();
   draft.fields.forEach((f, i) => {
-    const problem = fieldProblem(f, seen);
+    const problem = fieldProblem(f, seen, alreadyAsked);
     seen.add(f.key);
     if (problem) problems.fields[i] = problem;
   });
   return problems;
 }
 
-/** A draft's questions as they are saved: trimmed, and only the settings that apply to each type. */
-export function cleanForSave(fields: FieldDefinition[]): FieldDefinition[] {
+/**
+ * A draft's questions as they are saved: trimmed, and only the settings that
+ * apply to each type. `markExtra` stamps them as added-in-the-builder, which
+ * is what a service with its own screen asks at the end of that screen.
+ */
+export function cleanForSave(fields: FieldDefinition[], markExtra = false): FieldDefinition[] {
   return fields.map((f) => {
     const out: FieldDefinition = { key: f.key, label: f.label.trim(), type: f.type, required: f.required === true };
     const help = f.helperText?.trim();
@@ -207,6 +239,7 @@ export function cleanForSave(fields: FieldDefinition[]): FieldDefinition[] {
     if (f.type === 'select') out.options = [...new Set((f.options ?? []).map((o) => o.trim()).filter(Boolean))];
     if (f.defaultValue !== undefined && f.defaultValue !== '' && f.type !== 'evidence') out.defaultValue = f.defaultValue;
     if (f.isCritical) out.isCritical = true;
+    if (markExtra || f.isExtra) out.isExtra = true;
     return out;
   });
 }

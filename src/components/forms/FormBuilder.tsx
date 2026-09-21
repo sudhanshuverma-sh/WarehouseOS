@@ -36,6 +36,8 @@ import {
   FORM_TEMPLATES,
   BUILT_IN_FORM_SERVICES,
   blankField,
+  builtInFields,
+  extraFields,
   cleanForSave,
   columnsToFields,
   fieldKeyFrom,
@@ -100,12 +102,24 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
   const [registered] = useState(() => serviceRegistryRows.find((r) => r.Service_Code === editCode));
   const [savedKeys] = useState(() => new Set(editing?.fieldsConfig?.map((f) => f.key) ?? []));
 
+  // A service with its own screen keeps that screen; here we add to it. Its
+  // built-in columns are what that screen already asks for — held aside, never
+  // edited, and put back untouched on publish.
+  const builtIn = Boolean(editing && BUILT_IN_FORM_SERVICES.has(editCode));
+  const [asked] = useState<FieldDefinition[]>(() =>
+    editing && BUILT_IN_FORM_SERVICES.has(serviceCodeFor(editing.id)) ? builtInFields(editing.fieldsConfig) : [],
+  );
+
   const [name, setName] = useState(registered?.Service_Name || editing?.title || '');
   const [code, setCode] = useState(editCode);
   const [codeEdited, setCodeEdited] = useState(false);
   const [cadence, setCadence] = useState<Cadence>(registered?.Cadence ?? (editing ? cadenceFor(editing.frequency) : 'DAILY'));
   const [description, setDescription] = useState(editing?.description ?? '');
-  const [fields, setFields] = useState<FieldDefinition[]>(() => (editing?.fieldsConfig ?? []).map((f) => ({ ...f })));
+  const [fields, setFields] = useState<FieldDefinition[]>(() => {
+    const saved = editing?.fieldsConfig ?? [];
+    const mine = editing && BUILT_IN_FORM_SERVICES.has(serviceCodeFor(editing.id)) ? extraFields(saved) : saved;
+    return mine.map((f) => ({ ...f }));
+  });
   const [open, setOpen] = useState<number | null>(null);
   const [attempted, setAttempted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -124,17 +138,14 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
     focusNext.current = null;
   });
 
-  // A service with its own screen keeps that screen; here we add to it.
-  const builtIn = Boolean(editing && BUILT_IN_FORM_SERVICES.has(editCode));
-
   const existingCodes = useMemo(
     () => [...serviceRegistryRows.map((r) => r.Service_Code), ...operationalSheets.map((s) => serviceCodeFor(s.id))],
     [serviceRegistryRows, operationalSheets],
   );
   const serviceCode = mode === 'edit' ? editCode : code.trim();
   const problems = useMemo(
-    () => validateDraft({ name, code: serviceCode, fields }, existingCodes, mode),
-    [name, serviceCode, fields, existingCodes, mode],
+    () => validateDraft({ name, code: serviceCode, fields }, existingCodes, mode, asked),
+    [name, serviceCode, fields, existingCodes, mode, asked],
   );
   const shown = attempted ? problems : NO_PROBLEMS;
   const issues = problemCount(problems);
@@ -258,7 +269,10 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
       }
       return;
     }
-    const clean = cleanForSave(fields);
+    // The built-in columns go back in front of the extras: they are what the
+    // service's own screen asks for, and the records table and the sheet
+    // export read them from this same array.
+    const clean = [...asked, ...cleanForSave(fields, builtIn)];
     const title = name.trim();
     setSaving(true);
     const res =
@@ -514,6 +528,29 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
             </div>
           </section>
 
+          {/* What the screen already asks — so nobody adds it twice. */}
+          {builtIn && asked.length > 0 && (
+            <section className="bg-white border border-slate-200 rounded-(--r-card) p-5 shadow-xs">
+              <h2 className="text-sm font-semibold text-slate-900">
+                Already asked on this screen <span className="ml-1 font-mono text-xs text-slate-500">{asked.length}</span>
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {editing?.title} collects these itself. A POC should never be asked for one of them twice, so they cannot be added
+                again below.
+              </p>
+              <ul className="mt-3 flex flex-wrap gap-1.5">
+                {asked.map((f) => (
+                  <li
+                    key={f.key}
+                    className="px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600"
+                  >
+                    {f.label}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {/* Questions */}
           <section className="bg-white border border-slate-200 rounded-(--r-card) p-5 shadow-xs">
             <h2 className="text-sm font-semibold text-slate-900">
@@ -522,8 +559,8 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
             </h2>
             {builtIn && (
               <p className="mt-1 text-xs text-slate-500">
-                {editing?.title} has its own screen, and those questions stay as they are. Anything you add here appears at the end of
-                that form, in Records and in exports. It is not copied into the Google Sheet, whose columns are fixed.
+                Only what you add here is asked at the end of {editing?.title}, on top of what it already collects. It shows in
+                Records and in exports, but is not copied into the Google Sheet, whose columns are fixed.
               </p>
             )}
             {shown.form && <p className="mt-1 text-xs text-(--color-missing)">{shown.form}</p>}

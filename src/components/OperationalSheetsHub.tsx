@@ -35,7 +35,7 @@ import {
   type ControlRoomService,
 } from '../lib/controlRoom/siteServiceStatus';
 import { sheetIdFor } from '../lib/services/serviceCodes';
-import { BUILT_IN_FORM_SERVICES, CADENCE_OPTIONS, cadenceLabel } from '../lib/services/formBuilder';
+import { BUILT_IN_FORM_SERVICES, CADENCE_OPTIONS, cadenceLabel, extraFields } from '../lib/services/formBuilder';
 import type { FieldDefinition } from '../types';
 import type { EvidenceValue } from './common/EvidenceInput';
 import { PageHeader } from './common/PageHeader';
@@ -221,7 +221,9 @@ export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ onSe
         {visible.map((s, i) => {
           const Icon = SERVICE_ICON[s.code] ?? ClipboardList;
           const ownScreen = BUILT_IN_FORM_SERVICES.has(s.code);
-          const questions = fieldsOf(s.code).length;
+          // A service with its own screen counts only what was added to it:
+          // the rest of its fieldsConfig describes columns that screen has.
+          const questions = ownScreen ? extraFields(fieldsOf(s.code)).length : fieldsOf(s.code).length;
           const p = progress.get(s.code) ?? { done: 0, total: 0 };
           const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
           const last = lastEntry.get(s.code);

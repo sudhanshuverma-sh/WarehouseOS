@@ -14,10 +14,21 @@ import { HttpError } from './http';
 const withFields = (fields: unknown[]): Queryable =>
   ({ query: async () => ({ rows: [{ fields }], rowCount: 1 }) }) as unknown as Queryable;
 
+/** A question an admin added in the builder. */
 const askFor = (over: Record<string, unknown> = {}) => ({
   key: 'lockoutTagNo',
   label: 'Lockout tag number',
   type: 'text',
+  required: true,
+  isExtra: true,
+  ...over,
+});
+
+/** A column the service's own screen already collects. */
+const ownColumn = (over: Record<string, unknown> = {}) => ({
+  key: 'ratePerLitre',
+  label: 'Rate per Litres (₹)',
+  type: 'number',
   required: true,
   ...over,
 });
@@ -46,6 +57,18 @@ describe('extrasFor()', () => {
 
   it('stores nothing when the service has no extra questions', async () => {
     expect(await extrasFor(withFields([]), 'SITE_ACTIVITY', { anything: 1 })).toBe('{}');
+  });
+
+  it('ignores the columns the service already collects on its own screen', async () => {
+    // The diesel screen asks for the rate itself; it is in the form row as a
+    // description of that screen, not as a question. Validating against it
+    // would refuse every request for a missing "extra" nobody was asked for.
+    const json = await extrasFor(withFields([ownColumn(), askFor()]), 'DIESEL', { lockoutTagNo: 'LT-88' });
+    expect(JSON.parse(json)).toEqual({ lockoutTagNo: 'LT-88' });
+  });
+
+  it('stores nothing when a form holds only the screen’s own columns', async () => {
+    expect(await extrasFor(withFields([ownColumn()]), 'DIESEL', { ratePerLitre: 95 })).toBe('{}');
   });
 
   it('stores nothing when the client sends no extras at all', async () => {

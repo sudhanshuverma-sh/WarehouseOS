@@ -79,6 +79,15 @@ export interface FieldDefinition {
   max?: number;
   defaultValue?: any;
   isCritical?: boolean;
+  /**
+   * A question an admin added in the form builder, after the service existed.
+   *
+   * It matters only for the services that have a screen of their own: their
+   * `fieldsConfig` describes the columns that screen already asks for, and a
+   * POC must never be asked for those a second time. Only what carries this
+   * flag is shown as a question at the end of such a screen.
+   */
+  isExtra?: boolean;
   warningThreshold?: {
     min?: number;
     max?: number;

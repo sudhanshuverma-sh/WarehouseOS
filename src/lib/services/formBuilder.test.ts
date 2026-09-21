@@ -3,7 +3,9 @@ import type { FieldDefinition } from '../../types';
 import {
   FORM_TEMPLATES,
   blankField,
+  builtInFields,
   cleanForSave,
+  extraFields,
   columnsToFields,
   fieldKeyFrom,
   guessFieldType,
@@ -80,6 +82,18 @@ describe('validateDraft', () => {
     expect(validateDraft({ ...draft, code: '' }, [], 'edit').code).toBeUndefined();
     expect(validateDraft({ ...draft, fields: [] }, [], 'edit').form).toBe('Add at least one question.');
   });
+
+  it('refuses a question the service’s own screen already asks', () => {
+    // The whole point: a POC must not be asked for the rate twice.
+    const asked = [q({ key: 'ratePerLitre', label: 'Rate per Litres (₹)' })];
+    const byKey = validateDraft({ ...draft, fields: [q({ key: 'ratePerLitre', label: 'Rate' })] }, [], 'edit', asked);
+    expect(byKey.fields[0]).toMatch(/already asks for “Rate per Litres \(₹\)”/);
+
+    const byLabel = validateDraft({ ...draft, fields: [q({ key: 'rateAgain', label: 'rate per litres (₹) ' })] }, [], 'edit', asked);
+    expect(byLabel.fields[0]).toMatch(/already asks/);
+
+    expect(problemCount(validateDraft({ ...draft, fields: [q({ key: 'lockoutTagNo', label: 'Lockout tag' })] }, [], 'edit', asked))).toBe(0);
+  });
 });
 
 describe('cleanForSave', () => {
@@ -95,6 +109,37 @@ describe('cleanForSave', () => {
       { key: 'b', label: 'Litres', type: 'number', required: false, unit: 'L', max: 500 },
       { key: 'c', label: 'Photo', type: 'evidence', required: false },
     ]);
+  });
+
+  it('marks a question added to a service that has its own screen', () => {
+    expect(cleanForSave([q({ key: 'a', label: 'Tag' })], true)[0].isExtra).toBe(true);
+    expect(cleanForSave([q({ key: 'a', label: 'Tag' })])[0].isExtra).toBeUndefined();
+    // Already marked stays marked, whatever the caller passes.
+    expect(cleanForSave([q({ key: 'a', label: 'Tag', isExtra: true })])[0].isExtra).toBe(true);
+  });
+});
+
+describe('a built-in service’s two halves', () => {
+  // Diesel's fieldsConfig describes the 21 columns its own screen collects.
+  // Treating those as questions is what made the form ask for Timestamp,
+  // Email Address and Entity a second time, below the form that just asked.
+  const config = [
+    q({ key: 'timestamp', label: 'Timestamp', type: 'text' }),
+    q({ key: 'emailAddress', label: 'Email Address', type: 'text' }),
+    q({ key: 'lockoutTagNo', label: 'Lockout tag', type: 'text', isExtra: true }),
+  ];
+
+  it('asks only for what was added', () => {
+    expect(extraFields(config).map((f) => f.key)).toEqual(['lockoutTagNo']);
+  });
+
+  it('asks for nothing at all before anything is added', () => {
+    expect(extraFields(config.slice(0, 2))).toEqual([]);
+    expect(extraFields(undefined)).toEqual([]);
+  });
+
+  it('keeps the screen’s own columns apart, so publishing cannot drop them', () => {
+    expect(builtInFields(config).map((f) => f.key)).toEqual(['timestamp', 'emailAddress']);
   });
 });
 

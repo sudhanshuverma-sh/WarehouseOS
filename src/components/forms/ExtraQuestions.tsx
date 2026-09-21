@@ -3,15 +3,18 @@ import type { FieldDefinition } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { sheetIdFor } from '../../lib/services/serviceCodes';
 import { ServiceFieldList, collectEntry } from './ServiceFieldList';
+import { extraFields } from '../../lib/services/formBuilder';
 import type { EvidenceValue } from '../common/EvidenceInput';
 
 /**
  * Questions added to a service that already has a screen of its own.
  *
- * The built-in questions belong to that screen; these are the ones an admin
- * added later in the form builder, and they are shown at the end of the form.
- * Each built-in screen renders `node` and sends `collect()` with its payload,
- * so a new column is two lines per screen instead of a new input each time.
+ * ONLY those: a service's `fieldsConfig` also describes the columns its own
+ * screen asks for, and a POC filing the diesel request must not be asked for
+ * the rate, the entity or the timestamp a second time at the bottom of it.
+ * `extraFields` is that line — without it this section renders the whole form
+ * again. Each built-in screen renders `node` and sends `collect()` with its
+ * payload, so a new column is two lines per screen instead of a new input.
  */
 
 interface ExtraQuestions {
@@ -27,7 +30,7 @@ interface ExtraQuestions {
 export function useExtraQuestions(serviceCode: string, siteCode?: string): ExtraQuestions {
   const { operationalSheets } = useApp();
   const fields = useMemo<FieldDefinition[]>(
-    () => operationalSheets.find((s) => s.id === sheetIdFor(serviceCode))?.fieldsConfig ?? [],
+    () => extraFields(operationalSheets.find((s) => s.id === sheetIdFor(serviceCode))?.fieldsConfig),
     [operationalSheets, serviceCode],
   );
 

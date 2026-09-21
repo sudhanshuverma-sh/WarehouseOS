@@ -1,16 +1,24 @@
-import React, { useState } from 'react';
-import {
-  Smartphone,
-  LayoutDashboard,
-  Fuel,
-  ClipboardCheck,
-  Bell,
-  Database,
-  Menu,
-  Sparkles
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Bell, Menu } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { controlRoomSites, siteMatches } from '../lib/controlRoom/siteServiceStatus';
+import { flattenNav, homeFor, navFor, scopeNav, type NavItem } from '../lib/nav/navConfig';
 import { MobileMenuDrawer } from './MobileMenuDrawer';
+
+/**
+ * The five slots at the bottom of a phone.
+ *
+ * Three of them used to be hard-coded to Home, Diesel and Checklist for
+ * every role, so a Service Admin's Home landed on the POC filing desk and
+ * a POC at a site without Diesel still got a Diesel tab. And because only
+ * those three routes had an active state, the bar read as "nothing
+ * selected" on the other ten screens in the app.
+ *
+ * Now: slot 1 is the role's real home, slots 2 and 3 are the first services
+ * this person actually holds (same scoped tree as the sidebar and the
+ * drawer), and every route lights something up, falling back to More for
+ * the ones that live in the menu.
+ */
 
 interface MobileBottomNavProps {
   currentView: string;
@@ -23,109 +31,129 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   currentView,
   onNavigate,
   onOpenNotifications,
-  pendingAlertCount
+  pendingAlertCount,
 }) => {
-  const { currentUser } = useApp();
+  const {
+    currentUser,
+    isServiceAccessible,
+    serviceRegistryRows,
+    siteMasterRows,
+    warehouses,
+  } = useApp();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const isSuper = currentUser.role === 'SUPER_ADMIN';
+  const registered = useMemo(
+    () => new Set(serviceRegistryRows.filter(s => s.Active === 'Yes').map(s => s.Service_Code)),
+    [serviceRegistryRows],
+  );
+
+  const atSite = useMemo<'ALL' | string[]>(() => {
+    if (currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'SERVICE_ADMIN') return 'ALL';
+    const own = [currentUser.warehouseId, ...(currentUser.siteCodes ?? [])].filter(Boolean) as string[];
+    const mine = controlRoomSites(siteMasterRows, warehouses).filter(s => own.some(id => siteMatches(s, id)));
+    if (mine.length === 0 || mine.some(s => s.services === 'ALL')) return 'ALL';
+    return [...new Set(mine.flatMap(s => s.services as string[]))];
+  }, [currentUser.role, currentUser.warehouseId, currentUser.siteCodes, siteMasterRows, warehouses]);
+
+  const items = useMemo(
+    () =>
+      flattenNav(
+        scopeNav(navFor(currentUser.role), {
+          registered,
+          held: currentUser.serviceCodes,
+          atSite,
+          isAccessible: isServiceAccessible,
+        }),
+      ),
+    [currentUser.role, currentUser.serviceCodes, registered, atSite, isServiceAccessible],
+  );
+
+  /** Slot 1, then the two services this person files most directly. */
+  const slots = useMemo<NavItem[]>(() => {
+    const home = homeFor(currentUser.role);
+    const first = items.find(i => i.id === home);
+    const services = items.filter(i => i.codes && i.id !== home).slice(0, 2);
+    return [...(first ? [first] : []), ...services];
+  }, [items, currentUser.role]);
+
+  /** Every route the bar cannot show gets folded into More, so the bar is
+      never entirely unlit. */
+  const inSlots = slots.some(s => s.id === currentView);
 
   return (
     <>
-      {/* pb-safe holds room for the iPhone home indicator, which otherwise
-          sits on top of this row. tap-dense opts these out of the global
-          44px minimum: five of them share one row, and they are already
-          about 52px tall through their own padding. */}
-      <nav className="tap-dense fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-lg border-t border-slate-200/80 px-2 pt-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom,0px))] flex items-center justify-around md:hidden shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
-        {/* 1. Home / Site Desk */}
-        <button
-          type="button"
-          onClick={() => onNavigate(isSuper ? 'dashboard' : 'pocFiling')}
-          className={`flex flex-col items-center justify-center p-1 rounded-2xl min-w-[56px] transition active:scale-95 cursor-pointer ${
-            (currentView === 'pocFiling' || currentView === 'dashboard')
-              ? 'text-teal-700 font-extrabold'
-              : 'text-slate-500 hover:text-slate-900 font-medium'
-          }`}
-        >
-          <div className={`p-1.5 rounded-xl transition ${
-            (currentView === 'pocFiling' || currentView === 'dashboard')
-              ? 'bg-teal-100 text-teal-800 shadow-2xs'
-              : 'hover:bg-slate-100'
-          }`}>
-            {isSuper ? <LayoutDashboard className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
-          </div>
-          <span className="text-[10px] tracking-tight mt-0.5">
-            {isSuper ? 'Control' : 'Site Desk'}
-          </span>
-        </button>
+      {/* z-30 keeps this below a screen's own sticky action bar: at z-40 it
+          painted over the daily report's submit buttons. pb clears the
+          iPhone home indicator. tap-dense opts these five out of the global
+          44px minimum, since they are already ~52px through their padding. */}
+      <nav
+        aria-label="Main"
+        className="tap-dense fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-lg border-t border-slate-200/80 px-1 pt-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom,0px))] flex items-stretch justify-around md:hidden shadow-[0_-4px_20px_rgba(0,0,0,0.06)]"
+      >
+        {slots.map(item => {
+          const Icon = item.icon;
+          const active = currentView === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onNavigate(item.id)}
+              aria-current={active ? 'page' : undefined}
+              className="flex flex-col items-center justify-start gap-0.5 p-1 rounded-2xl min-w-[56px] flex-1 transition active:scale-95 cursor-pointer"
+            >
+              <span
+                className={`p-1.5 rounded-xl transition ${
+                  active ? 'bg-(--color-ink) text-white' : 'text-slate-500'
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+              </span>
+              <span
+                className={`text-[10px] tracking-tight text-center leading-tight ${
+                  active ? 'text-(--color-ink) font-semibold' : 'text-slate-500'
+                }`}
+              >
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
 
-        {/* 2. Diesel Procurement Fast Inward */}
-        <button
-          type="button"
-          onClick={() => onNavigate('diesel')}
-          className={`flex flex-col items-center justify-center p-1 rounded-2xl min-w-[56px] transition active:scale-95 cursor-pointer ${
-            currentView === 'diesel'
-              ? 'text-amber-800 font-extrabold'
-              : 'text-slate-500 hover:text-slate-900 font-medium'
-          }`}
-        >
-          <div className={`p-1.5 rounded-xl transition ${
-            currentView === 'diesel' ? 'bg-amber-100 text-amber-900 shadow-2xs' : 'hover:bg-slate-100'
-          }`}>
-            <Fuel className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] tracking-tight mt-0.5">Diesel</span>
-        </button>
-
-        {/* 3. Daily Site 43-Point Checklist Form */}
-        <button
-          type="button"
-          onClick={() => onNavigate('dailyForm')}
-          className={`flex flex-col items-center justify-center p-1 rounded-2xl min-w-[56px] transition active:scale-95 cursor-pointer ${
-            currentView === 'dailyForm'
-              ? 'text-teal-700 font-extrabold'
-              : 'text-slate-500 hover:text-slate-900 font-medium'
-          }`}
-        >
-          <div className={`p-1.5 rounded-xl transition ${
-            currentView === 'dailyForm' ? 'bg-teal-100 text-teal-800 shadow-2xs' : 'hover:bg-slate-100'
-          }`}>
-            <ClipboardCheck className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] tracking-tight mt-0.5">Checklist</span>
-        </button>
-
-        {/* 4. Notification Alert Bell with Badge */}
         <button
           type="button"
           onClick={onOpenNotifications}
-          className="flex flex-col items-center justify-center p-1 rounded-2xl min-w-[56px] transition active:scale-95 text-slate-500 hover:text-slate-900 relative cursor-pointer"
+          className="flex flex-col items-center justify-start gap-0.5 p-1 rounded-2xl min-w-[56px] flex-1 transition active:scale-95 cursor-pointer"
         >
-          <div className="p-1.5 rounded-xl relative hover:bg-slate-100">
-            <Bell className="w-5 h-5 text-amber-600" />
+          <span className="p-1.5 rounded-xl relative text-slate-500">
+            <Bell className="w-5 h-5" />
             {pendingAlertCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-rose-600 text-white font-black text-[9px] rounded-full flex items-center justify-center border-2 border-white shadow-2xs animate-pulse">
-                {pendingAlertCount}
+              <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-(--color-due) text-white font-bold text-[9px] rounded-full flex items-center justify-center border-2 border-white">
+                {pendingAlertCount > 99 ? '99+' : pendingAlertCount}
               </span>
             )}
-          </div>
-          <span className="text-[10px] font-bold text-amber-800 tracking-tight mt-0.5">Alerts</span>
+          </span>
+          <span className="text-[10px] tracking-tight text-slate-500">Alerts</span>
         </button>
 
-        {/* 5. Menu Drawer / All Services */}
         <button
           type="button"
           onClick={() => setIsMenuOpen(true)}
-          className="flex flex-col items-center justify-center p-1 rounded-2xl min-w-[56px] transition active:scale-95 text-slate-600 hover:text-slate-900 font-medium cursor-pointer"
+          aria-expanded={isMenuOpen}
+          className="flex flex-col items-center justify-start gap-0.5 p-1 rounded-2xl min-w-[56px] flex-1 transition active:scale-95 cursor-pointer"
         >
-          <div className="p-1.5 rounded-xl hover:bg-slate-100">
+          <span
+            className={`p-1.5 rounded-xl transition ${
+              !inSlots ? 'bg-(--color-ink) text-white' : 'text-slate-500'
+            }`}
+          >
             <Menu className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] tracking-tight mt-0.5">More</span>
+          </span>
+          <span className={`text-[10px] tracking-tight ${!inSlots ? 'text-(--color-ink) font-semibold' : 'text-slate-500'}`}>
+            More
+          </span>
         </button>
       </nav>
 
-      {/* Slide-out Mobile Menu Drawer */}
       <MobileMenuDrawer
         isOpen={isMenuOpen}
         onClose={() => setIsMenuOpen(false)}

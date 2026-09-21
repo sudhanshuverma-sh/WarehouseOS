@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { controlRoomSites, siteMatches } from '../lib/controlRoom/siteServiceStatus';
 import { usePendingWork } from './common/usePendingWork';
 import { usePersonas } from './common/usePersonas';
+import { navFor, scopeNav } from '../lib/nav/navConfig';
 import { Avatar } from './common/Avatar';
 import type { User, UserRole } from '../types';
 
@@ -14,25 +15,9 @@ const ROLE_LABEL: Record<UserRole, string> = {
   WAREHOUSE_ADMIN: 'Site admin',
   SITE_POC: 'POC',
 };
-import {
-  LayoutDashboard,
-  ClipboardCheck,
-  Fuel,
-  Database,
-  PlusCircle,
-  Building2,
-  ShieldCheck,
-  UserCheck,
-  Layers,
-  RotateCcw,
-  Users,
-  Zap,
-  Droplet,
-  Smartphone,
-  Award,
-  Pin,
-  PinOff
-} from 'lucide-react';
+// The nav's own icons come with the items from navConfig; these are the
+// chrome around it.
+import { Building2, ShieldCheck, UserCheck, RotateCcw, Pin, PinOff } from 'lucide-react';
 
 interface SidebarProps {
   currentView: string;
@@ -127,243 +112,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
     // siteLabelFor reads `sites`, which is already a dependency through personas.
   }, [personas, personaQuery, sites]);
 
-  // Nav items dynamically filtered strictly by role
-  const navItems = useMemo(() => {
-    if (currentUser.role === 'SITE_POC') {
-      return [
-        {
-          group: 'MY SITE',
-          items: [
-            {
-              id: 'pocFiling',
-              label: 'Filing Desk',
-              subLabel: "Your site's services",
-              icon: Smartphone,
-              badge: pendingBadge,
-              highlight: true
-            },
-            {
-              id: 'diesel',
-              label: 'Diesel',
-              subLabel: 'Requests, approvals, PODs',
-              icon: Fuel
-            },
-            {
-              id: 'dailyForm',
-              label: 'Daily Site Report',
-              subLabel: 'The 43 point checklist',
-              icon: ClipboardCheck
-            },
-            {
-              id: 'housekeeping',
-              label: 'Housekeeping',
-              subLabel: 'Agency headcount',
-              icon: Users
-            },
-            {
-              id: 'dgPower',
-              label: 'EB and DG',
-              subLabel: 'Meter readings and fuel',
-              icon: Zap
-            },
-            {
-              id: 'washing',
-              label: 'Crate Washing',
-              subLabel: 'Washing and ad-hoc jobs',
-              icon: Droplet
-            }
-          ]
-        },
-        {
-          group: 'RECORDS',
-          items: [
-            {
-              id: 'database',
-              label: 'Records',
-              subLabel: 'Everything filed at your site',
-              icon: Database
-            }
-          ]
-        }
-      ];
-    }
-
-    if (currentUser.role === 'SERVICE_ADMIN') {
-      return [
-        {
-          group: 'MY SERVICES',
-          items: [
-            {
-              id: 'adminDashboard',
-              label: 'Admin Service Hub',
-              subLabel: 'Each service across sites',
-              icon: Award,
-              badge: pendingBadge,
-              highlight: true
-            },
-            // Not Operational Sheets: that console shapes the forms every
-            // service uses, which is canEditSchema, and a service admin does
-            // not have it. Their own services are the Hub above.
-            {
-              id: 'diesel',
-              label: 'Diesel',
-              subLabel: 'Requests, approvals, PODs',
-              icon: Fuel
-            },
-            {
-              id: 'dgPower',
-              label: 'EB and DG',
-              subLabel: 'Meter readings and fuel',
-              icon: Zap
-            },
-            {
-              id: 'housekeeping',
-              label: 'Housekeeping',
-              subLabel: 'Agency headcount',
-              icon: Users
-            },
-            {
-              id: 'dailyForm',
-              label: 'Daily Site Report',
-              subLabel: 'The 43 point checklist',
-              icon: ClipboardCheck
-            },
-            {
-              id: 'washing',
-              label: 'Crate Washing',
-              subLabel: 'Washing and ad-hoc jobs',
-              icon: Droplet
-            }
-          ]
-        },
-        {
-          group: 'RECORDS',
-          items: [
-            {
-              id: 'database',
-              label: 'Records',
-              subLabel: 'Every entry filed',
-              icon: Database
-            }
-          ]
-        }
-      ];
-    }
-
-    // Super Admin: Full network visibility and all administrative consoles
-    return [
-      {
-        group: 'MONITOR',
-        items: [
-          {
-            id: 'dashboard',
-            label: 'Control Room',
-            subLabel: 'Every site, every service, today',
-            icon: LayoutDashboard,
-            badge: pendingBadge
-          },
-          {
-            id: 'adminDashboard',
-            label: 'Admin Service Hub',
-            subLabel: 'Each service across sites',
-            icon: Award,
-            highlight: true
-          },
-          {
-            id: 'pocFiling',
-            label: 'Filing Desk',
-            subLabel: 'What a POC sees at one site',
-            icon: Smartphone
-          }
-        ]
-      },
-      {
-        group: 'SERVICES',
-        items: [
-          {
-            id: 'sheets',
-            label: 'Operational Sheets',
-            subLabel: 'Forms POCs fill',
-            icon: Layers
-          },
-          {
-            id: 'diesel',
-            label: 'Diesel',
-            subLabel: 'Requests, approvals, PODs',
-            icon: Fuel
-          },
-          {
-            id: 'dailyForm',
-            label: 'Daily Site Report',
-            subLabel: 'The 43 point checklist',
-            icon: ClipboardCheck
-          },
-          {
-            id: 'housekeeping',
-            label: 'Housekeeping',
-            subLabel: 'Agency headcount',
-            icon: Users
-          },
-          {
-            id: 'dgPower',
-            label: 'EB and DG',
-            subLabel: 'Meter readings and fuel',
-            icon: Zap
-          },
-          {
-            id: 'washing',
-            label: 'Crate Washing',
-            subLabel: 'Washing and ad-hoc jobs',
-            icon: Droplet
-          }
-        ]
-      },
-      {
-        group: 'RECORDS & FORMS',
-        items: [
-          {
-            id: 'database',
-            label: 'Records',
-            subLabel: 'Every entry filed',
-            icon: Database
-          },
-          {
-            id: 'createForm',
-            label: 'New Form',
-            subLabel: 'Build a form to file',
-            icon: PlusCircle
-          }
-        ]
-      },
-      {
-        group: 'MASTER DATA',
-        items: [
-          {
-            id: 'masterData',
-            label: 'Master Data',
-            subLabel: 'POC, Site and Service',
-            icon: Database,
-            highlight: true
-          },
-        ]
-      }
-    ];
-  }, [currentUser.role, pendingBadge]);
-
   /**
-   * Nav entries that open a service form, mapped to the sheet they file.
-   * Anything absent here (dashboards, explorers, master data) is governed by
-   * the role branches above, not by service scope.
+   * Where this person can go. The tree, its labels and the Master Data
+   * scoping all live in src/lib/nav/navConfig.ts, shared with the phone
+   * drawer: they used to be two hand-written copies that disagreed about
+   * both wording and which services a site actually runs.
    */
-  const NAV_SERVICE = useMemo<Record<string, { sheetId: string; codes: string[] }>>(() => ({
-    dailyForm: { sheetId: 'SHEET_DAILY_SITE', codes: ['SITE_ACTIVITY'] },
-    housekeeping: { sheetId: 'SHEET_HOUSEKEEPING', codes: ['HOUSEKEEPING'] },
-    dgPower: { sheetId: 'SHEET_EB_DG', codes: ['EB_DG'] },
-    washing: { sheetId: 'SHEET_WASHING', codes: ['WASHING', 'ADHOC'] },
-    diesel: { sheetId: 'SHEET_DIESEL', codes: ['DIESEL'] }
-  }), []);
-
-  /** Active services in Master Data → Service_Registry. Empty until it is loaded. */
   const registeredCodes = useMemo(
     () => new Set(serviceRegistryRows.filter(s => s.Active === 'Yes').map(s => s.Service_Code)),
     [serviceRegistryRows]
@@ -373,35 +127,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
   const siteServices = useMemo<'ALL' | string[]>(() => {
     if (currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'SERVICE_ADMIN') return 'ALL';
     const own = [currentUser.warehouseId, ...(currentUser.siteCodes ?? [])].filter(Boolean) as string[];
-    const sites = controlRoomSites(siteMasterRows, warehouses).filter(s => own.some(id => siteMatches(s, id)));
-    if (sites.length === 0 || sites.some(s => s.services === 'ALL')) return 'ALL';
-    return [...new Set(sites.flatMap(s => s.services as string[]))];
-  }, [currentUser.role, currentUser.warehouseId, currentUser.siteCodes, siteMasterRows, warehouses]);
+    const own_sites = sites.filter(s => own.some(id => siteMatches(s, id)));
+    if (own_sites.length === 0 || own_sites.some(s => s.services === 'ALL')) return 'ALL';
+    return [...new Set(own_sites.flatMap(s => s.services as string[]))];
+  }, [currentUser.role, currentUser.warehouseId, currentUser.siteCodes, sites]);
 
-  /**
-   * Service links follow Master Data: a link shows only for a service that is
-   * active in Service_Registry, enabled at the person's site, and in their
-   * own grants. Before the registry is loaded, the older scope check applies.
-   */
-  const scopedNavItems = useMemo(() => {
-    const held = currentUser.serviceCodes;
-    return navItems
-      .map(group => ({
+  const scopedNavItems = useMemo(
+    () =>
+      scopeNav(navFor(currentUser.role), {
+        registered: registeredCodes,
+        held: currentUser.serviceCodes,
+        atSite: siteServices,
+        isAccessible: isServiceAccessible,
+      }).map(group => ({
         ...group,
-        items: group.items.filter(item => {
-          const nav = NAV_SERVICE[item.id];
-          if (!nav) return true;
-          if (registeredCodes.size === 0) return isServiceAccessible(nav.sheetId);
-          return nav.codes.some(
-            code =>
-              registeredCodes.has(code) &&
-              (!held || held === 'ALL' || held.includes(code)) &&
-              (siteServices === 'ALL' || siteServices.includes(code))
-          );
-        })
-      }))
-      .filter(group => group.items.length > 0);
-  }, [navItems, NAV_SERVICE, isServiceAccessible, registeredCodes, siteServices, currentUser.serviceCodes]);
+        // The badge and the highlight belong to this surface, not the tree.
+        items: group.items.map(item =>
+          item.highlight ? { ...item, badge: pendingBadge } : item
+        ),
+      })),
+    [currentUser.role, currentUser.serviceCodes, registeredCodes, siteServices, isServiceAccessible, pendingBadge]
+  );
+
 
   // The rail shows icons only; the flyout carries the labels. Flattening here
   // keeps the icon order identical to the labelled list, so the two never

@@ -2,7 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover is what makes env(safe-area-inset-*) report real
+         numbers, so the bottom bar can clear an iPhone's home indicator.
+         No maximum-scale or user-scalable=no: a POC reading a meter in poor
+         light must still be able to pinch in. The zoom-on-focus that rule is
+         usually abused to prevent is fixed properly in index.css instead. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Tints the Android Chrome address bar to the app's own floor colour. -->
+    <meta name="theme-color" content="#e9f0ec" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="WarehouseOS" />
+    <!-- iOS Safari turns anything that looks like a phone number into a link,
+         which mangles SAP codes and meter readings. -->
+    <meta name="format-detection" content="telephone=no" />
     <title>WarehouseOS Admin Portal</title>
     <meta name="description" content="WarehouseOS — nationwide warehouse operations & master data admin portal." />
     <meta property="og:title" content="WarehouseOS Admin Portal" />

@@ -11,7 +11,7 @@ import type { ApiError } from '../../lib/api/client';
 export const StartupScreen: React.FC<{ problem?: ApiError | null }> = ({ problem }) => {
   if (!problem) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--color-floor)]">
+      <div className="min-h-[100dvh] flex items-center justify-center bg-[var(--color-floor)]">
         <div className="flex items-center gap-3 text-sm text-slate-500" role="status">
           <Loader2 className="w-4 h-4 animate-spin" />
           Loading your sites…
@@ -43,7 +43,7 @@ export const StartupScreen: React.FC<{ problem?: ApiError | null }> = ({ problem
   const Icon = offline ? WifiOff : ShieldOff;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--color-floor)] p-4">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-[var(--color-floor)] p-4">
       <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center space-y-4">
         <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
           <Icon className="w-6 h-6" />

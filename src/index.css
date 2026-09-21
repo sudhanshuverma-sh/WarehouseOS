@@ -644,3 +644,102 @@ select:focus-visible, textarea:focus-visible {
   .reveal { opacity: 1 !important; }
   .reveal-in { animation: none !important; opacity: 1 !important; }
 }
+
+/* =========================================================================
+   ON A PHONE
+
+   This app is filled in on phones, standing next to a meter or a tanker,
+   so these are correctness rules rather than polish. Everything here is
+   scoped to touch screens: the desktop screens keep their density.
+   ========================================================================= */
+
+/* iOS Safari zooms the page in whenever a focused field's text is under
+   16px, and then leaves it zoomed. Every field in this app is 12px or 14px
+   by design, so a POC filling the 43 point checklist was pinching back out
+   after every single tap. Sites usually "fix" this with
+   maximum-scale=1 in the viewport meta, which also takes away the pinch
+   they need to read a blurred POD photo. Raising the font on touch devices
+   fixes the cause instead: 16px is the threshold, not a preference.
+
+   `pointer: coarse` catches phones and tablets and leaves a mouse alone. */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Apple's guidance is a 44px target, Android's is 48dp. The chips in this
+   app are 32px, which is comfortable with a cursor and a coin-toss with a
+   thumb.
+
+   Phone widths only. Above `md` the app deliberately shows its dense
+   desktop layout, and growing every control on an iPad would wrap the
+   toolbars it was tuned to fit on one line. */
+@media (pointer: coarse) and (max-width: 767px) {
+  button,
+  select,
+  [role='button'],
+  input:not([type='checkbox']):not([type='radio']):not([type='range']) {
+    min-height: 44px;
+  }
+
+  /* A table header packs a sort, a filter and a drag handle into one cell,
+     and a row of five nav buttons shares one bar. Those keep their own
+     size and rely on spacing; `tap-dense` is the opt-out for anything
+     else in the same position. */
+  table button,
+  table select,
+  table input,
+  .tap-dense button,
+  .tap-dense select,
+  .tap-dense input,
+  button.tap-dense,
+  select.tap-dense {
+    min-height: 0;
+  }
+}
+
+/* The grey flash iOS paints over a tapped control. Every interactive
+   element here already answers a press with its own :active state, so the
+   flash is a second, uglier answer to the same event. */
+@media (hover: none) {
+  a, button, select, summary, [role='button'] {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Removes the 300ms wait browsers keep in case a tap becomes a double tap.
+   Pinch zoom is untouched; only the delay goes. */
+a, button, select, summary, [role='button'], label {
+  touch-action: manipulation;
+}
+
+/* Rubber-banding past the end of the page shows the browser's own
+   background behind the app, which reads as the page having broken. */
+html, body {
+  overscroll-behavior-y: none;
+}
+
+/* The home indicator on a modern iPhone sits over the bottom of the
+   viewport. Anything fixed to the bottom has to hold room for it, and
+   these are 0px everywhere else, so they cost nothing on Android or a
+   desktop.
+
+   Note these REPLACE any padding/margin already on the element rather than
+   adding to it. Where a control needs both, write the sum directly:
+   pb-[calc(0.375rem+env(safe-area-inset-bottom,0px))]. */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Landscape on a notched phone puts the notch beside the content. */
+.px-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}

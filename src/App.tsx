@@ -139,7 +139,10 @@ const MainContent: React.FC = () => {
     (currentUser.role === 'SITE_POC' && currentView === 'pocFiling');
 
   return (
-    <div className="min-h-screen bg-[var(--color-floor)] text-[var(--color-ink)] flex font-sans selection:bg-[var(--color-ink)] selection:text-white antialiased">
+    // 100dvh, not 100vh: on iOS Safari 100vh counts the address bar that is
+    // not actually there, so the page was always a little taller than the
+    // screen and jumped as the bar hid on scroll.
+    <div className="min-h-[100dvh] bg-[var(--color-floor)] text-[var(--color-ink)] flex font-sans selection:bg-[var(--color-ink)] selection:text-white antialiased">
       {/* Modern Clean Auto-Hiding / Hover-Expandable Side Panel */}
       <Sidebar
         currentView={currentView}
@@ -157,7 +160,9 @@ const MainContent: React.FC = () => {
         />
 
         {/* Dynamic Route Content */}
-        <main className="flex-1 p-3 sm:p-5 lg:p-7 max-w-7xl w-full mx-auto pb-20 md:pb-8">
+        {/* pb-20 clears the mobile bottom bar; mb-safe clears the home
+            indicator underneath it, and is 0 everywhere else. */}
+        <main className="flex-1 p-3 sm:p-5 lg:p-7 max-w-7xl w-full mx-auto pb-20 md:pb-8 mb-safe">
           <ErrorBoundary onReset={() => setCurrentView('dashboard')}>
             {currentView === 'pocFiling' && (
               <POCFilingView

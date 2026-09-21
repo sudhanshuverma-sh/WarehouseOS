@@ -646,6 +646,24 @@ select:focus-visible, textarea:focus-visible {
 }
 
 /* =========================================================================
+   THE FIXED LAYER, IN ORDER
+
+   Four things on this app can cover each other, and until this was written
+   down two of them shared z-40 and the winner was decided by which
+   component happened to render later in App.tsx. The mobile bottom bar won,
+   so it painted over the daily report's submit buttons and over the
+   full-screen table. A POC could scroll 43 rows and not reach "File
+   report".
+
+     10  sticky page header (TopBar)
+     30  mobile bottom bar          <- below anything it could trap
+     40  a screen's own sticky action bar
+     50  full-screen table, drawers, modals, popovers
+
+   Tailwind classes still set these; this is the scale they must use.
+   ========================================================================= */
+
+/* =========================================================================
    ON A PHONE
 
    This app is filled in on phones, standing next to a meter or a tanker,

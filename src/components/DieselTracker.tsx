@@ -415,7 +415,11 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
       {/* Comprehensive Ledger Table with All 21 Google Form Fields */}
       <TableFullscreen expanded={expanded} onCollapse={() => setExpanded(false)}>
       <div className={`bg-white border border-slate-200 rounded-(--r-card) shadow-xs overflow-hidden ${expanded ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        {/* flex-wrap, because the card around this is overflow-hidden: on a
+            phone Export, Columns and Full screen were clipped off the right
+            edge, and those are the controls that make a 21 column table
+            usable. SheetDataExplorer already wraps; this now matches. */}
+        <div className="p-3 sm:p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 bg-slate-50/50">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-indigo-600" />
             <h3 className="text-sm font-bold text-slate-900">

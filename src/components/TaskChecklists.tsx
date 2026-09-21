@@ -332,7 +332,7 @@ export const TaskChecklists: React.FC<TaskChecklistsProps> = ({ onBack }) => {
       {/* Modal: Dynamic Form for Filling Checklist */}
       {selectedTemplate && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-y-auto max-h-[85dvh] animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
               <div>
@@ -527,7 +527,7 @@ export const TaskChecklists: React.FC<TaskChecklistsProps> = ({ onBack }) => {
       {/* Modal: View Locked Completed Submission */}
       {inspectSubmission && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-y-auto max-h-[85dvh] animate-in fade-in zoom-in-95 duration-150">
             <div className="p-4 bg-emerald-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-300" />

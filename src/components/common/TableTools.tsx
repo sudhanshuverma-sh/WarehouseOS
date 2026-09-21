@@ -215,7 +215,7 @@ export const TableFullscreen: React.FC<{ expanded: boolean; onCollapse: () => vo
 
   if (!expanded) return <>{children}</>;
   return (
-    <div className="fixed inset-0 z-40 bg-(--color-floor) p-3 sm:p-4 overflow-auto flex flex-col" role="region" aria-label="Table, full screen">
+    <div className="fixed inset-0 z-50 bg-(--color-floor) p-3 sm:p-4 overflow-auto flex flex-col" role="region" aria-label="Table, full screen">
       {children}
     </div>
   );

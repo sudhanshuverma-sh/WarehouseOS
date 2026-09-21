@@ -512,7 +512,9 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
               />
             </div>
 
-            <div className="p-5 pt-0">
+            {/* pb-safe: the sheet is bottom-anchored, so without it the
+                lower half of this button sits in the home indicator strip. */}
+            <div className="p-5 pt-0 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))]">
               <button
                 type="submit"
                 disabled={saving || justFiled || Boolean(openFiling)}

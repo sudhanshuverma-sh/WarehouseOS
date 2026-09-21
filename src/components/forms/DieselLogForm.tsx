@@ -527,7 +527,7 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
       {/* Reject reason modal (rule #24: mandatory) */}
       {rejectModalLog && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4 max-h-[85dvh] overflow-y-auto">
             <h3 className="font-bold text-slate-900">Reject [{rejectModalLog.uniqueId}]</h3>
             <textarea
               autoFocus
@@ -548,7 +548,7 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
       {/* Delete confirmation (POC's own mistaken requisition, before it's gone anywhere) */}
       {deletingLog && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4 max-h-[85dvh] overflow-y-auto">
             <h3 className="font-bold text-slate-900">Delete [{deletingLog.uniqueId}]?</h3>
             <p className="text-sm text-slate-600">This permanently removes the requisition. This can't be undone.</p>
             <div className="flex justify-end gap-2">
@@ -615,9 +615,12 @@ const ValidateDeliveryModal: React.FC<{
   };
 
   return (
+    // A POC opens this on a phone with the keyboard up, which leaves about
+    // 300px of height: without an internal scroller the Confirm button was
+    // simply off-screen with no way to reach it.
     <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
-        <h3 className="font-bold text-slate-900">Validate Delivery — {log.uniqueId}</h3>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4 max-h-[85dvh] overflow-y-auto">
+        <h3 className="font-bold text-slate-900">Validate delivery, {log.uniqueId}</h3>
         <div className="text-xs text-slate-500">Ordered: <strong className="font-mono text-slate-800">{orderedQty} L</strong></div>
 
         <div className="space-y-1.5">

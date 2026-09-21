@@ -41,8 +41,6 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
     resetToDefaultData
   } = useApp();
 
-  if (!isOpen) return null;
-
   const handleItemClick = (viewId: string) => {
     onNavigate(viewId);
     onClose();
@@ -125,6 +123,13 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
       }
     ];
   }, [currentUser.role]);
+
+  // After every hook, never before one. This return used to sit above the
+  // useMemo: closed rendered one hook, open rendered two, and React threw
+  // "rendered more hooks than during the previous render" the moment the
+  // drawer opened. Tapping More crashed the app, which on a phone is the
+  // only way to reach Housekeeping, EB-DG, Crate Washing and Records.
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex">

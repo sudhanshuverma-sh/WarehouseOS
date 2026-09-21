@@ -86,13 +86,22 @@ describe('validateDraft', () => {
   it('refuses a question the service’s own screen already asks', () => {
     // The whole point: a POC must not be asked for the rate twice.
     const asked = [q({ key: 'ratePerLitre', label: 'Rate per Litres (₹)' })];
-    const byKey = validateDraft({ ...draft, fields: [q({ key: 'ratePerLitre', label: 'Rate' })] }, [], 'edit', asked);
+    const byKey = validateDraft({ ...draft, fields: [q({ key: 'ratePerLitre', label: 'Rate' })] }, [], 'edit', { asked });
     expect(byKey.fields[0]).toMatch(/already asks for “Rate per Litres \(₹\)”/);
 
-    const byLabel = validateDraft({ ...draft, fields: [q({ key: 'rateAgain', label: 'rate per litres (₹) ' })] }, [], 'edit', asked);
+    const byLabel = validateDraft({ ...draft, fields: [q({ key: 'rateAgain', label: 'rate per litres (₹) ' })] }, [], 'edit', { asked });
     expect(byLabel.fields[0]).toMatch(/already asks/);
 
-    expect(problemCount(validateDraft({ ...draft, fields: [q({ key: 'lockoutTagNo', label: 'Lockout tag' })] }, [], 'edit', asked))).toBe(0);
+    expect(problemCount(validateDraft({ ...draft, fields: [q({ key: 'lockoutTagNo', label: 'Lockout tag' })] }, [], 'edit', { asked }))).toBe(0);
+  });
+
+  it('lets a service that has its own screen carry no extra questions', () => {
+    // Diesel's screen IS the form. Demanding a question here would mean its
+    // name, cadence and description could never be changed.
+    const empty = { ...draft, fields: [] };
+    expect(validateDraft(empty, [], 'edit', { builtIn: true }).form).toBeUndefined();
+    expect(problemCount(validateDraft(empty, [], 'edit', { builtIn: true }))).toBe(0);
+    expect(validateDraft(empty, [], 'edit').form).toBe('Add at least one question.');
   });
 });
 

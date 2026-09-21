@@ -144,8 +144,8 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
   );
   const serviceCode = mode === 'edit' ? editCode : code.trim();
   const problems = useMemo(
-    () => validateDraft({ name, code: serviceCode, fields }, existingCodes, mode, asked),
-    [name, serviceCode, fields, existingCodes, mode, asked],
+    () => validateDraft({ name, code: serviceCode, fields }, existingCodes, mode, { asked, builtIn }),
+    [name, serviceCode, fields, existingCodes, mode, asked, builtIn],
   );
   const shown = attempted ? problems : NO_PROBLEMS;
   const issues = problemCount(problems);

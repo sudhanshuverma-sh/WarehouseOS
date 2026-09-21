@@ -184,16 +184,27 @@ function fieldProblem(f: FieldDefinition, seen: Set<string>, asked: Map<string, 
   return undefined;
 }
 
+/** What the service being edited already is, which changes what a draft needs. */
+export interface DraftContext {
+  /** The columns the service's own screen already puts on the page. */
+  asked?: readonly FieldDefinition[];
+  /**
+   * The service has a screen of its own. It may carry no extra questions at
+   * all: its screen is already a form, so "add at least one question" would
+   * mean the name, the cadence and the description could never be changed.
+   */
+  builtIn?: boolean;
+}
+
 /**
  * Everything that would stop a draft being published. Codes are checked only
- * when creating; `asked` is what the service's own screen already puts on the
- * page, which a new question may not repeat.
+ * when creating; a question may not repeat one the service's own screen asks.
  */
 export function validateDraft(
   draft: FormDraft,
   existingCodes: readonly string[],
   mode: 'create' | 'edit',
-  asked: readonly FieldDefinition[] = [],
+  { asked = [], builtIn = false }: DraftContext = {},
 ): DraftProblems {
   const problems: DraftProblems = { fields: {} };
   if (!draft.name.trim()) problems.name = 'Give the form a name.';
@@ -205,7 +216,7 @@ export function validateDraft(
     else if (existingCodes.some((c) => c.toUpperCase() === code)) problems.code = `${code} is already used by another service.`;
   }
 
-  if (!draft.fields.length) problems.form = 'Add at least one question.';
+  if (!draft.fields.length && !builtIn) problems.form = 'Add at least one question.';
   const alreadyAsked = new Map<string, string>();
   for (const f of asked) {
     alreadyAsked.set(f.key.toLowerCase(), f.label);

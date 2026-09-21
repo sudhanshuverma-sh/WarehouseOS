@@ -1,34 +1,27 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
-  Fuel, 
-  Plus, 
-  AlertTriangle, 
-  CheckCircle2, 
-  FileText, 
-  Building2, 
-  Upload, 
-  QrCode, 
-  Image as ImageIcon, 
-  DollarSign, 
-  TrendingDown, 
-  Eye, 
-  Filter, 
-  X, 
-  Sparkles, 
+  Fuel,
+  Plus,
+  AlertTriangle,
+  CheckCircle2,
+  QrCode,
+  Eye,
+  Filter,
+  X,
   ShieldAlert,
   Camera,
   Mail,
-  ExternalLink,
   ShieldCheck,
   ArrowLeft,
-  Download,
   Loader2,
   Search,
   Layers
 } from 'lucide-react';
 import { DieselLog, DieselValidation, DieselStatus } from '../types';
 import { PageHeader } from './common/PageHeader';
+import { Button } from './common/Button';
+import { Reveal } from './common/Reveal';
 import { DieselLogForm } from './forms/DieselLogForm';
 import { ExportPanel } from './common/ExportPanel';
 import { SheetSyncPanel } from './common/SheetSyncPanel';
@@ -72,6 +65,37 @@ const LEDGER_COLUMNS: { key: string; label: string; align?: string }[] = [
 
 const LEDGER_KEYS = LEDGER_COLUMNS.map((c) => c.key);
 
+/**
+ * Three tones, not one per status.
+ *
+ * A reader scanning a hundred rows needs to know "settled", "waiting on
+ * someone" or "went wrong", and ten separate colours answer none of those
+ * faster than three do. The wording in the cell still carries the detail.
+ */
+const SETTLED = 'bg-emerald-100 text-emerald-800';
+const WAITING = 'bg-amber-100 text-amber-800';
+const FAILED = 'bg-rose-100 text-rose-800';
+
+const STATUS_TONE: Record<DieselStatus, string> = {
+  'Pending Admin Approval': WAITING,
+  'Approved': SETTLED,
+  'Rejected': FAILED,
+  'Payment Processing': WAITING,
+  'Completed': SETTLED,
+  'Ready for Delivery': WAITING,
+  'Pending Validation': WAITING,
+  'Delivery Completed': SETTLED,
+  'Partial Delivery': FAILED,
+  'Not Delivered': FAILED,
+};
+
+const VALIDATION_TONE: Record<DieselValidation, string> = {
+  'Pending Validation': 'bg-slate-100 text-slate-600',
+  'Delivered': SETTLED,
+  'Partial Delivered': FAILED,
+  'Not Delivered': FAILED,
+};
+
 /** How each ledger cell is styled. Kept by key, so columns can be rearranged. */
 const CELL_CLASS: Record<string, string> = {
   timestamp: 'text-slate-500 whitespace-nowrap',
@@ -90,11 +114,59 @@ const CELL_CLASS: Record<string, string> = {
   qrCodeImageUrl: 'text-center whitespace-nowrap',
   vendorNameDelivery: 'whitespace-nowrap text-slate-800',
   orderQuantityLitres: 'font-mono text-right font-semibold text-slate-800',
-  uniqueId: 'font-mono font-bold text-indigo-700 whitespace-nowrap',
+  uniqueId: 'font-mono font-semibold text-slate-900 whitespace-nowrap',
   status: 'text-center whitespace-nowrap',
   validation: 'text-center whitespace-nowrap',
   deliveredQuantityLitres: 'font-mono text-right font-bold',
   podUrl: 'text-center whitespace-nowrap',
+};
+
+/**
+ * One of the two numbers worth acting on, as a button.
+ *
+ * A count of things needing attention that cannot be clicked makes the reader
+ * go and rebuild the same filter by hand, so pressing it narrows the ledger
+ * to exactly those rows and pressing again clears it. At zero there is
+ * nothing to filter to, so it stops being a button and says so.
+ */
+const MetricAction: React.FC<{
+  label: string;
+  value: number;
+  tone: 'due' | 'missing';
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  /** What to say when the count is zero, instead of a dead number. */
+  idle: string;
+}> = ({ label, value, tone, active, onClick, icon, idle }) => {
+  const colour = tone === 'due' ? 'text-(--color-due)' : 'text-(--color-missing)';
+  const body = (
+    <>
+      <dt className="text-xs text-slate-500 flex items-center gap-1.5">
+        <span className={value > 0 ? colour : 'text-slate-400'}>{icon}</span>
+        {label}
+      </dt>
+      <dd className={`mt-1 text-2xl font-bold font-mono tabular-nums ${value > 0 ? colour : 'text-slate-300'}`}>{value}</dd>
+      <p className="mt-1 text-xs text-slate-500">
+        {value === 0 ? idle : active ? 'Showing these. Press to clear.' : 'Press to see only these'}
+      </p>
+    </>
+  );
+
+  if (value === 0) return <div className="p-5">{body}</div>;
+
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`p-5 text-left transition-colors duration-(--motion-fast) cursor-pointer ${
+        active ? 'bg-slate-50 ring-1 ring-inset ring-slate-300' : 'hover:bg-slate-50'
+      }`}
+    >
+      {body}
+    </button>
+  );
 };
 
 interface DieselTrackerProps {
@@ -142,19 +214,28 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
     );
   }
 
-  // Filter logs by warehouse, search query, status and validation
-  const scopedLogs = dieselLogs.filter(log => {
-    const isWhMatched = selectedWarehouseId === 'ALL' || log.warehouseId === selectedWarehouseId;
+  // Everything at the site in view, before the toolbar narrows it. The
+  // dropdowns are built from this, so an option always has rows behind it:
+  // they used to be hand-written and four of them ('Pending', 'Delivered',
+  // 'Verified', 'Discrepancy') matched no status this app ever writes, so
+  // choosing one silently emptied the ledger.
+  const siteLogs = dieselLogs.filter(log => selectedWarehouseId === 'ALL' || log.warehouseId === selectedWarehouseId);
+
+  const statusOptions = [...new Set(siteLogs.map(l => l.status).filter(Boolean))].sort() as DieselStatus[];
+  const validationOptions = [...new Set(siteLogs.map(l => l.validation).filter(Boolean))].sort() as DieselValidation[];
+
+  const scopedLogs = siteLogs.filter(log => {
     const isValMatched = filterValidation === 'ALL' || log.validation === filterValidation;
     const isStatusMatched = filterStatus === 'ALL' || log.status === filterStatus;
-    const matchesSearch = !searchQuery || 
-      (log.uniqueId?.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (log.whNameB2B?.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (log.vendorNamePayment?.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (log.vendorNameDelivery?.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (log.emailAddress?.toLowerCase().includes(searchQuery.toLowerCase()));
+    const needle = searchQuery.trim().toLowerCase();
+    const matchesSearch = !needle ||
+      (log.uniqueId?.toLowerCase().includes(needle)) ||
+      (log.whNameB2B?.toLowerCase().includes(needle)) ||
+      (log.vendorNamePayment?.toLowerCase().includes(needle)) ||
+      (log.vendorNameDelivery?.toLowerCase().includes(needle)) ||
+      (log.emailAddress?.toLowerCase().includes(needle));
 
-    return isWhMatched && isValMatched && isStatusMatched && matchesSearch;
+    return isValMatched && isStatusMatched && matchesSearch;
   });
 
   // Per-column filters on top of the toolbar's own. What the table shows
@@ -164,11 +245,17 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
     columnFilters
   ) as unknown as DieselLog[];
 
-  // KPI Calculations
+  // What the four numbers at the top say. Counted over the site's whole
+  // ledger, not the filtered view: "3 awaiting approval" must not become 0
+  // because someone typed a vendor name into the search box.
   const totalSpend = filteredLogs.reduce((acc, log) => acc + (log.finalAmount || 0), 0);
   const totalVolumeLitres = filteredLogs.reduce((acc, log) => acc + (log.deliveredQuantityLitres || log.orderQuantityLitres || log.quantity || 0), 0);
-  const discrepancyCount = filteredLogs.filter(log => log.validation === 'Partial Delivered').length;
-  const pendingApprovalCount = filteredLogs.filter(log => log.status === 'Pending Admin Approval').length;
+  const discrepancyCount = siteLogs.filter(log => log.validation === 'Partial Delivered').length;
+  const pendingApprovalCount = siteLogs.filter(log => log.status === 'Pending Admin Approval').length;
+
+  const toggleStatus = (value: DieselStatus) => setFilterStatus(s => (s === value ? 'ALL' : value));
+  const toggleValidation = (value: DieselValidation) => setFilterValidation(v => (v === value ? 'ALL' : value));
+  const filtersOn = filterStatus !== 'ALL' || filterValidation !== 'ALL' || searchQuery.trim() !== '';
 
   return (
     <div className="space-y-6 pb-12 max-w-7xl mx-auto">
@@ -178,160 +265,156 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
         description="Audit ledger, volume tracking, and delivery verification for site fuel management."
         icon={Fuel}
         actions={
-          <div className="flex flex-wrap items-center gap-2.5">
+          // One primary action, the rest quiet. Four buttons in four colours
+          // made every one of them look like the important one.
+          <div className="flex flex-wrap items-center gap-2">
             {onBack && (
-              <button
-                id="btn-back-tracker"
-                onClick={onBack}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
-              >
-                <ArrowLeft className="w-4 h-4" />
+              <Button id="btn-back-tracker" variant="ghost" icon={<ArrowLeft className="w-3.5 h-3.5" />} onClick={onBack}>
                 Back
-              </button>
+              </Button>
             )}
 
-            <button
+            <Button
+              id="btn-open-email-logs"
+              variant="ghost"
+              icon={<Mail className="w-3.5 h-3.5" />}
+              onClick={() => setViewMode('mail-logs')}
+            >
+              Mail log <span className="font-mono text-slate-500">{emailLogs.length}</span>
+            </Button>
+
+            <Button
               id="btn-open-camera-pod"
+              variant="secondary"
+              icon={<Camera className="w-3.5 h-3.5" />}
               onClick={() => {
                 setSelectedLogIdForForm(dieselLogs[0]?.id);
                 setViewMode('pod');
               }}
-              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg shadow-xs transition-all cursor-pointer"
             >
-              <Camera className="w-4 h-4 text-emerald-700" />
               Upload POD
-            </button>
+            </Button>
 
-            <button
-              id="btn-open-email-logs"
-              onClick={() => setViewMode('mail-logs')}
-              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg shadow-xs transition-all cursor-pointer"
-            >
-              <Mail className="w-4 h-4 text-sky-700" />
-              Email Logs ({emailLogs.length})
-            </button>
-
-            <button
+            <Button
               id="btn-open-diesel-form"
+              variant="primary"
+              icon={<Plus className="w-3.5 h-3.5" />}
               onClick={() => setViewMode('form')}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-all cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
-              New Requisition
-            </button>
+              New request
+            </Button>
           </div>
         }
       />
 
-      {/* KPI Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Spend */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-semibold uppercase tracking-wider">Total Fuel Procurement</span>
-            <DollarSign className="w-4 h-4 text-indigo-600" />
+      {/* The four numbers, on one plain band rather than four boxes. Two of
+          them are the reason anyone opens this screen, so those two are
+          buttons: pressing one filters the ledger to exactly those rows. */}
+      <Reveal as="section" className="bg-white border border-slate-200 rounded-(--r-card) shadow-xs overflow-hidden">
+        <dl className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 divide-x divide-slate-100">
+          <div className="p-5">
+            <dt className="text-xs text-slate-500">Spend in view</dt>
+            <dd className="mt-1 text-2xl font-bold font-mono text-slate-900 tabular-nums">
+              ₹{totalSpend.toLocaleString('en-IN')}
+            </dd>
+            <p className="mt-1 text-xs text-slate-500">
+              {filteredLogs.length} {filteredLogs.length === 1 ? 'request' : 'requests'}
+            </p>
           </div>
-          <div className="text-2xl font-bold font-mono text-slate-900">
-            ₹{totalSpend.toLocaleString('en-IN')}
+
+          <div className="p-5">
+            <dt className="text-xs text-slate-500">Fuel in view</dt>
+            <dd className="mt-1 text-2xl font-bold font-mono text-slate-900 tabular-nums">
+              {totalVolumeLitres.toLocaleString('en-IN')}
+              <span className="ml-1 text-sm font-normal text-slate-500">L</span>
+            </dd>
+            <p className="mt-1 text-xs text-slate-500">Delivered where confirmed, ordered otherwise</p>
           </div>
-          <div className="text-xs text-slate-500 mt-1">Across {filteredLogs.length} requisition logs</div>
+
+          <MetricAction
+            label="Awaiting approval"
+            value={pendingApprovalCount}
+            tone="due"
+            active={filterStatus === 'Pending Admin Approval'}
+            onClick={() => toggleStatus('Pending Admin Approval')}
+            icon={<ShieldCheck className="w-3.5 h-3.5" />}
+            idle="Nothing waiting on an admin"
+          />
+
+          <MetricAction
+            label="Short deliveries"
+            value={discrepancyCount}
+            tone="missing"
+            active={filterValidation === 'Partial Delivered'}
+            onClick={() => toggleValidation('Partial Delivered')}
+            icon={<ShieldAlert className="w-3.5 h-3.5" />}
+            idle="Every delivery matched its order"
+          />
+        </dl>
+      </Reveal>
+
+      {/* Search and filters. Both dropdowns list the values this ledger
+          actually holds, so an option can never come back empty. */}
+      <div className="bg-white border border-slate-200 rounded-(--r-card) p-3 shadow-xs flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[240px]">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <label htmlFor="diesel-search" className="sr-only">Search the ledger</label>
+          <input
+            id="diesel-search"
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Request ID, warehouse, vendor or email"
+            className="w-full h-9 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-500 focus:outline-none focus:bg-white focus:border-slate-400"
+          />
         </div>
 
-        {/* Volume Inwarded */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-semibold uppercase tracking-wider">Fuel Volume Procured</span>
-            <Fuel className="w-4 h-4 text-amber-600" />
-          </div>
-          <div className="text-2xl font-bold font-mono text-slate-900">
-            {totalVolumeLitres.toLocaleString('en-IN')} <span className="text-sm font-normal text-slate-500">Litres</span>
-          </div>
-          <div className="text-xs text-slate-500 mt-1">High-Speed Diesel (BS-VI & HSD)</div>
-        </div>
+        <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
 
-        {/* Pending Approvals */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-semibold uppercase tracking-wider">Pending Admin Approvals</span>
-            <ShieldCheck className="w-4 h-4 text-amber-500" />
-          </div>
-          <div className="text-2xl font-bold font-mono text-amber-600">
-            {pendingApprovalCount}
-          </div>
+        <label htmlFor="diesel-status" className="sr-only">Status</label>
+        <select
+          id="diesel-status"
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value as 'ALL' | DieselStatus)}
+          className="h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-slate-400 cursor-pointer"
+        >
+          <option value="ALL">Any status</option>
+          {statusOptions.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+
+        <label htmlFor="diesel-validation" className="sr-only">Delivery</label>
+        <select
+          id="diesel-validation"
+          value={filterValidation}
+          onChange={(e) => setFilterValidation(e.target.value as 'ALL' | DieselValidation)}
+          className="h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-slate-400 cursor-pointer"
+        >
+          <option value="ALL">Any delivery</option>
+          {validationOptions.map((v) => (
+            <option key={v} value={v}>{v}</option>
+          ))}
+        </select>
+
+        {filtersOn && (
           <button
-            onClick={() => setViewMode('approval')}
-            className="text-xs text-amber-700 font-semibold hover:underline mt-1 inline-block"
+            type="button"
+            onClick={() => {
+              setFilterStatus('ALL');
+              setFilterValidation('ALL');
+              setSearchQuery('');
+            }}
+            className="h-9 px-2.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
           >
-            Review Authorization Queue &rarr;
+            Clear
           </button>
-        </div>
-
-        {/* Audit Discrepancies */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-semibold uppercase tracking-wider">Audit Discrepancies</span>
-            <ShieldAlert className="w-4 h-4 text-rose-600" />
-          </div>
-          <div className="text-2xl font-bold font-mono text-rose-600">
-            {discrepancyCount}
-          </div>
-          <div className="text-xs text-slate-500 mt-1">Tanker vs Dipstick variance flagged</div>
-        </div>
-      </div>
-
-      {/* Filter & Search Bar */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 flex-1 min-w-[280px]">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by Unique ID (PZHPL/DZHPL), WH name, vendor, email..."
-              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          {/* Validation Filter */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
-            <select
-              value={filterValidation}
-              onChange={(e) => setFilterValidation(e.target.value as any)}
-              className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="ALL">All Validations</option>
-              <option value="Verified">Verified Only</option>
-              <option value="Discrepancy">Discrepancy Only</option>
-              <option value="Pending Validation">Pending Validation</option>
-            </select>
-          </div>
-
-          {/* Status Filter */}
-          <div className="shrink-0">
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as any)}
-              className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="ALL">All Statuses</option>
-              <option value="Pending">Pending</option>
-              <option value="Approved">Approved</option>
-              <option value="Delivered">Delivered</option>
-              <option value="Rejected">Rejected</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="text-xs text-slate-500 font-medium shrink-0">
-          Showing <strong>{filteredLogs.length}</strong> records
-        </div>
+        )}
       </div>
 
       {/* Comprehensive Ledger Table with All 21 Google Form Fields */}
       <TableFullscreen expanded={expanded} onCollapse={() => setExpanded(false)}>
-      <div className={`bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden ${expanded ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
+      <div className={`bg-white border border-slate-200 rounded-(--r-card) shadow-xs overflow-hidden ${expanded ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
         <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-indigo-600" />
@@ -419,8 +502,44 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
             >
               {filteredLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={shownColumns.length + 1} className="py-8 text-center text-slate-400">
-                    No diesel procurement records match your filters.
+                  {/* A ledger narrowed to nothing and a ledger with nothing
+                      in it look identical. Saying which one this is, with the
+                      way out, is what stops it being reported as a bug. */}
+                  <td colSpan={shownColumns.length + 1} className="py-12">
+                    <div className="mx-auto max-w-sm text-center">
+                      <Fuel className="w-6 h-6 mx-auto text-slate-300" />
+                      {siteLogs.length === 0 ? (
+                        <>
+                          <p className="mt-2 text-sm font-semibold text-slate-700">No fuel requests yet</p>
+                          <p className="mt-1 text-xs text-slate-500">A POC files one from their desk, or you can raise it here.</p>
+                          <div className="mt-3 flex justify-center">
+                            <Button variant="secondary" icon={<Plus className="w-3.5 h-3.5" />} onClick={() => setViewMode('form')}>
+                              New request
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="mt-2 text-sm font-semibold text-slate-700">Nothing matches these filters</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {siteLogs.length} {siteLogs.length === 1 ? 'request is' : 'requests are'} hidden by the filters above.
+                          </p>
+                          <div className="mt-3 flex justify-center">
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                setFilterStatus('ALL');
+                                setFilterValidation('ALL');
+                                setSearchQuery('');
+                                setColumnFilters(clearAllFilters());
+                              }}
+                            >
+                              Clear filters
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -443,45 +562,38 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
                     zone: log.zone || '-',
                     fuel: log.fuel,
                     type: log.type,
-                    vendorNamePayment: log.vendorNamePayment || 'N/A',
+                    vendorNamePayment: log.vendorNamePayment || '-',
                     quantity: (log.quantity || 0).toLocaleString(),
                     ratePerLitre: `₹${log.ratePerLitre.toFixed(2)}`,
                     finalAmount: `₹${log.finalAmount.toLocaleString('en-IN')}`,
                     qrCodeImageUrl: log.qrCodeImageUrl ? (
                       <span className="text-emerald-600 font-bold">Attached</span>
                     ) : (
-                      <span className="text-slate-400">N/A</span>
+                      <span className="text-slate-400">-</span>
                     ),
-                    vendorNameDelivery: log.vendorNameDelivery || 'N/A',
+                    vendorNameDelivery: log.vendorNameDelivery || '-',
                     orderQuantityLitres:
-                      log.orderQuantityLitres !== undefined ? log.orderQuantityLitres.toLocaleString() : 'N/A',
+                      log.orderQuantityLitres !== undefined ? log.orderQuantityLitres.toLocaleString() : '-',
                     uniqueId: log.uniqueId,
                     status: (
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                        log.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' :
-                        log.status === 'Delivery Completed' ? 'bg-sky-100 text-sky-800' :
-                        log.status === 'Rejected' ? 'bg-rose-100 text-rose-800' :
-                        'bg-amber-100 text-amber-800 animate-pulse'
-                      }`}>
+                      // No pulse: a hundred rows blinking at once is noise,
+                      // and the colour already says this one is waiting.
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${STATUS_TONE[log.status] ?? WAITING}`}>
                         {log.status}
                       </span>
                     ),
                     validation: log.validation ? (
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold font-mono uppercase ${
-                        log.validation === 'Delivered' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                        log.validation === 'Partial Delivered' ? 'bg-amber-50 text-amber-800 border border-amber-300' :
-                        'bg-slate-100 text-slate-600'
-                      }`}>
-                        {log.validation === 'Delivered' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
-                        {log.validation === 'Partial Delivered' && <AlertTriangle className="w-3 h-3 text-amber-600" />}
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${VALIDATION_TONE[log.validation] ?? 'bg-slate-100 text-slate-600'}`}>
+                        {log.validation === 'Delivered' && <CheckCircle2 className="w-3 h-3" />}
+                        {isDiscrepancy && <AlertTriangle className="w-3 h-3" />}
                         {log.validation}
                       </span>
                     ) : (
-                      <span className="text-slate-400">N/A</span>
+                      <span className="text-slate-400">Not yet</span>
                     ),
                     deliveredQuantityLitres: (
                       <span className={isDiscrepancy ? 'text-amber-700' : 'text-slate-900'}>
-                        {log.deliveredQuantityLitres !== undefined ? log.deliveredQuantityLitres.toLocaleString() : 'N/A'}
+                        {log.deliveredQuantityLitres !== undefined ? log.deliveredQuantityLitres.toLocaleString() : '-'}
                       </span>
                     ),
                     podUrl: log.podUrl ? (
@@ -497,7 +609,7 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
                           setSelectedLogIdForForm(log.id);
                           setViewMode('pod');
                         }}
-                        className="text-indigo-600 hover:text-indigo-800 font-bold hover:underline"
+                        className="text-slate-700 font-semibold hover:underline"
                       >
                         + Upload POD
                       </button>
@@ -507,7 +619,7 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
                   return (
                     <tr
                       key={log.id}
-                      className="hover:bg-indigo-50/30 transition-colors cursor-pointer group"
+                      className="hover:bg-slate-50 transition-colors cursor-pointer group"
                       onClick={() => setSelectedLogForInspection(log)}
                     >
                       {shownColumns.map((c) => (
@@ -523,7 +635,7 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
                             type="button"
                             onClick={() => setSelectedLogForInspection(log)}
                             className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100"
-                            title="Audit Inspection"
+                            title="Open the full record"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
@@ -535,7 +647,7 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
                               setViewMode('pod');
                             }}
                             className="p-1 text-emerald-600 hover:text-emerald-800 rounded hover:bg-emerald-50"
-                            title="Direct Camera POD"
+                            title="Attach proof of delivery"
                           >
                             <Camera className="w-4 h-4" />
                           </button>
@@ -554,7 +666,7 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
       {/* Modal: Detailed POD & Audit Inspection View */}
       {selectedLogForInspection && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-(--r-card) shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="p-5 bg-slate-900 text-white flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
@@ -568,7 +680,8 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
                   </span>
                 </div>
                 <p className="text-xs font-mono text-indigo-300 mt-0.5">
-                  Unique ID: {selectedLogForInspection.uniqueId} &bull; Thread ID: {selectedLogForInspection.threadId || '—'}
+                  {selectedLogForInspection.uniqueId}
+                  {selectedLogForInspection.threadId ? ` · thread ${selectedLogForInspection.threadId}` : ''}
                 </p>
               </div>
               <button 
@@ -588,7 +701,7 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
                     selectedLogForInspection.status === 'Approved' ? 'bg-emerald-500 text-white' :
                     selectedLogForInspection.status === 'Delivery Completed' ? 'bg-sky-500 text-white' :
                     selectedLogForInspection.status === 'Rejected' ? 'bg-rose-500 text-white' :
-                    'bg-amber-500 text-white animate-pulse'
+                    'bg-amber-500 text-white'
                   }`}>
                     {selectedLogForInspection.status}
                   </span>
@@ -597,14 +710,14 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
                 <div className="grid grid-cols-3 gap-2 text-[11px]">
                   <div className="bg-slate-800 p-2 rounded-lg border border-slate-700">
                     <div className="font-bold text-sky-400">1. POC Requisition</div>
-                    <div className="text-slate-300 text-[10px] mt-0.5">Mail #1 Sent ✓</div>
+                    <div className="text-slate-300 text-[10px] mt-0.5">Mail 1 sent</div>
                   </div>
                   <div className={`p-2 rounded-lg border ${
                     selectedLogForInspection.status === 'Approved' || selectedLogForInspection.status === 'Delivery Completed'
                       ? 'bg-emerald-950/60 border-emerald-500 text-emerald-300'
                       : selectedLogForInspection.status === 'Rejected'
                       ? 'bg-rose-950/60 border-rose-500 text-rose-300'
-                      : 'bg-amber-950/60 border-amber-500 text-amber-300 animate-pulse'
+                      : 'bg-amber-950/60 border-amber-500 text-amber-300'
                   }`}>
                     <div className="font-bold">2. Admin Approval</div>
                     <div className="text-[10px] mt-0.5">

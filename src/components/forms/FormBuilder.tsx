@@ -34,7 +34,7 @@ import {
   CADENCE_OPTIONS,
   FIELD_TYPES,
   FORM_TEMPLATES,
-  OWN_SCREEN_SERVICES,
+  BUILT_IN_FORM_SERVICES,
   blankField,
   cleanForSave,
   columnsToFields,
@@ -124,6 +124,9 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
     focusNext.current = null;
   });
 
+  // A service with its own screen keeps that screen; here we add to it.
+  const builtIn = Boolean(editing && BUILT_IN_FORM_SERVICES.has(editCode));
+
   const existingCodes = useMemo(
     () => [...serviceRegistryRows.map((r) => r.Service_Code), ...operationalSheets.map((s) => serviceCodeFor(s.id))],
     [serviceRegistryRows, operationalSheets],
@@ -139,7 +142,7 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
   const sites = useMemo(() => controlRoomSites(siteMasterRows, warehouses), [siteMasterRows, warehouses]);
   const reach = sites.filter((s) => s.services === 'ALL' || (serviceCode !== '' && s.services.includes(serviceCode))).length;
   const copySources = operationalSheets.filter(
-    (s) => s.id !== editing?.id && (s.fieldsConfig?.length ?? 0) > 0 && !OWN_SCREEN_SERVICES.has(serviceCodeFor(s.id)),
+    (s) => s.id !== editing?.id && (s.fieldsConfig?.length ?? 0) > 0 && !BUILT_IN_FORM_SERVICES.has(serviceCodeFor(s.id)),
   );
 
   const taken = (list: FieldDefinition[], except?: number) => [...list.filter((_, j) => j !== except).map((f) => f.key), ...savedKeys];
@@ -291,16 +294,6 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
       <Notice title="This form could not be found" body="It may still be loading, or it was switched off in Master Data." onBack={onClose} />
     );
   }
-  if (editing && OWN_SCREEN_SERVICES.has(editCode)) {
-    return (
-      <Notice
-        title={`${editing.title} has its own screen`}
-        body="Its questions are built into that screen, so they are not edited here."
-        onBack={onClose}
-      />
-    );
-  }
-
   const previewFields = fields.map((f) => ({ ...f, label: f.label.trim() || 'Untitled question' }));
   const dateLabel = new Date(`${currentDate}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -524,13 +517,22 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
           {/* Questions */}
           <section className="bg-white border border-slate-200 rounded-(--r-card) p-5 shadow-xs">
             <h2 className="text-sm font-semibold text-slate-900">
-              Questions <span className="ml-1 font-mono text-xs text-slate-500">{fields.length}</span>
+              {builtIn ? 'Extra questions' : 'Questions'}{' '}
+              <span className="ml-1 font-mono text-xs text-slate-500">{fields.length}</span>
             </h2>
+            {builtIn && (
+              <p className="mt-1 text-xs text-slate-500">
+                {editing?.title} has its own screen, and those questions stay as they are. Anything you add here appears at the end of
+                that form, in Records and in exports. It is not copied into the Google Sheet, whose columns are fixed.
+              </p>
+            )}
             {shown.form && <p className="mt-1 text-xs text-(--color-missing)">{shown.form}</p>}
 
             {fields.length === 0 ? (
               <p className="mt-3 rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center text-xs text-slate-500">
-                No questions yet. Pick an answer type below, or start from a ready set above.
+                {builtIn
+                  ? 'No extra questions yet. Pick an answer type below to add one.'
+                  : 'No questions yet. Pick an answer type below, or start from a ready set above.'}
               </p>
             ) : (
               <ol className="mt-3 space-y-2">

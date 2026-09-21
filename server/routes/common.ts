@@ -10,6 +10,8 @@ import type { Request } from 'express';
 import type { Db, Queryable } from '../db';
 import { HttpError } from '../http';
 import type { IdentityResolver } from '../identity';
+import type { FieldDefinition } from '../../src/types';
+import { validateSubmissionData } from '../../src/lib/services/validateSubmission';
 
 export interface RouteDeps {
   db: Pick<Db, 'withActor' | 'healthy'>;
@@ -119,6 +121,31 @@ export async function queueSheetCopy(
   _payload: { event: string; record: unknown },
 ): Promise<void> {
   /* sent from the browser — see AppContext reserveSheetWindow */
+}
+
+/**
+ * The extra questions an admin added to a service that has its own screen,
+ * ready to store as jsonb.
+ *
+ * Only keys the service's form defines survive, the same way the Daily Site
+ * Report keeps only the readings it knows: a client cannot widen its own row
+ * by inventing keys. What is kept is checked against the field definitions,
+ * so an answer the form would refuse cannot arrive by another route.
+ */
+export async function extrasFor(c: Queryable, serviceCode: string, raw: unknown): Promise<string> {
+  if (raw === undefined || raw === null) return '{}';
+  if (!isPlainObject(raw)) throw new HttpError(400, 'extras must be an object of field values.');
+
+  const { rows } = await c.query('select fields from service_form where service_code = $1', [serviceCode]);
+  const fields: FieldDefinition[] = rows[0]?.fields ?? [];
+  if (fields.length === 0) return '{}';
+
+  const kept: Record<string, unknown> = {};
+  for (const f of fields) if (raw[f.key] !== undefined) kept[f.key] = raw[f.key];
+
+  const errors = validateSubmissionData(fields, kept);
+  if (errors.length) throw new HttpError(400, errors[0].message, 'VALIDATION', errors);
+  return JSON.stringify(kept);
 }
 
 /** Dates and timestamps as the app expects them: ISO strings. */

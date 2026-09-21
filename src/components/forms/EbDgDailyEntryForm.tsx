@@ -17,6 +17,7 @@ import { createEmptyInput as emptyInput, prefillConstants, rowToInput } from '..
 import { getEbDgWebhookUrl, setEbDgWebhookUrl, rowsToCsv } from '../../lib/ebdg/sheetWriter';
 import { capabilitiesFor } from '../../lib/permissions';
 import { Toggle } from '../common/Toggle';
+import { useExtraQuestions } from './ExtraQuestions';
 
 interface EbDgDailyEntryFormProps {
   onBack?: () => void;
@@ -250,6 +251,9 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
   const [urlDraft, setUrlDraft] = useState<string>(() => getEbDgWebhookUrl());
   const [showSyncSetup, setShowSyncSetup] = useState(false);
 
+  // Questions an admin added to this service after the screen was built.
+  const extras = useExtraQuestions('EB_DG', siteCode);
+
   // Load previous row, any existing entry for this date, draft, and the
   // back-dated-entry flag whenever site or date changes.
   useEffect(() => {
@@ -328,9 +332,16 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
+
+    const extraAnswers = extras.collect();
+    if (!extraAnswers) {
+      notify('error', 'More questions', 'Please answer the questions at the end of the form.');
+      return;
+    }
+
     setIsSubmitting(true);
     const row = calculate(input, prevRow, config, meta, seed);
-    const result = await ebDgRepository.submit(row, channel);
+    const result = await ebDgRepository.submit(row, channel, extraAnswers);
     setIsSubmitting(false);
     if (!result.success) {
       notify('error', 'Could not save', result.message);
@@ -598,6 +609,8 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
               placeholder="Optional notes — required if overriding a warning below…"
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm" />
           </div>
+
+          {extras.node}
 
           {/* Validation */}
           {errors.length > 0 && (

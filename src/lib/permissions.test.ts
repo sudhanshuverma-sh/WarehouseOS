@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { capabilitiesFor, canSeeSite, resolveSiteFilter, servicesForSite } from './permissions';
-import { ServiceAssignment, User, UserRole } from '../types';
+import { capabilitiesFor, canSeeSite, resolveSiteFilter } from './permissions';
+import { User, UserRole } from '../types';
 
 const user = (role: UserRole, warehouseId?: string): User => ({
   id: 'u1', email: 'surya@zomato.com', fullName: 'Surya', role, warehouseId,
@@ -93,36 +93,3 @@ describe('canSeeSite()', () => {
   });
 });
 
-describe('servicesForSite()', () => {
-  const all = ['SHEET_DAILY_SITE', 'SHEET_HOUSEKEEPING', 'SHEET_EB_DG', 'SHEET_DIESEL'];
-  const assignment = (warehouseId: string, serviceId: string, status: ServiceAssignment['status'] = 'ACTIVE') =>
-    ({ warehouseId, serviceId, status } as ServiceAssignment);
-
-  it('returns only the services assigned at that site', () => {
-    const rows = [
-      assignment('WH_BLR_B4', 'SHEET_DAILY_SITE'),
-      assignment('WH_BLR_B4', 'SHEET_EB_DG'),
-      assignment('WH_MUM_M10', 'SHEET_DIESEL')
-    ];
-    expect(servicesForSite('WH_BLR_B4', rows, all)).toEqual(['SHEET_DAILY_SITE', 'SHEET_EB_DG']);
-  });
-
-  it('includes GLOBAL_ALL assignments', () => {
-    const rows = [assignment('GLOBAL_ALL', 'SHEET_DIESEL'), assignment('WH_BLR_B4', 'SHEET_EB_DG')];
-    expect(servicesForSite('WH_BLR_B4', rows, all)).toEqual(['SHEET_EB_DG', 'SHEET_DIESEL']);
-  });
-
-  it('falls back to every service when the site has no assignment rows', () => {
-    // 115 of 120 sites have no rows today — that is a data gap, not a denial.
-    expect(servicesForSite('WH_UNLISTED', [assignment('WH_BLR_B4', 'SHEET_EB_DG')], all)).toEqual(all);
-  });
-
-  it('ignores a VACANT assignment', () => {
-    const rows = [assignment('WH_BLR_B4', 'SHEET_EB_DG'), assignment('WH_BLR_B4', 'SHEET_DIESEL', 'VACANT')];
-    expect(servicesForSite('WH_BLR_B4', rows, all)).toEqual(['SHEET_EB_DG']);
-  });
-
-  it('returns nothing for a user with no site', () => {
-    expect(servicesForSite(undefined, [], all)).toEqual([]);
-  });
-});

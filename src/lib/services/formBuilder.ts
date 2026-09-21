@@ -14,8 +14,16 @@ import type { Cadence } from '../../types/masterData';
 export const FIELD_KEY = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const SERVICE_CODE = /^[A-Z][A-Z0-9_]*$/;
 
-/** Services whose questions live in their own screens. The builder does not edit them. */
-export const OWN_SCREEN_SERVICES: ReadonlySet<string> = new Set(['SITE_ACTIVITY', 'DIESEL', 'EB_DG', 'HOUSEKEEPING', 'WASHING', 'ADHOC']);
+/**
+ * Services that come with a screen of their own.
+ *
+ * The builder still edits these: what it edits is the EXTRA questions. The
+ * built-in ones are part of that screen (the 43 point checklist, the diesel
+ * request, the EB-DG meters) and are not the builder's to rewrite, but a
+ * question added later is stored beside them and shown at the end of the
+ * form, so every service can gain a column.
+ */
+export const BUILT_IN_FORM_SERVICES: ReadonlySet<string> = new Set(['SITE_ACTIVITY', 'DIESEL', 'EB_DG', 'HOUSEKEEPING', 'WASHING', 'ADHOC']);
 
 export interface FieldTypeInfo {
   type: FieldType;

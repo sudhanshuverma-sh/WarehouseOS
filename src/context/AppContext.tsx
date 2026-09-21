@@ -10,7 +10,6 @@ import {
   OperationalSheetDef,
   Shift,
   SiteHealthStatus,
-  ServiceAssignment,
   FieldDefinition,
   EmailLogEntry,
   DieselStatus,
@@ -21,7 +20,8 @@ import {
 } from '../types';
 import { PocMaster, SiteMaster, ServiceRegistry, MasterAudit } from '../types/masterData';
 import { fetchMasterData, fetchMasterDataFromAppsScript, parseMasterDataJson, diffRows, formatRowDiff } from '../lib/masterDataSync';
-import { servicesForSite } from '../lib/permissions';
+import { servicesForUser } from '../lib/services/servicesForUser';
+import { controlRoomSites } from '../lib/controlRoom/siteServiceStatus';
 import { buildDieselSheetBatch, buildDieselSheetPayload } from '../lib/sheetSync/dieselSheet';
 import { validateSite, validateService, type EditMode, type MasterWriteResult } from '../lib/masterData/validate';
 import {
@@ -33,7 +33,6 @@ import {
   INITIAL_DAILY_SITE_LOGS,
   OPERATIONAL_SHEETS,
   INITIAL_SHEET_RECORDS,
-  INITIAL_SERVICE_ASSIGNMENTS,
   INITIAL_VENDORS,
   VENDOR_EMAIL_MAP,
   FIXED_CC_EMAILS,
@@ -144,12 +143,7 @@ interface AppContextType {
   addColumnToSheet: (sheetId: string, field: FieldDefinition) => Promise<void>;
   removeColumnFromSheet: (sheetId: string, fieldKey: string) => Promise<void>;
 
-  // Service Responsibility Matrix (Admin & Site POC Master Table)
-  serviceAssignments: ServiceAssignment[];
-  updateServiceAssignment: (id: string, updates: Partial<ServiceAssignment>) => void;
-  addServiceAssignment: (assignment: ServiceAssignment) => void;
-  deleteServiceAssignment: (id: string) => void;
-  bulkUpdateServiceAssignments: (ids: string[], updates: Partial<ServiceAssignment>) => void;
+  // Who may file what — from Master Data, not a list of its own.
   getAssignedServicesForUser: (user?: User) => string[];
   isServiceAccessible: (sheetId: string, user?: User) => boolean;
 
@@ -199,6 +193,8 @@ interface AppContextType {
     /** The uploaded QR photo or Drive link (API mode). */
     qrAttachmentId?: string;
     notes?: string;
+    /** Answers to questions an admin added to this service after it was built. */
+    extras?: Record<string, unknown>;
   }) => Promise<{ success: boolean; logId?: string; uniqueId?: string; message: string }>;
 
   // In API mode `log` is the request as the server now holds it.
@@ -245,6 +241,8 @@ interface AppContextType {
       cost?: number;
       manhours?: number;
     }[];
+    /** Answers to questions an admin added to this service after it was built. */
+    extras?: Record<string, unknown>;
   }) => Promise<{ ok: boolean; logId: string; message: string }>;
 
   getExistingDailyReport: (site: string, date: string) => DailySiteLog | undefined;
@@ -763,11 +761,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : INITIAL_SHEET_RECORDS;
   });
 
-  const [serviceAssignments, setServiceAssignments] = useState<ServiceAssignment[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'serviceAssignments');
-    return saved ? JSON.parse(saved) : INITIAL_SERVICE_ASSIGNMENTS;
-  });
-
   const [emailLogs, setEmailLogs] = useState<EmailLogEntry[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'emailLogs');
     return saved ? JSON.parse(saved) : [
@@ -857,10 +850,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (dataMode === 'demo') localStorage.setItem(STORAGE_KEY_PREFIX + 'sheetRecords', JSON.stringify(sheetRecords));
   }, [sheetRecords]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_PREFIX + 'serviceAssignments', JSON.stringify(serviceAssignments));
-  }, [serviceAssignments]);
 
   useEffect(() => {
     if (notification) {
@@ -1868,101 +1857,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /**
-   * Service & Responsibility Matrix Operations (Admin & POC Site-wise Mapping)
+   * Who may file what, read from Master Data: the site's Services_Enabled
+   * intersected with the person's own POC_Master Service_Codes. Switching a
+   * service off at a site takes it off that site's desk, with no second list
+   * to keep in step. See src/lib/services/servicesForUser.ts for how a
+   * missing row is treated (a gap, never a lockout).
    */
-  const updateServiceAssignment = (id: string, updates: Partial<ServiceAssignment>) => {
-    setServiceAssignments(prev =>
-      prev.map(item => {
-        if (item.id === id) {
-          return {
-            ...item,
-            ...updates,
-            updatedAt: new Date().toISOString()
-          };
-        }
-        return item;
-      })
+  const getAssignedServicesForUser = (user: User = currentUser): string[] =>
+    servicesForUser(
+      user,
+      controlRoomSites(siteMasterRows, warehouses),
+      pocMasterRows,
+      operationalSheets.map(s => s.id)
     );
-    setNotification({
-      type: 'success',
-      message: `Service responsibility updated successfully.`
-    });
-  };
-
-  const addServiceAssignment = (assignment: ServiceAssignment) => {
-    setServiceAssignments(prev => [assignment, ...prev]);
-    setNotification({
-      type: 'success',
-      message: `New service responsibility mapping created (${assignment.serviceName} - ${assignment.warehouseName}).`
-    });
-  };
-
-  const deleteServiceAssignment = (id: string) => {
-    setServiceAssignments(prev => prev.filter(item => item.id !== id));
-    setNotification({
-      type: 'info',
-      message: `Service responsibility mapping removed.`
-    });
-  };
-
-  const bulkUpdateServiceAssignments = (ids: string[], updates: Partial<ServiceAssignment>) => {
-    const idSet = new Set(ids);
-    setServiceAssignments(prev =>
-      prev.map(item => {
-        if (idSet.has(item.id)) {
-          return {
-            ...item,
-            ...updates,
-            updatedAt: new Date().toISOString()
-          };
-        }
-        return item;
-      })
-    );
-    setNotification({
-      type: 'success',
-      message: `Batch updated ${ids.length} service assignments!`
-    });
-  };
-
-  /**
-   * Service Assignment Access Scoping Engine:
-   * Super Admins access all services.
-   * Site POCs access every service sheet for their own site (they file into all of them).
-   * Service Admins access their assigned services across ALL nationwide warehouses.
-   */
-  const getAssignedServicesForUser = (user: User = currentUser): string[] => {
-    if (user.role === 'SUPER_ADMIN') {
-      return operationalSheets.map(s => s.id);
-    }
-    // A site POC files the services actually enabled at THEIR site, not every
-    // service in the catalogue (MASTERDATA.md §6: a POC's effective services
-    // are their own codes intersected with the site's Services_Enabled).
-    // servicesForSite falls back to the full list when a site has no
-    // assignment rows at all, so the 115 sites still missing assignments are
-    // not locked out by a data gap.
-    if (user.role === 'SITE_POC') {
-      return servicesForSite(user.warehouseId, serviceAssignments, operationalSheets.map(s => s.id));
-    }
-    const set = new Set<string>();
-    if (user.assignedServiceIds) {
-      user.assignedServiceIds.forEach(s => set.add(s));
-    }
-    serviceAssignments.forEach(asg => {
-      if (
-        asg.adminLeadId === user.id ||
-        (asg.adminLeadEmail && asg.adminLeadEmail.toLowerCase() === user.email.toLowerCase()) ||
-        (asg.adminLeadName && user.fullName.toLowerCase().includes(asg.adminLeadName.toLowerCase().split(' ')[0]))
-      ) {
-        if (asg.serviceId) set.add(asg.serviceId);
-      }
-    });
-    // Fallback if none assigned: allow default daily operations
-    if (set.size === 0 && (user.role === 'SERVICE_ADMIN' || user.role === 'WAREHOUSE_ADMIN')) {
-      return ['SHEET_DAILY_SITE', 'SHEET_HOUSEKEEPING', 'SHEET_DG_POWER_WATER', 'SHEET_DIESEL', 'SHEET_WASHING'];
-    }
-    return Array.from(set);
-  };
 
   const isServiceAccessible = (sheetId: string, user: User = currentUser): boolean => {
     if (user.role === 'SUPER_ADMIN') return true;
@@ -3036,7 +2943,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDailySiteLogs(INITIAL_DAILY_SITE_LOGS);
     setOperationalSheets(OPERATIONAL_SHEETS);
     setSheetRecords(INITIAL_SHEET_RECORDS);
-    setServiceAssignments(INITIAL_SERVICE_ASSIGNMENTS);
     setCurrentUser(INITIAL_USERS[0]);
     setSelectedWarehouseIdState('ALL');
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'warehouses');
@@ -3046,7 +2952,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'dailySiteLogs');
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'operationalSheets');
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'sheetRecords');
-    localStorage.removeItem(STORAGE_KEY_PREFIX + 'serviceAssignments');
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'currentUser');
     setNotification({
       type: 'info',
@@ -3173,7 +3078,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         orderQuantityLitres: data.orderQuantityLitres,
         ratePerLitre: data.ratePerLitre,
         qrAttachmentId: data.qrAttachmentId,
-        notes: data.notes
+        notes: data.notes,
+        extras: data.extras
       });
       replaceDieselLog(saved);
       if (sheetWindow) sendIntoSheetWindow(sheetWindow, buildDieselSheetPayload(saved, window.location.origin));
@@ -3508,11 +3414,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateSheetColumns,
         addColumnToSheet,
         removeColumnFromSheet,
-        serviceAssignments,
-        updateServiceAssignment,
-        addServiceAssignment,
-        deleteServiceAssignment,
-        bulkUpdateServiceAssignments,
         getAssignedServicesForUser,
         isServiceAccessible,
         activeSheetId,

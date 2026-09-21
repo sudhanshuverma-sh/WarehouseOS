@@ -24,6 +24,7 @@ import {
   type ProcurementType,
 } from '../../src/lib/diesel/rules';
 import {
+  extrasFor,
   iso,
   isPlainObject,
   limitFrom,
@@ -46,6 +47,8 @@ const attachmentUrl = (id: unknown) => (id ? `/api/attachments/${id}` : undefine
 export function toDieselLog(r: Row) {
   const hasPod = Boolean(r.pod_attachment_id);
   return {
+    // Extra questions first: the request's own fields below win any clash.
+    ...((r.extras ?? {}) as Row),
     id: r.request_id,
     uniqueId: r.request_id,
     timestamp: iso(r.requested_at),
@@ -163,8 +166,8 @@ export function dieselRoutes(deps: RouteDeps): Router {
           `insert into diesel_request
              (site_code, requester_name, entity, wh_name_b2b, wh_name_b2c, cost_center, zone,
               fuel, procurement_type, vendor_name, quantity, order_quantity_litres, rate_per_litre,
-              final_amount, qr_attachment_id, notes, validation)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+              final_amount, qr_attachment_id, notes, validation, extras)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb)
            returning *`,
           [
             siteCode,
@@ -184,6 +187,7 @@ export function dieselRoutes(deps: RouteDeps): Router {
             qr,
             optionalText(b.notes),
             isDelivery ? 'Pending Validation' : null,
+            await extrasFor(c, 'DIESEL', b.extras),
           ],
         );
         await queueSheetCopy(c, 'DIESEL', { event: 'CREATED', record: toDieselLog(rows[0]) });

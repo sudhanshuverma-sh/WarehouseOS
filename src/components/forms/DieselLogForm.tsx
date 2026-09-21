@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '../common/PageHeader';
 import { EvidenceInput, type EvidenceValue } from '../common/EvidenceInput';
+import { useExtraQuestions } from './ExtraQuestions';
 
 interface DieselLogFormProps {
   onBack?: () => void;
@@ -70,6 +71,9 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
 
   // ---- Role-based auto-filled fields (spec section 3) — read-only for POCs ----
   const activeWh = warehouses.find(w => w.id === (currentUser.warehouseId || selectedWarehouseId)) || warehouses[0];
+
+  // Questions an admin added to this service after the screen was built.
+  const extras = useExtraQuestions('DIESEL', activeWh?.id);
   const derivedEntity: 'B2B' | 'B2C' = activeWh?.channel === 'B2C' ? 'B2C' : 'B2B';
   const warehouseDisplayName = derivedEntity === 'B2C' ? (activeWh?.b2cName || activeWh?.name) : (activeWh?.b2bName || activeWh?.name);
   const costCenterDisplay = activeWh?.costCenter || activeWh?.sapCode || '—';
@@ -151,8 +155,15 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
       return;
     }
 
+    const extraAnswers = extras.collect();
+    if (!extraAnswers) {
+      setFormError('Please answer the questions under "More questions".');
+      return;
+    }
+
     setIsSubmitting(true);
     const result = await submitDieselProcurement({
+      extras: extraAnswers,
       emailAddress: currentUser.email,
       entity: derivedEntity,
       whNameB2B: activeWh?.b2bName || activeWh?.name || '',
@@ -408,6 +419,8 @@ export const DieselLogForm: React.FC<DieselLogFormProps> = ({ onBack, onSuccess,
                   </div>
                 )}
               </div>
+
+              {extras.node}
 
               {formError && (
                 <div className="bg-rose-50 border border-rose-200 rounded-lg p-3.5 text-sm text-rose-800 flex items-center gap-2">

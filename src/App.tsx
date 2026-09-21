@@ -13,8 +13,6 @@ import { SheetDataExplorer } from './components/SheetDataExplorer';
 import { FormBuilder } from './components/forms/FormBuilder';
 import { TaskChecklists } from './components/TaskChecklists';
 import { DieselTracker } from './components/DieselTracker';
-import { TemplateManager } from './components/TemplateManager';
-import { ServiceAssignmentManager } from './components/ServiceAssignmentManager';
 import { AdminDashboard } from './components/AdminDashboard';
 import { GoogleSheetsMasterConnector } from './components/GoogleSheetsMasterConnector';
 import { ToastNotification } from './components/ToastNotification';
@@ -252,18 +250,6 @@ const MainContent: React.FC = () => {
               <TaskChecklists
                 onBack={handleGoBack}
               />
-            )}
-
-            {currentView === 'templates' && (
-              caps.canEditSchema
-                ? <TemplateManager onBack={handleGoBack} />
-                : <AccessDenied what="form templates" onBack={handleGoBack} />
-            )}
-
-            {currentView === 'serviceAssignments' && (
-              caps.canManageMasterData
-                ? <ServiceAssignmentManager onNavigateTab={navigateTo} onBack={handleGoBack} />
-                : <AccessDenied what="service assignments" onBack={handleGoBack} />
             )}
 
             {/* Master data and schema editing are gated at the ROUTE, not just

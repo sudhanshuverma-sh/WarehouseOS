@@ -168,8 +168,10 @@ export class SheetSyncingEbDgRepository implements EbDgRepository {
     return this.inner.listBySite(siteCode, channel, limit);
   }
 
-  async submit(row: EbDgRow, channel: EbDgChannel): Promise<SubmitResult> {
-    const result = await this.inner.submit(row, channel);
+  async submit(row: EbDgRow, channel: EbDgChannel, extras?: Record<string, unknown>): Promise<SubmitResult> {
+    // Only `row` reaches the sheet: its header is fixed at the 109 columns,
+    // so extra questions stay in the app and its exports.
+    const result = await this.inner.submit(row, channel, extras);
     if (!result.success) return result;
 
     const url = this.resolveUrl();

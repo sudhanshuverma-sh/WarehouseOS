@@ -25,7 +25,7 @@ import { Router } from 'express';
 import { buildUpsert, rowFromDb, selectList } from './ebdgColumns';
 import { errorHandler, handle, HttpError } from './http';
 import { attachmentRoutes } from './routes/attachments';
-import { runAs, todayInIndia, type RouteDeps } from './routes/common';
+import { extrasFor, runAs, todayInIndia, type RouteDeps } from './routes/common';
 import { complianceRoutes } from './routes/compliance';
 import { dailySiteRoutes } from './routes/dailySite';
 import { dieselRoutes } from './routes/diesel';
@@ -246,7 +246,7 @@ export function createRoutes(deps: RouteDeps): Router {
       const rows = await run(req, async (c) =>
         (
           await c.query(
-            `select ${selectList()} from ebdg_daily
+            `select ${selectList()}, extras from ebdg_daily
               where ($1::text is null or site_code = $1)
                 and ($2::date is null or "date" >= $2)
                 and ($3::date is null or "date" <= $3)
@@ -256,7 +256,7 @@ export function createRoutes(deps: RouteDeps): Router {
           )
         ).rows,
       );
-      res.json(rows.map(rowFromDb));
+      res.json(rows.map((r) => ({ ...(r.extras ?? {}), ...rowFromDb(r) })));
     }),
   );
 
@@ -275,12 +275,13 @@ export function createRoutes(deps: RouteDeps): Router {
       if (!row || typeof row !== 'object') throw new HttpError(400, 'Expected a row object');
 
       const saved = await run(req, async (c) => {
-        const plan = buildUpsert(row);
+        const extras = await extrasFor(c, 'EB_DG', (row as Record<string, unknown>).extras);
+        const plan = buildUpsert(row, extras);
         const { rows } = await c.query(plan.text, plan.values);
         return rows[0];
       });
 
-      res.status(201).json(rowFromDb(saved));
+      res.status(201).json({ ...(saved.extras ?? {}), ...rowFromDb(saved) });
     }),
   );
 

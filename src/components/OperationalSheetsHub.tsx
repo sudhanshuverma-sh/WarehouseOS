@@ -35,7 +35,7 @@ import {
   type ControlRoomService,
 } from '../lib/controlRoom/siteServiceStatus';
 import { sheetIdFor } from '../lib/services/serviceCodes';
-import { CADENCE_OPTIONS, OWN_SCREEN_SERVICES, cadenceLabel } from '../lib/services/formBuilder';
+import { BUILT_IN_FORM_SERVICES, CADENCE_OPTIONS, cadenceLabel } from '../lib/services/formBuilder';
 import type { FieldDefinition } from '../types';
 import type { EvidenceValue } from './common/EvidenceInput';
 import { PageHeader } from './common/PageHeader';
@@ -144,7 +144,7 @@ export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ onSe
 
   const fill = (s: ControlRoomService) => {
     setActiveSheetId(sheetIdFor(s.code));
-    if (OWN_SCREEN_SERVICES.has(s.code)) onSelectSheet(sheetIdFor(s.code));
+    if (BUILT_IN_FORM_SERVICES.has(s.code)) onSelectSheet(sheetIdFor(s.code));
     else setFilling(s);
   };
 
@@ -220,7 +220,7 @@ export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ onSe
       <div key={`${cadence}-${q}`} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {visible.map((s, i) => {
           const Icon = SERVICE_ICON[s.code] ?? ClipboardList;
-          const ownScreen = OWN_SCREEN_SERVICES.has(s.code);
+          const ownScreen = BUILT_IN_FORM_SERVICES.has(s.code);
           const questions = fieldsOf(s.code).length;
           const p = progress.get(s.code) ?? { done: 0, total: 0 };
           const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
@@ -249,7 +249,16 @@ export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ onSe
                 <div>
                   <dt className="text-slate-500">Questions</dt>
                   <dd className="mt-0.5 font-semibold text-slate-900">
-                    {ownScreen ? 'Own screen' : noQuestions ? <span className="text-(--color-due)">None yet</span> : <span className="font-mono">{questions}</span>}
+                    {ownScreen ? (
+                      <>
+                        Own screen
+                        {questions > 0 && <span className="font-mono text-slate-500"> + {questions} extra</span>}
+                      </>
+                    ) : noQuestions ? (
+                      <span className="text-(--color-due)">None yet</span>
+                    ) : (
+                      <span className="font-mono">{questions}</span>
+                    )}
                   </dd>
                 </div>
                 <div>
@@ -281,15 +290,19 @@ export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ onSe
                       <Database className="w-3.5 h-3.5" /> Records
                     </button>
                   )}
-                  {canBuild && onEditForm && !ownScreen && (
+                  {canBuild && onEditForm && (
                     <button
                       type="button"
                       onClick={() => onEditForm(sheetIdFor(s.code))}
+                      title={ownScreen ? 'Add questions to the end of this service’s own form' : undefined}
                       className={`inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                        noQuestions ? 'text-(--color-ink) bg-(--color-due-tint) hover:brightness-95' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                        noQuestions && !ownScreen
+                          ? 'text-(--color-ink) bg-(--color-due-tint) hover:brightness-95'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                       }`}
                     >
-                      <Pencil className="w-3.5 h-3.5" /> {noQuestions ? 'Add questions' : 'Edit form'}
+                      <Pencil className="w-3.5 h-3.5" />
+                      {ownScreen ? (questions > 0 ? 'Edit extras' : 'Add questions') : noQuestions ? 'Add questions' : 'Edit form'}
                     </button>
                   )}
                   <button

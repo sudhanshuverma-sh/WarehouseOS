@@ -15,7 +15,7 @@
  * and must stay in step with this file.
  */
 
-import { ServiceAssignment, User, UserRole } from '../types';
+import { User, UserRole } from '../types';
 
 export interface Capabilities {
   role: UserRole;
@@ -123,28 +123,5 @@ export function canSeeSite(caps: Capabilities, warehouseId: string | undefined):
   return caps.siteScope.includes(warehouseId);
 }
 
-/**
- * The services a site POC may file, "services wise": the ones actually
- * assigned to their warehouse.
- *
- * Falls back to every service when the site has no assignment rows at all.
- * Only 5 of 120 sites carry assignments today, so treating "no rows" as "no
- * services" would lock out the POCs at the other 115 — that is a data gap,
- * not a permission decision. This mirrors MASTERDATA.md §3, where a site's
- * Services_Enabled defaults to the literal 'ALL'.
- */
-export function servicesForSite(
-  warehouseId: string | undefined,
-  assignments: ServiceAssignment[],
-  allServiceIds: string[]
-): string[] {
-  if (!warehouseId) return [];
-
-  const atSite = assignments.filter(
-    a => a.status !== 'VACANT' && (a.warehouseId === warehouseId || a.warehouseId === 'GLOBAL_ALL')
-  );
-  if (atSite.length === 0) return allServiceIds;
-
-  const ids = new Set(atSite.map(a => a.serviceId).filter(Boolean));
-  return allServiceIds.filter(id => ids.has(id));
-}
+// Which services a person may file now comes from Master Data — see
+// src/lib/services/servicesForUser.ts.

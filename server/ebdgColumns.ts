@@ -61,7 +61,7 @@ export interface UpsertPlan {
  * for zero hours" are different facts, and collapsing them is exactly the
  * bug that once booked a standby generator's whole tank as consumed.
  */
-export function buildUpsert(row: Partial<EbDgRow>): UpsertPlan {
+export function buildUpsert(row: Partial<EbDgRow>, extras?: string): UpsertPlan {
   const columns: string[] = [];
   const placeholders: string[] = [];
   const values: unknown[] = [];
@@ -75,6 +75,15 @@ export function buildUpsert(row: Partial<EbDgRow>): UpsertPlan {
     columns.push(quoteIdent(column));
     placeholders.push(`$${values.length + 1}`);
     values.push(raw === '' ? null : raw);
+  }
+
+  // Questions added to EB-DG after the sheet's 109 headers were fixed. It is
+  // deliberately outside the header map: the map is the sheet contract, and
+  // an extra question is not part of it.
+  if (extras !== undefined) {
+    columns.push(quoteIdent('extras'));
+    placeholders.push(`$${values.length + 1}::jsonb`);
+    values.push(extras);
   }
 
   if (columns.length === 0) throw new Error('Nothing to write: no known headers in the row.');

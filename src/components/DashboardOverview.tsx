@@ -7,9 +7,8 @@ import {
   Clock, 
   Calendar, 
   FileText, 
-  Fuel, 
-  Users, 
-  X, 
+  Fuel,
+  X,
   ExternalLink, 
   Mail, 
   Share2, 
@@ -183,14 +182,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
             >
               <ShieldCheck className="w-3.5 h-3.5" />
               <span>Service hub</span>
-            </button>
-
-            <button
-              onClick={() => onNavigateTab('serviceAssignments')}
-              className="px-3.5 py-1.5 bg-[var(--bg-subtle)] hover:bg-[var(--color-frost)] text-[var(--text-secondary)] font-semibold text-xs rounded-[var(--r-chip)] transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>Assignments</span>
             </button>
 
             <button

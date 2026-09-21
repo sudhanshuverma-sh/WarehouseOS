@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '../common/PageHeader';
 import { SubmissionHistoryTimeline } from '../SubmissionHistoryTimeline';
+import { useExtraQuestions } from './ExtraQuestions';
 
 interface HousekeepingFormProps {
   onBack?: () => void;
@@ -35,6 +36,9 @@ export const HousekeepingForm: React.FC<HousekeepingFormProps> = ({ onBack, onSu
   } = useApp();
 
   const activeWh = warehouses.find(w => w.id === selectedWarehouseId) || warehouses[0];
+
+  // Questions an admin added to this service after the screen was built.
+  const extras = useExtraQuestions('HOUSEKEEPING', activeWh?.id);
 
   const [agency, setAgency] = useState<'SMS' | 'Vedanta' | 'Others'>('SMS');
   const [mstAvailable, setMstAvailable] = useState<number>(3);
@@ -69,9 +73,14 @@ export const HousekeepingForm: React.FC<HousekeepingFormProps> = ({ onBack, onSu
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const extraAnswers = extras.collect();
+    if (!extraAnswers) return; // the missing answers are marked on screen
+
     setIsSubmitting(true);
 
     const newRecord = {
+      ...extraAnswers,
       agency,
       mstAvailable,
       rac,
@@ -340,9 +349,11 @@ export const HousekeepingForm: React.FC<HousekeepingFormProps> = ({ onBack, onSu
           </div>
         </div>
 
+        {extras.node}
+
         {/* Prior 5 Submissions Timeline */}
-        <SubmissionHistoryTimeline 
-          sheetId="SHEET_HOUSEKEEPING" 
+        <SubmissionHistoryTimeline
+          sheetId="SHEET_HOUSEKEEPING"
           title="Last 5 entries"
         />
 

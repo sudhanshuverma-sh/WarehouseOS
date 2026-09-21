@@ -30,7 +30,10 @@ const OWNER_ONLY = new Set(['sheet_outbox']);
 
 describe('db/*.sql', () => {
   it('runs the service tables after the tables they reference', () => {
-    expect(FILES).toEqual(['schema.sql', 'ebdg.sql', 'services.sql']);
+    // extras.sql alters three of those tables, so it runs last. A migration
+    // is recorded by filename and applied once, so a column added later
+    // needs a new file — editing an applied one never reaches a live database.
+    expect(FILES).toEqual(['schema.sql', 'ebdg.sql', 'services.sql', 'extras.sql']);
   });
 
   it('finds the tables it is checking', () => {

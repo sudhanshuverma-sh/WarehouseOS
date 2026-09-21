@@ -19,6 +19,7 @@ import {
   UTILITY_KEYS,
 } from '../../src/lib/dailySite/scoring';
 import {
+  extrasFor,
   iso,
   isPlainObject,
   limitFrom,
@@ -119,6 +120,9 @@ export function toDailySiteLog(r: Row) {
   const readings: Row = r.readings ?? {};
   const remarks: Row = r.remarks ?? {};
   const log: Record<string, unknown> = {
+    // Questions added to this service later, first so that the report's own
+    // fields below always win if a key ever collides.
+    ...((r.extras ?? {}) as Row),
     logId: String(r.log_id),
     site: r.site_code,
     siteCode: r.site_code,
@@ -217,8 +221,8 @@ export function dailySiteRoutes(deps: RouteDeps): Router {
         const { rows } = await c.query(
           `insert into daily_site_log
              (site_code, log_date, submitted_by_name, readings, remarks,
-              pm_planned, pm_completed, pm_remark, highlights, worst_status, deviations_count)
-           values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10, $11)
+              pm_planned, pm_completed, pm_remark, highlights, worst_status, deviations_count, extras)
+           values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10, $11, $12::jsonb)
            returning log_id`,
           [
             siteCode,
@@ -232,6 +236,9 @@ export function dailySiteRoutes(deps: RouteDeps): Router {
             optionalText(b.highlights),
             score.worstStatus,
             score.deviationsCount,
+            // Questions added to this service later. Kept apart from
+            // `readings` so they can never move the health score.
+            await extrasFor(c, 'SITE_ACTIVITY', b.extras),
           ],
         );
         const logId = String(rows[0].log_id);

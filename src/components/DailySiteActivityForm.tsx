@@ -13,6 +13,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { SubmissionHistoryTimeline } from './SubmissionHistoryTimeline';
+import { useExtraQuestions } from './forms/ExtraQuestions';
 
 interface ActivityItem {
   work: string;
@@ -71,6 +72,9 @@ export const DailySiteActivityForm: React.FC<{
 
   const [selectedSite, setSelectedSite] = useState<string>(userSites[0] || '');
   const [selectedDate, setSelectedDate] = useState<string>(currentDate);
+
+  // Questions an admin added to this service after the screen was built.
+  const extras = useExtraQuestions('SITE_ACTIVITY', selectedSite);
 
   // Form State
   const [values, setValues] = useState<Record<string, any>>(() => {
@@ -201,11 +205,18 @@ export const DailySiteActivityForm: React.FC<{
       return;
     }
 
+    const extraAnswers = extras.collect();
+    if (!extraAnswers) {
+      alert('Please answer the questions under "More questions".');
+      return;
+    }
+
     setIsSubmitting(true);
 
     // Waits for the real save. On failure the form stays as typed and the
     // reason is shown, so nothing is lost and nothing is claimed.
     void submitDailySiteLog({
+      extras: extraAnswers,
       site: selectedSite,
       date: selectedDate,
       values,
@@ -750,8 +761,10 @@ export const DailySiteActivityForm: React.FC<{
         />
       </div>
 
+      {extras.node}
+
       {/* Prior 5 Submissions Timeline */}
-      <SubmissionHistoryTimeline 
+      <SubmissionHistoryTimeline
         sheetId="SHEET_DAILY_SITE" 
         title="Last 5 reports"
       />

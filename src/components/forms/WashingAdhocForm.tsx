@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '../common/PageHeader';
 import { SubmissionHistoryTimeline } from '../SubmissionHistoryTimeline';
+import { useExtraQuestions } from './ExtraQuestions';
 
 interface WashingAdhocFormProps {
   initialTab?: 'washing' | 'adhoc';
@@ -59,11 +60,20 @@ export const WashingAdhocForm: React.FC<WashingAdhocFormProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
+  // Questions an admin added to these services after the screens were built.
+  const washingExtras = useExtraQuestions('WASHING', activeWh?.id);
+  const adhocExtras = useExtraQuestions('ADHOC', activeWh?.id);
+
   const handleWashingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const extraAnswers = washingExtras.collect();
+    if (!extraAnswers) return; // the missing answers are marked on screen
+
     setIsSubmitting(true);
 
     const payload = {
+      ...extraAnswers,
       cratesTarget,
       cratesWashed,
       chemicalPpm,
@@ -90,9 +100,13 @@ export const WashingAdhocForm: React.FC<WashingAdhocFormProps> = ({
       return;
     }
 
+    const extraAnswers = adhocExtras.collect();
+    if (!extraAnswers) return; // the missing answers are marked on screen
+
     setIsSubmitting(true);
 
     const payload = {
+      ...extraAnswers,
       taskDescription,
       vendor: vendor || 'In-House Facility Team',
       estimatedCost,
@@ -235,9 +249,11 @@ export const WashingAdhocForm: React.FC<WashingAdhocFormProps> = ({
             </div>
           </div>
 
+          {washingExtras.node}
+
           {/* Prior 5 Submissions Timeline */}
-          <SubmissionHistoryTimeline 
-            sheetId="SHEET_WASHING" 
+          <SubmissionHistoryTimeline
+            sheetId="SHEET_WASHING"
             title="Previous Crate Washing Entries (Last 5)"
           />
 
@@ -350,9 +366,11 @@ export const WashingAdhocForm: React.FC<WashingAdhocFormProps> = ({
             </div>
           </div>
 
+          {adhocExtras.node}
+
           {/* Prior 5 Submissions Timeline */}
-          <SubmissionHistoryTimeline 
-            sheetId="SHEET_ADHOC" 
+          <SubmissionHistoryTimeline
+            sheetId="SHEET_ADHOC"
             title="Previous Adhoc Maintenance Entries (Last 5)"
           />
 

@@ -398,31 +398,3 @@ export interface SheetRowRecord {
   remarks?: string;
 }
 
-/**
- * Service & Responsibility Assignment (Site-wise and Admin-wise Matrix)
- */
-export interface ServiceAssignment {
-  id: string; // e.g. "ASN_DEL01_DAILY_SITE"
-  serviceId: string; // matches OperationalSheetDef.id (e.g. "SHEET_DAILY_SITE")
-  serviceCode: string; // e.g. "OPS_01_SITE"
-  serviceName: string; // e.g. "Daily Site Activity Report (Master)"
-  serviceCategory: string; // e.g. "Daily Operations"
-  warehouseId: string; // e.g. "WH_BLR_B4" or "GLOBAL_ALL"
-  warehouseCode: string; // e.g. "WH-BLR-B4"
-  warehouseName: string; // e.g. "Facility_Bangalore B4"
-  adminLeadId: string; // user id of admin lead in-charge
-  adminLeadName: string; // name of admin lead
-  adminLeadEmail: string; // email of admin lead
-  primaryPocId: string; // user id of on-ground POC
-  primaryPocName: string; // name of primary site POC
-  primaryPocEmail: string; // email of primary POC
-  secondaryPocName?: string;
-  secondaryPocEmail?: string;
-  frequency: string; // e.g. "DAILY (Every Shift)", "PER SHIFT", "HOURLY"
-  slaHours: number; // e.g. 2, 4, 8 hours
-  escalationEmail?: string;
-  status: 'ACTIVE' | 'AUDIT_PENDING' | 'VACANT';
-  lastFilingDate?: string;
-  notes?: string;
-  updatedAt: string;
-}

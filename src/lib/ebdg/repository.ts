@@ -36,8 +36,15 @@ export interface EbDgRepository {
   /** True if a row exists for this site on any date AFTER `afterDate` — the back-dated-entry warning. */
   hasLaterRows(siteCode: string, afterDate: string, channel: EbDgChannel): Promise<boolean>;
 
-  /** Creates the row, or updates it in place if Record_ID already exists — never a second row for the same site+date. */
-  submit(row: EbDgRow, channel: EbDgChannel): Promise<SubmitResult>;
+  /**
+   * Creates the row, or updates it in place if Record_ID already exists —
+   * never a second row for the same site+date.
+   *
+   * `extras` are answers to questions an admin added to this service later.
+   * They are kept beside the row, never inside it: the row is the 109 sheet
+   * columns exactly, and the sheet's header contract does not move.
+   */
+  submit(row: EbDgRow, channel: EbDgChannel, extras?: Record<string, unknown>): Promise<SubmitResult>;
 
   /** Most recent N rows for a site, newest first — for the "openings" caption and history views. */
   listBySite(siteCode: string, channel: EbDgChannel, limit?: number): Promise<EbDgRow[]>;
@@ -107,20 +114,22 @@ export class LocalEbDgRepository implements EbDgRepository {
     return anyLaterRows(loadRows(channel), siteCode, afterDate);
   }
 
-  async submit(row: EbDgRow, channel: EbDgChannel): Promise<SubmitResult> {
+  async submit(row: EbDgRow, channel: EbDgChannel, extras?: Record<string, unknown>): Promise<SubmitResult> {
     // Fails loudly here (MASTERDATA.md I5) rather than writing a
     // malformed row — same guard a real sheet-writer would need before
-    // turning this row into a Range.setValues() call.
+    // turning this row into a Range.setValues() call. The extras are checked
+    // against the 109 columns first and then carried outside the row.
     rowToOrderedValues(row);
+    const stored = extras && Object.keys(extras).length > 0 ? ({ ...row, extras } as EbDgRow) : row;
 
     const rows = loadRows(channel);
     const idx = rows.findIndex(r => r.Record_ID === row.Record_ID);
     if (idx >= 0) {
-      rows[idx] = row;
+      rows[idx] = stored;
       saveRows(channel, rows);
       return { success: true, mode: 'updated', message: `Updated existing entry ${row.Record_ID}.` };
     }
-    rows.push(row);
+    rows.push(stored);
     saveRows(channel, rows);
     return { success: true, mode: 'created', message: `Saved ${row.Record_ID}.` };
   }

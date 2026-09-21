@@ -3,7 +3,6 @@ import { useApp } from '../context/AppContext';
 import {
   X,
   Building2,
-  ShieldCheck,
   LayoutDashboard,
   Smartphone,
   Award,
@@ -15,7 +14,6 @@ import {
   Droplet,
   Database,
   PlusCircle,
-  Sliders,
   RotateCcw,
   CheckCircle2,
   ChevronRight
@@ -121,9 +119,7 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
       {
         title: 'Master Data',
         items: [
-          { id: 'masterData', label: 'Master Data', icon: Database, color: 'text-teal-600', bg: 'bg-teal-50' },
-          { id: 'serviceAssignments', label: 'Service Assignments', icon: ShieldCheck, color: 'text-blue-600', bg: 'bg-blue-50' },
-          { id: 'templates', label: 'Form Fields', icon: Sliders, color: 'text-slate-700', bg: 'bg-slate-100' }
+          { id: 'masterData', label: 'Master Data', icon: Database, color: 'text-teal-600', bg: 'bg-teal-50' }
         ]
       }
     ];

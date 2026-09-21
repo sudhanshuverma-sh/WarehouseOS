@@ -28,7 +28,7 @@ import { useApp } from '../context/AppContext';
 import { canSeeSite, capabilitiesFor } from '../lib/permissions';
 import { controlRoomServices, controlRoomSites, siteMatches, type ControlRoomSite } from '../lib/controlRoom/siteServiceStatus';
 import { serviceCodeFor, sheetIdFor } from '../lib/services/serviceCodes';
-import { OWN_SCREEN_SERVICES, cadenceLabel } from '../lib/services/formBuilder';
+import { BUILT_IN_FORM_SERVICES, cadenceLabel } from '../lib/services/formBuilder';
 import { DIESEL_EXPORT } from '../lib/export/dieselExport';
 import type { ExportSpec } from '../lib/export/exporter';
 import { applyColumnFilters, clearAllFilters, countActiveFilters, type ColumnFilters } from '../lib/table/columnFilters';
@@ -350,7 +350,8 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
   };
 
   const shown = filtered.slice(0, limit);
-  const canEdit = Boolean(service && caps.canEditSchema && onEditForm && !OWN_SCREEN_SERVICES.has(service.code));
+  const canEdit = Boolean(service && caps.canEditSchema && onEditForm);
+  const editsExtras = Boolean(service && BUILT_IN_FORM_SERVICES.has(service.code));
   const hasDecision = isDiesel && caps.canApprove;
 
   // Date and Site stay in view while the questions scroll sideways (Diesel: its first column).
@@ -438,7 +439,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
                       onClick={() => onEditForm?.(sheetIdFor(service.code))}
                       className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 active:scale-[0.98] transition cursor-pointer"
                     >
-                      <Pencil className="w-3.5 h-3.5" /> Edit form
+                      <Pencil className="w-3.5 h-3.5" /> {editsExtras ? 'Add a question' : 'Edit form'}
                     </button>
                   )}
                 </div>

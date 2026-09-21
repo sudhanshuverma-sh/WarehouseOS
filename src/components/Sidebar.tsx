@@ -10,7 +10,6 @@ import {
   Database,
   PlusCircle,
   Building2,
-  Sliders,
   ShieldCheck,
   UserCheck,
   Layers,
@@ -314,18 +313,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
             icon: Database,
             highlight: true
           },
-          {
-            id: 'serviceAssignments',
-            label: 'Service Assignments',
-            subLabel: 'Who owns which service',
-            icon: ShieldCheck
-          },
-          {
-            id: 'templates',
-            label: 'Form Fields',
-            subLabel: 'Checklist field definitions',
-            icon: Sliders
-          }
         ]
       }
     ];

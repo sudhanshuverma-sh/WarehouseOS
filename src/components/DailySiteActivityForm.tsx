@@ -295,7 +295,7 @@ export const DailySiteActivityForm: React.FC<{
       />
 
       {/* SECTION 01: Report Scope */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
           <span className="w-6 h-6 rounded-full bg-slate-900 text-white font-mono text-xs flex items-center justify-center font-bold">
             01
@@ -352,7 +352,7 @@ export const DailySiteActivityForm: React.FC<{
       </div>
 
       {/* SECTION 02: Utility Equipment Availability */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
           <span className="w-6 h-6 rounded-full bg-slate-900 text-white font-mono text-xs flex items-center justify-center font-bold">
             02
@@ -442,7 +442,7 @@ export const DailySiteActivityForm: React.FC<{
       </div>
 
       {/* SECTION 03: MHE Availability */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
           <span className="w-6 h-6 rounded-full bg-slate-900 text-white font-mono text-xs flex items-center justify-center font-bold">
             03
@@ -520,7 +520,7 @@ export const DailySiteActivityForm: React.FC<{
       </div>
 
       {/* SECTION 04: Routine Activity */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
           <span className="w-6 h-6 rounded-full bg-slate-900 text-white font-mono text-xs flex items-center justify-center font-bold">
             04
@@ -591,7 +591,7 @@ export const DailySiteActivityForm: React.FC<{
       </div>
 
       {/* SECTION 05: Preventive Maintenance */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
           <span className="w-6 h-6 rounded-full bg-slate-900 text-white font-mono text-xs flex items-center justify-center font-bold">
             05
@@ -638,7 +638,7 @@ export const DailySiteActivityForm: React.FC<{
       </div>
 
       {/* SECTION 06: Ongoing Activities (Child collection) */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div className="flex items-center gap-3">
             <span className="w-6 h-6 rounded-full bg-slate-900 text-white font-mono text-xs flex items-center justify-center font-bold">
@@ -748,7 +748,7 @@ export const DailySiteActivityForm: React.FC<{
       </div>
 
       {/* SECTION 07: Highlights */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
           <span className="w-6 h-6 rounded-full bg-slate-900 text-white font-mono text-xs flex items-center justify-center font-bold">
             07

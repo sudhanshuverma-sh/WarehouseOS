@@ -49,6 +49,7 @@ import type { DieselLog } from '../types';
 import { PageHeader } from './common/PageHeader';
 import { ExportPanel } from './common/ExportPanel';
 import { ColumnFilter } from './common/ColumnFilter';
+import { RecordCards } from './common/RecordCards';
 import { ColumnsMenu, DragHandle, ExpandButton, TableFullscreen, useColumnLayout, visibleColumns } from './common/TableTools';
 
 /**
@@ -531,7 +532,27 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
                   </span>
                 </div>
 
-                  <div className={`overflow-auto ${expanded ? 'flex-1 min-h-0' : 'max-h-[70vh]'}`}>
+                  {/* On a phone, one card per entry opening the same drawer
+                      a row opens. The table here is wider than the diesel
+                      ledger, and two frozen columns ate 112px of a 390px
+                      screen before any data showed. The max-h below also
+                      made a second scroller inside the page scroll, which a
+                      thumb cannot tell apart. */}
+                  <div className="md:hidden">
+                    <RecordCards
+                      rows={shown}
+                      rowKey={(v, i) => String(v.__row.id ?? i)}
+                      onOpen={(v) => setOpenRow(v)}
+                      title={(v) => String(v[columns[0]?.key] ?? '-')}
+                      subtitle={columns[1] ? (v) => String(v[columns[1].key] ?? '') : undefined}
+                      fields={(v) =>
+                        columns.slice(2, 5).map((c) => ({ label: c.label, value: String(v[c.key] ?? '-') }))
+                      }
+                      empty="No entries match these filters."
+                    />
+                  </div>
+
+                  <div className={`hidden md:block overflow-auto ${expanded ? 'flex-1 min-h-0' : 'max-h-[70vh]'}`}>
                     <table className="w-full text-xs">
                       <thead className="sticky top-0 z-10 bg-slate-50">
                         <tr>

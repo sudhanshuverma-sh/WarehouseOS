@@ -22,6 +22,7 @@ import { DieselLog, DieselValidation, DieselStatus } from '../types';
 import { PageHeader } from './common/PageHeader';
 import { Button } from './common/Button';
 import { Reveal } from './common/Reveal';
+import { RecordCards } from './common/RecordCards';
 import { DieselLogForm } from './forms/DieselLogForm';
 import { ExportPanel } from './common/ExportPanel';
 import { SheetSyncPanel } from './common/SheetSyncPanel';
@@ -465,7 +466,37 @@ export const DieselTracker: React.FC<DieselTrackerProps> = ({ onBack }) => {
           </div>
         </div>
 
-        <div className={`overflow-auto ${expanded ? 'flex-1 min-h-0' : ''}`}>
+        {/* On a phone, one card per request opening the same audit record
+            the table's eye button opens. 21 columns in a sideways scroller
+            with no frozen column told a POC nothing about which row they
+            were on. */}
+        <div className="md:hidden">
+          <RecordCards
+            rows={filteredLogs}
+            rowKey={(log) => log.id}
+            onOpen={(log) => setSelectedLogForInspection(log)}
+            title={(log) => log.uniqueId}
+            subtitle={(log) => log.whNameB2B || log.whNameB2C || log.warehouseId}
+            badge={(log) => (
+              <span className={`shrink-0 inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${STATUS_TONE[log.status] ?? WAITING}`}>
+                {log.status}
+              </span>
+            )}
+            fields={(log) => [
+              { label: 'Quantity', value: `${(log.quantity || 0).toLocaleString('en-IN')} L` },
+              { label: 'Amount', value: `₹${log.finalAmount.toLocaleString('en-IN')}` },
+              {
+                label: 'Filed',
+                value: new Date(log.timestamp).toLocaleDateString([], { day: 'numeric', month: 'short' }),
+              },
+            ]}
+            empty={
+              siteLogs.length === 0 ? 'No fuel requests yet.' : 'Nothing matches these filters.'
+            }
+          />
+        </div>
+
+        <div className={`hidden md:block overflow-auto ${expanded ? 'flex-1 min-h-0' : ''}`}>
           <table className="w-full text-left text-xs border-collapse">
             <thead className="sticky top-0 z-10">
               <tr className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px] whitespace-nowrap">

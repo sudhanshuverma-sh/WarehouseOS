@@ -23,6 +23,12 @@
    ========================================================================= */
 
 @theme {
+  /* One step below Tailwind's sm. The EB-DG and daily report screens go
+     from one column on a phone to four on a laptop, and jumping straight
+     between those at 640px wastes the width of every large phone. 30rem is
+     the point where two columns of a numeric field still read cleanly. */
+  --breakpoint-xs: 30rem;
+
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --font-display: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;

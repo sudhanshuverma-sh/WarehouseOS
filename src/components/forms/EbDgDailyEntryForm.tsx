@@ -118,7 +118,7 @@ function DgBlock({
   const status = preview[`DG${n}_B_Check_Status` as keyof EbDgRow] as string;
 
   return (
-    <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+    <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
           <Fuel className="w-4 h-4 text-amber-600" /> DG {n}
@@ -139,7 +139,7 @@ function DgBlock({
       </div>
 
       {/* Openings — read-only, or a one-time seed on the very first entry */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+      <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
         {prev ? (
           <>
             <ReadonlyStat label="HSD Opening" value={preview[`DG${n}_HSD_Opening` as keyof EbDgRow]} caption={`from ${prev.Date}`} />
@@ -168,7 +168,7 @@ function DgBlock({
       {/* First entry only: start the B-check chain, so the badge means something
           from day one instead of reading DUE NOW against no history. */}
       {!prev && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-amber-100">
+        <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-amber-100">
           <div>
             <label className="block text-amber-700 font-semibold mb-1 text-[11px] uppercase tracking-wide">Last B-check at (hrs)</label>
             <input type="number" value={seedNum(seedBCheckHrsKey)} placeholder="—"
@@ -187,7 +187,7 @@ function DgBlock({
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-slate-100">
+      <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-slate-100">
         <NumberField label="KWH Closing (meter)" value={val('KWH_Closing')} onChange={v => setInput(s => ({ ...s, [k('KWH_Closing')]: v }))} />
         <NumberField label="Run Hrs today" unit="decimal hrs" step="0.1" hint="Decimal, not h:mm — 24 min = 0.4" value={val('Run_Hrs')} onChange={v => setInput(s => ({ ...s, [k('Run_Hrs')]: v }))} />
         <NumberField label="Hour Meter (cumulative)" step="0.1" value={val('Hour_Meter')} onChange={v => setInput(s => ({ ...s, [k('Hour_Meter')]: v }))} />
@@ -205,7 +205,7 @@ function DgBlock({
       </div>
 
       {/* Live preview */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-slate-100">
+      <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-slate-100">
         <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200">
           <span className="text-[10px] font-bold text-amber-800 uppercase">HSD Consumption</span>
           <div className="text-base font-black text-amber-900 mt-1">{show(preview[`DG${n}_HSD_Consumption` as keyof EbDgRow])}</div>
@@ -396,8 +396,8 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
       />
 
       {/* Site & Date */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-3">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-xs space-y-3">
+        <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
           <div><span className="text-slate-400 block">Site</span><span className="font-semibold text-slate-800">{activeWh.name} ({siteCode})</span></div>
           <div><span className="text-slate-400 block">WH Code</span><span className="font-semibold text-slate-800">{whCode}</span></div>
           <div><span className="text-slate-400 block">Zone</span><span className="font-semibold text-slate-800">{zone}</span></div>
@@ -526,9 +526,9 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {config.Has_DEF === 'Yes' && (
-              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
                 <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Droplet className="w-4 h-4 text-cyan-600" /> DEF (Diesel Exhaust Fluid)</h2>
-                <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="grid grid-cols-1 xs:grid-cols-2 gap-3 text-xs">
                   {prevRow
                     ? <ReadonlyStat label="Opening" value={preview.DEF_Opening} unit="L" caption={`from ${prevRow.Date}`} />
                     : <SeedField label="DEF Opening — first entry" value={seed.DEF_Opening} onChange={v => setSeed(s => ({ ...s, DEF_Opening: v as number | undefined }))} />}
@@ -542,9 +542,9 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
               </div>
             )}
 
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+            <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
               <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Gauge className="w-4 h-4 text-teal-600" /> Water (KL)</h2>
-              <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="grid grid-cols-1 xs:grid-cols-2 gap-3 text-xs">
                 {prevRow
                   ? <ReadonlyStat label="Opening" value={preview.Water_Opening} unit="KL" caption={`from ${prevRow.Date}`} />
                   : <SeedField label="Water Opening — first entry" value={seed.Water_Opening} onChange={v => setSeed(s => ({ ...s, Water_Opening: v as number | undefined }))} />}
@@ -559,9 +559,9 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
           </div>
 
           {/* HSD bulk tank */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+          <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Fuel className="w-4 h-4 text-amber-600" /> HSD Bulk Tank</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+            <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
               {prevRow
                 ? <ReadonlyStat label="Opening" value={preview.HSD_Tank_Opening} unit="L" caption={`from ${prevRow.Date}`} />
                 : <SeedField label="Opening — first entry" value={seed.HSD_Tank_Opening} onChange={v => setSeed(s => ({ ...s, HSD_Tank_Opening: v as number | undefined }))} />}
@@ -576,7 +576,7 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
           </div>
 
           {/* Grid / EB */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+          <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Zap className="w-4 h-4 text-amber-500" /> Grid Power (EB)</h2>
               <span className="text-xs text-slate-500 font-semibold">
@@ -585,7 +585,7 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
                 {preview.Grid_PF > 0 && preview.Grid_PF < 0.9 && <span className="text-rose-600"> (penalty risk)</span>}
               </span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               {prevRow
                 ? <ReadonlyStat label="KWH Opening" value={preview.Grid_KWH_Opening} caption={`from ${prevRow.Date}`} />
                 : <SeedField label="KWH Opening — first entry" value={seed.Grid_KWH_Opening} onChange={v => setSeed(s => ({ ...s, Grid_KWH_Opening: v as number | undefined }))} />}
@@ -593,7 +593,7 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
               <NumberField label="Multiplying Factor" step="1" hint={prevRow ? `carried from ${prevRow.Date}` : 'often 20'} value={input.Grid_MF} onChange={v => setInput(s => ({ ...s, Grid_MF: v }))} />
               <NumberField label="Rate" unit="₹/unit" step="0.01" hint={prevRow ? `carried from ${prevRow.Date} — edit if changed` : undefined} value={input.EB_Rate_Per_Unit} onChange={v => setInput(s => ({ ...s, EB_Rate_Per_Unit: v }))} />
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-slate-100">
+            <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-slate-100">
               {prevRow
                 ? <ReadonlyStat label="KVAH Opening" value={preview.Grid_KVAH_Opening} caption={`from ${prevRow.Date}`} />
                 : <SeedField label="KVAH Opening — first entry" value={seed.Grid_KVAH_Opening} onChange={v => setSeed(s => ({ ...s, Grid_KVAH_Opening: v as number | undefined }))} />}
@@ -601,7 +601,7 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
               <NumberField label="Supply Hrs" step="0.1" value={input.Grid_Supply_Hrs} onChange={v => setInput(s => ({ ...s, Grid_Supply_Hrs: v }))} />
               <NumberField label="Power Cuts (count)" step="1" value={input.EB_Power_Cuts} onChange={v => setInput(s => ({ ...s, EB_Power_Cuts: v }))} />
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-slate-100">
+            <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-slate-100">
               <NumberField label="Max Load" unit="KW" step="0.1" value={input.Max_Load_KW} onChange={v => setInput(s => ({ ...s, Max_Load_KW: v }))} />
               <ReadonlyStat label="Grid Supply %" value={`${preview.Grid_Supply_Pct}%`} />
               <ReadonlyStat label="DG Supply %" value={`${preview.DG_Supply_Pct}%`} />
@@ -610,9 +610,9 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
           </div>
 
           {config.Has_Solar === 'Yes' && (
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+            <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
               <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Sun className="w-4 h-4 text-amber-400" /> Solar</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 {prevRow
                   ? <ReadonlyStat label="Opening" value={preview.Solar_Opening} caption={`from ${prevRow.Date}`} />
                   : <SeedField label="Opening — first entry" value={seed.Solar_Opening} onChange={v => setSeed(s => ({ ...s, Solar_Opening: v as number | undefined }))} />}
@@ -624,14 +624,14 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
           )}
 
           {/* Totals summary */}
-          <div className="bg-slate-900 text-white rounded-2xl p-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-6 grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-4 gap-4">
             <div><div className="text-[10px] text-amber-300 uppercase font-semibold">Total HSD Used</div><div className="text-lg font-black">{preview.Total_HSD_Consumption} L</div></div>
             <div><div className="text-[10px] text-amber-300 uppercase font-semibold">Total kWh (all sources)</div><div className="text-lg font-black">{preview.Total_KWH_All_Sources}</div></div>
             <div><div className="text-[10px] text-amber-300 uppercase font-semibold">Total Amount</div><div className="text-lg font-black">₹{preview.Total_Amount.toLocaleString('en-IN')}</div></div>
             <div><div className="text-[10px] text-amber-300 uppercase font-semibold">Blended Rate</div><div className="text-lg font-black">₹{preview.Blended_Rate_Per_Unit}/unit</div></div>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-2">
+          <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-2">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-700">Remark</label>
             <textarea value={input.Remark} onChange={e => setInput(s => ({ ...s, Remark: e.target.value }))} rows={2}
               placeholder="Optional notes — required if overriding a warning below…"

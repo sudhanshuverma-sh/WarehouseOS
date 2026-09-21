@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { SubmissionHistoryTimeline } from './SubmissionHistoryTimeline';
 import { useExtraQuestions } from './forms/ExtraQuestions';
+import { AlreadyFiled } from './common/AlreadyFiled';
 
 interface ActivityItem {
   work: string;
@@ -334,14 +335,19 @@ export const DailySiteActivityForm: React.FC<{
           </div>
         </div>
 
-        {/* Duplicate Warning Box */}
+        {/* Someone has already filed today. Same wording as every other
+            service now, rather than a rose alarm reading like a fault. */}
         {existingReport && (
-          <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <div>
-              <strong>Duplicate Report Warning:</strong> {selectedSite} already has a report filed for {selectedDate} by {existingReport.pocName}. Submitting another will be blocked to maintain data integrity.
-            </div>
-          </div>
+          <AlreadyFiled
+            filing={{
+              code: 'SITE_ACTIVITY',
+              site: selectedSite,
+              day: selectedDate,
+              at: existingReport.timestamp || selectedDate,
+              by: existingReport.pocName || '',
+            }}
+            amendNote="One report is kept per site per day. Ask them to correct it if something is wrong."
+          />
         )}
       </div>
 

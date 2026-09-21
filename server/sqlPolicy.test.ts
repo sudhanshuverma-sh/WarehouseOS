@@ -33,7 +33,7 @@ describe('db/*.sql', () => {
     // extras.sql alters three of those tables, so it runs last. A migration
     // is recorded by filename and applied once, so a column added later
     // needs a new file — editing an applied one never reaches a live database.
-    expect(FILES).toEqual(['schema.sql', 'ebdg.sql', 'services.sql', 'extras.sql']);
+    expect(FILES).toEqual(['schema.sql', 'ebdg.sql', 'services.sql', 'extras.sql', 'filings.sql']);
   });
 
   it('finds the tables it is checking', () => {

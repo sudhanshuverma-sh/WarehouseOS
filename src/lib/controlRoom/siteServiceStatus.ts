@@ -253,6 +253,24 @@ export const filingsFor = (code: string, records: ControlRoomRecords): Filing[] 
     .filter((f) => f.code === code)
     .sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at));
 
+/**
+ * The filing that already covers this period at this site, or null.
+ *
+ * The one place that answers "has someone done this already", so the desk,
+ * the forms and the database rule cannot drift apart. An EVENT_DRIVEN
+ * service is never already filed: several a day is what it is for.
+ */
+export function filedThisPeriod(
+  service: ControlRoomService,
+  site: ControlRoomSite,
+  records: ControlRoomRecords,
+  today: string,
+): Filing | null {
+  if (service.cadence === 'EVENT_DRIVEN') return null;
+  const [from, to] = periodFor(service.cadence, today);
+  return filingsFor(service.code, records).find((f) => f.day >= from && f.day <= to && siteMatches(site, f.site)) ?? null;
+}
+
 export function indexRecords(records: ControlRoomRecords): RecordIndex {
   const index: RecordIndex = new Map();
   for (const f of allFilings(records)) {

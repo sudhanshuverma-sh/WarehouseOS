@@ -23,18 +23,21 @@ import {
 import { useApp } from '../context/AppContext';
 import { canSeeSite, capabilitiesFor } from '../lib/permissions';
 import {
+  allFilings,
   appWarehouseIdFor,
   computeSiteStatuses,
   controlRoomServices,
   controlRoomSites,
   siteMatches,
-  indiaDay,
   lastDays,
   siteProgressByDay,
+  filedThisPeriod,
   type ControlRoomRecords,
   type ControlRoomSite,
+  type Filing,
   type SiteServiceStatus,
 } from '../lib/controlRoom/siteServiceStatus';
+import { AlreadyFiled, filedByLine } from './common/AlreadyFiled';
 import { serviceCodeFor, sheetIdFor } from '../lib/services/serviceCodes';
 import type { FieldDefinition, Shift } from '../types';
 import type { EvidenceValue } from './common/EvidenceInput';
@@ -169,6 +172,22 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
     () => (site ? computeSiteStatuses([site], services, records, currentDate)[0] : undefined),
     [site, services, records, currentDate],
   );
+
+  /**
+   * Who already filed each service this period. Three or four POCs share a
+   * site, so "Filed today" is not enough: the next one needs the name, or
+   * they file a second one to be safe.
+   */
+  const filedBy = useMemo(() => {
+    const map = new Map<string, Filing>();
+    if (!site) return map;
+    for (const svc of services) {
+      const hit = filedThisPeriod(svc, site, records, currentDate);
+      if (hit) map.set(svc.code, hit);
+    }
+    return map;
+  }, [services, site, records, currentDate]);
+
   const week = useMemo(
     () => (site ? siteProgressByDay(site, services, records, lastDays(currentDate, 7)) : []),
     [site, services, records, currentDate],
@@ -176,27 +195,22 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
 
   const serviceName = useMemo(() => new Map(services.map((s) => [s.code, s.name])), [services]);
 
+  // Built from allFilings, not from a second walk over the same records.
+  // The hand-rolled copy this replaces hardcoded `by: ''` for EB-DG, so
+  // those rows showed a bare date while allFilings had the name all along.
   const recent = useMemo(() => {
     if (!site) return [];
-    const mine = (id?: string) => siteMatches(site, id);
-    const rows: { service: string; at: string; by: string }[] = [
-      ...dailySiteLogs.filter((l) => mine(l.site)).map((l) => ({ service: serviceName.get('SITE_ACTIVITY') ?? 'Daily Site Report', at: l.timestamp || l.date, by: l.pocName })),
-      ...dieselLogs.filter((l) => mine(l.warehouseId)).map((l) => ({ service: `${serviceName.get('DIESEL') ?? 'Diesel'} · ${l.uniqueId}`, at: l.timestamp, by: l.submittedByName || '' })),
-      ...ebdgRows.filter((r) => mine(r.Site_Code)).map((r) => ({ service: serviceName.get('EB_DG') ?? 'EB-DG', at: r.Date, by: '' })),
-      ...Object.entries(sheetRecords).flatMap(([sheetId, list]) =>
-        (list || [])
-          .filter((r) => mine(r.warehouseId))
-          .map((r) => ({ service: serviceName.get(serviceCodeFor(sheetId)) ?? sheetId.replace(/^SHEET_/, ''), at: r.submittedAt || r.date, by: r.submittedByName || '' })),
-      ),
-    ];
-    return rows
-      .filter((r) => r.at)
-      .sort((a, b) => (indiaDay(b.at) || b.at).localeCompare(indiaDay(a.at) || a.at) || b.at.localeCompare(a.at))
-      .slice(0, 6);
-  }, [site, dailySiteLogs, dieselLogs, ebdgRows, sheetRecords, serviceName]);
+    return allFilings(records)
+      .filter((f) => siteMatches(site, f.site) && f.at)
+      .sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at))
+      .slice(0, 6)
+      .map((f) => ({ service: serviceName.get(f.code) ?? f.code, at: f.at, by: f.by }));
+  }, [site, records, serviceName]);
 
   // ---------------------------------------------------------------- quick form
   const [filing, setFiling] = useState<SiteServiceStatus | null>(null);
+  /** The filing already covering the service this dialog is open on. */
+  const openFiling = filing ? (filedBy.get(filing.code) ?? null) : null;
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [evidence, setEvidence] = useState<Record<string, EvidenceValue | null>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -402,8 +416,11 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
                         <span className="block text-sm font-semibold text-slate-900 truncate">{s.name}</span>
                         <span className="block text-[11px] text-slate-500">
                           {isDone ? (
-                            <span className="inline-flex items-center gap-1 text-(--color-filed) font-medium">
-                              <CheckCircle2 className="w-3 h-3" /> Filed {periodWord(s)}
+                            <span className="inline-flex items-center gap-1 text-(--color-filed) font-medium truncate">
+                              <CheckCircle2 className="w-3 h-3 shrink-0" />
+                              {/* The name, not just "done": the next POC
+                                  needs to know who to ask. */}
+                              {filedBy.get(s.code) ? filedByLine(filedBy.get(s.code)!) : `Filed ${periodWord(s)}`}
                             </span>
                           ) : onRequest ? (
                             s.count > 0 ? `${s.count} filed today · file when needed` : 'File when needed'
@@ -419,7 +436,9 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
                           isDone ? 'text-slate-500 group-hover:text-slate-900' : 'bg-(--color-ink) text-white'
                         }`}
                       >
-                        {isDone ? 'Add' : 'File'} <ArrowRight className="w-3.5 h-3.5" />
+                        {/* "Add" quietly filed a second one. Opening it is
+                            what someone looking at a filed service wants. */}
+                        {isDone ? 'Open' : 'File'} <ArrowRight className="w-3.5 h-3.5" />
                       </span>
                     </button>
                   </li>
@@ -469,7 +488,17 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
               </button>
             </div>
 
-            <div className="p-5">
+            <div className="p-5 space-y-4">
+              {/* Silence here is what let two POCs file the same day twice.
+                  The database refuses the second one now, so say so before
+                  the form is filled in rather than after. */}
+              {openFiling && (
+                <AlreadyFiled
+                  filing={openFiling}
+                  amendNote="Only one entry is kept for this period. Ask them to correct it, or file this next period."
+                />
+              )}
+
               <ServiceFieldList
                 fields={formFields}
                 values={values}
@@ -486,7 +515,7 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
             <div className="p-5 pt-0">
               <button
                 type="submit"
-                disabled={saving || justFiled}
+                disabled={saving || justFiled || Boolean(openFiling)}
                 className="press inline-flex items-center justify-center gap-2 w-full h-11 rounded-xl bg-(--color-ink) hover:bg-(--color-ink-soft) disabled:opacity-60 text-white text-sm font-semibold cursor-pointer"
               >
                 {saving ? (
@@ -497,6 +526,8 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
                   <>
                     <CheckCircle2 className="w-4 h-4" /> Filed
                   </>
+                ) : openFiling ? (
+                  'Already filed'
                 ) : (
                   `File ${filing.name}`
                 )}

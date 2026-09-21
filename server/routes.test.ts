@@ -348,6 +348,40 @@ describe('master data', () => {
   });
 });
 
+describe('EB-DG: replacing a reading has to be asked for', () => {
+  const row = { Record_ID: 'EBDG-ZHPL-HR-03-20260921', Site_Code: 'ZHPL-HR-03', Date: '2026-09-21', Submitted_By: 'sunita@zomato.com' };
+
+  /** A database where that site and date already has a row. */
+  const withExisting = (text: string) =>
+    text.startsWith('select submitted_by')
+      ? { rows: [{ submitted_by: 'ramesh@zomato.com', timestamp: new Date('2026-09-21T03:44:00Z') }] }
+      : { rows: [row] };
+
+  it('refuses a second entry for a day someone already filed, and names them', async () => {
+    const { call } = await api(withExisting);
+    const res = await call('POST', '/ebdg/submit', row);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      error: 'DUPLICATE',
+      details: expect.objectContaining({ submittedBy: 'ramesh@zomato.com' }),
+    });
+  });
+
+  it('replaces it when the person asked to amend', async () => {
+    const { call, db } = await api(withExisting);
+    const res = await call('POST', '/ebdg/submit', { ...row, amend: true });
+    expect(res.status).toBe(200);
+    // It never looked for an existing row: amend says replace it.
+    expect(db.sql('select submitted_by')).toHaveLength(0);
+    expect(db.sql('on conflict (record_id)')).toHaveLength(1);
+  });
+
+  it('files a day that is still empty without being asked twice', async () => {
+    const { call } = await api((text) => (text.startsWith('select submitted_by') ? { rows: [] } : { rows: [row] }));
+    expect((await call('POST', '/ebdg/submit', row)).status).toBe(201);
+  });
+});
+
 describe('the rest', () => {
   it('refuses a compliance check for an event-driven service', async () => {
     const { call } = await api((text) => (text.includes('select cadence') ? { rows: [{ cadence: 'EVENT_DRIVEN' }] } : undefined));

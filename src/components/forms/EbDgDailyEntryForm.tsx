@@ -17,6 +17,7 @@ import { createEmptyInput as emptyInput, prefillConstants, rowToInput } from '..
 import { getEbDgWebhookUrl, setEbDgWebhookUrl, rowsToCsv } from '../../lib/ebdg/sheetWriter';
 import { capabilitiesFor } from '../../lib/permissions';
 import { Toggle } from '../common/Toggle';
+import { AlreadyFiled } from '../common/AlreadyFiled';
 import { useExtraQuestions } from './ExtraQuestions';
 
 interface EbDgDailyEntryFormProps {
@@ -254,6 +255,9 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
   // Questions an admin added to this service after the screen was built.
   const extras = useExtraQuestions('EB_DG', siteCode);
 
+  /** Set when this person has chosen to replace an entry someone already filed. */
+  const [amending, setAmending] = useState(false);
+
   // Load previous row, any existing entry for this date, draft, and the
   // back-dated-entry flag whenever site or date changes.
   useEffect(() => {
@@ -303,7 +307,10 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
   const issues: ValidationIssue[] = useMemo(() => validate(input, prevRow, config, date, seed), [input, prevRow, config, date, seed]);
   const errors = issues.filter(i => i.severity === 'error');
   const warnings = issues.filter(i => i.severity === 'warning');
-  const canSubmit = errors.length === 0 && (warnings.length === 0 || overrideWarnings) && !isSubmitting;
+  // A day someone has already filed needs Amend pressed first, so the
+  // replacement is deliberate rather than a side effect of opening the form.
+  const canSubmit =
+    errors.length === 0 && (warnings.length === 0 || overrideWarnings) && !isSubmitting && (!existingRow || amending);
 
   /**
    * Downloads this site's rows in the destination tab's exact column order,
@@ -341,9 +348,15 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
 
     setIsSubmitting(true);
     const row = calculate(input, prevRow, config, meta, seed);
-    const result = await ebDgRepository.submit(row, channel, extraAnswers);
+    const result = await ebDgRepository.submit(row, channel, extraAnswers, amending);
     setIsSubmitting(false);
     if (!result.success) {
+      // A day that is already filed is not an error, it is a decision the
+      // person has not made yet. Point at the choice rather than scolding.
+      if (result.alreadyFiled) {
+        notify('error', 'Already filed', `${result.message} Choose Amend it to replace those readings.`);
+        return;
+      }
       notify('error', 'Could not save', result.message);
       return;
     }
@@ -413,11 +426,26 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
             <span>Later rows already exist for this site after {date}. Saving this back-dated entry means those later rows' opening balances will need recalculating.</span>
           </div>
         )}
+        {/* This used to say "you're editing it" and let the save through.
+            At a site with three or four POCs that meant whoever opened the
+            form second replaced the first one's readings without being
+            asked. Replacing is now a decision, and it is recorded. */}
         {existingRow && !submitted && (
-          <div className="flex items-start gap-2 bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-xs text-indigo-800">
-            <Info className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>An entry already exists for {date} (<strong>{existingRow.Record_ID}</strong>) — you're editing it. Saving updates that row; it never creates a duplicate.</span>
-          </div>
+          <AlreadyFiled
+            filing={{
+              code: 'EB_DG',
+              site: siteCode,
+              day: date,
+              at: existingRow.Timestamp || date,
+              by: existingRow.Submitted_By || '',
+            }}
+            amendNote={
+              amending
+                ? `Saving replaces ${existingRow.Record_ID}. The readings it holds now are kept in the record's history.`
+                : `The form below is filled in from ${existingRow.Record_ID}. Amend it if those readings need correcting.`
+            }
+            onAmend={amending ? undefined : () => setAmending(true)}
+          />
         )}
 
         {/* Where the row goes. Admin-only: a site POC files readings, they never
@@ -649,7 +677,11 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
             ) : <div />}
             <button type="submit" disabled={!canSubmit}
               className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl shadow-md transition flex items-center gap-2">
-              {isSubmitting ? <><RefreshCw className="w-4 h-4 animate-spin" /> Saving…</> : <><Save className="w-4 h-4" /> {existingRow ? 'Update Entry' : 'Save Entry'}</>}
+              {isSubmitting ? (
+                <><RefreshCw className="w-4 h-4 animate-spin" /> Saving…</>
+              ) : (
+                <><Save className="w-4 h-4" /> {existingRow ? (amending ? 'Replace entry' : 'Already filed') : 'Save entry'}</>
+              )}
             </button>
           </div>
         </form>

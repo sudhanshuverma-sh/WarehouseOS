@@ -19,6 +19,8 @@ export interface SubmitResult {
   success: boolean;
   message: string;
   mode?: 'created' | 'updated';
+  /** Set when the day already had an entry and `amend` was not asked for. */
+  alreadyFiled?: { by: string; at: string };
 }
 
 export interface EbDgRepository {
@@ -37,14 +39,21 @@ export interface EbDgRepository {
   hasLaterRows(siteCode: string, afterDate: string, channel: EbDgChannel): Promise<boolean>;
 
   /**
-   * Creates the row, or updates it in place if Record_ID already exists —
-   * never a second row for the same site+date.
+   * Creates the row for this site and date. Replacing one that already
+   * exists has to be asked for with `amend`: three or four POCs share a
+   * site, and an unasked-for upsert meant whoever opened the form second
+   * silently replaced the first one's meter readings.
    *
    * `extras` are answers to questions an admin added to this service later.
    * They are kept beside the row, never inside it: the row is the 109 sheet
    * columns exactly, and the sheet's header contract does not move.
    */
-  submit(row: EbDgRow, channel: EbDgChannel, extras?: Record<string, unknown>): Promise<SubmitResult>;
+  submit(
+    row: EbDgRow,
+    channel: EbDgChannel,
+    extras?: Record<string, unknown>,
+    amend?: boolean,
+  ): Promise<SubmitResult>;
 
   /** Most recent N rows for a site, newest first — for the "openings" caption and history views. */
   listBySite(siteCode: string, channel: EbDgChannel, limit?: number): Promise<EbDgRow[]>;
@@ -114,7 +123,12 @@ export class LocalEbDgRepository implements EbDgRepository {
     return anyLaterRows(loadRows(channel), siteCode, afterDate);
   }
 
-  async submit(row: EbDgRow, channel: EbDgChannel, extras?: Record<string, unknown>): Promise<SubmitResult> {
+  async submit(
+    row: EbDgRow,
+    channel: EbDgChannel,
+    extras?: Record<string, unknown>,
+    amend = false,
+  ): Promise<SubmitResult> {
     // Fails loudly here (MASTERDATA.md I5) rather than writing a
     // malformed row — same guard a real sheet-writer would need before
     // turning this row into a Range.setValues() call. The extras are checked
@@ -125,6 +139,14 @@ export class LocalEbDgRepository implements EbDgRepository {
     const rows = loadRows(channel);
     const idx = rows.findIndex(r => r.Record_ID === row.Record_ID);
     if (idx >= 0) {
+      const prior = rows[idx];
+      if (!amend) {
+        return {
+          success: false,
+          message: `An entry for ${row.Site_Code} on ${row.Date} was already filed.`,
+          alreadyFiled: { by: prior.Submitted_By || '', at: prior.Timestamp || prior.Date || '' },
+        };
+      }
       rows[idx] = stored;
       saveRows(channel, rows);
       return { success: true, mode: 'updated', message: `Updated existing entry ${row.Record_ID}.` };

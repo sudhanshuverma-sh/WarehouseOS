@@ -40,6 +40,7 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   validation_only_for_delivery: 'Only Delivery Only requests are validated.',
   attachment_shape: 'A photo must be JPEG, PNG, WebP or PDF and at most 2 MB, or a Google Drive link.',
   daily_site_log_site_code_log_date_key: 'A report for this site and date has already been filed.',
+  one_filing_per_period: 'This service has already been filed for this site and period.',
   ebdg_daily_site_code_date_key: 'An EB-DG entry for this site and date already exists.',
   vendor_name_key: 'A vendor with that name already exists.',
   scope_matches_role:

@@ -22,7 +22,7 @@ import { PocMaster, SiteMaster, ServiceRegistry, MasterAudit } from '../types/ma
 import { fetchMasterData, fetchMasterDataFromAppsScript, parseMasterDataJson, diffRows, formatRowDiff } from '../lib/masterDataSync';
 import { servicesForUser } from '../lib/services/servicesForUser';
 import { BUILT_IN_FORM_SERVICES } from '../lib/services/formBuilder';
-import { controlRoomSites } from '../lib/controlRoom/siteServiceStatus';
+import { controlRoomSites, siteMatches } from '../lib/controlRoom/siteServiceStatus';
 import { buildDieselSheetBatch, buildDieselSheetPayload } from '../lib/sheetSync/dieselSheet';
 import { validateSite, validateService, type EditMode, type MasterWriteResult } from '../lib/masterData/validate';
 import {
@@ -1882,10 +1882,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /**
-   * Daily Site Activity Report Implementation (Exact match to AppSheet AS_DailyLog logic)
+   * Today's report for a site, if someone has already filed it.
+   *
+   * Sites are matched on their alias set, not by string equality. One site
+   * answers to its Site_Code, its WH_Code and the app's own warehouse id,
+   * and a report saved under one of those used to be invisible to a form
+   * asking with another: "already filed" on the board, and an empty form
+   * that the database would then refuse.
    */
   const getExistingDailyReport = (site: string, date: string): DailySiteLog | undefined => {
-    return dailySiteLogs.find(l => l.site === site && l.date === date);
+    const match = controlRoomSites(siteMasterRows, warehouses).find(s => siteMatches(s, site));
+    return dailySiteLogs.find(
+      l => l.date === date && (match ? siteMatches(match, l.site) : l.site === site)
+    );
   };
 
   /**

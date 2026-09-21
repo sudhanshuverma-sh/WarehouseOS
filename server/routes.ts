@@ -25,7 +25,7 @@ import { Router } from 'express';
 import { buildUpsert, rowFromDb, selectList } from './ebdgColumns';
 import { errorHandler, handle, HttpError } from './http';
 import { attachmentRoutes } from './routes/attachments';
-import { extrasFor, runAs, todayInIndia, type RouteDeps } from './routes/common';
+import { extrasFor, iso, runAs, todayInIndia, type RouteDeps } from './routes/common';
 import { complianceRoutes } from './routes/compliance';
 import { dailySiteRoutes } from './routes/dailySite';
 import { dieselRoutes } from './routes/diesel';
@@ -267,6 +267,13 @@ export function createRoutes(deps: RouteDeps): Router {
    * literal numbers — no formula reaches the database (I6). The write is
    * an upsert on Record_ID, so re-filing the same day corrects that row
    * instead of creating a second one.
+   *
+   * Correcting it has to be asked for. Three or four POCs share a site,
+   * and an unasked-for upsert meant the second one to open the form
+   * silently replaced the first one's meter readings. Without `amend` a
+   * day that already has a row is a 409 naming who filed it and when;
+   * with it the row is replaced, and trg_audit_ebdg_daily (db/filings.sql)
+   * keeps the reading that was there before.
    */
   router.post(
     '/ebdg/submit',
@@ -274,14 +281,29 @@ export function createRoutes(deps: RouteDeps): Router {
       const row = req.body;
       if (!row || typeof row !== 'object') throw new HttpError(400, 'Expected a row object');
 
+      const body = row as Record<string, unknown>;
+      const amend = body.amend === true;
+
       const saved = await run(req, async (c) => {
-        const extras = await extrasFor(c, 'EB_DG', (row as Record<string, unknown>).extras);
+        if (!amend) {
+          const { rows } = await c.query(
+            'select submitted_by, timestamp from ebdg_daily where record_id = $1',
+            [body.Record_ID],
+          );
+          if (rows[0]) {
+            throw new HttpError(409, 'An EB-DG entry for this site and date already exists.', 'DUPLICATE', {
+              submittedBy: rows[0].submitted_by ?? '',
+              submittedAt: iso(rows[0].timestamp) ?? '',
+            });
+          }
+        }
+        const extras = await extrasFor(c, 'EB_DG', body.extras);
         const plan = buildUpsert(row, extras);
         const { rows } = await c.query(plan.text, plan.values);
         return rows[0];
       });
 
-      res.status(201).json({ ...(saved.extras ?? {}), ...rowFromDb(saved) });
+      res.status(amend ? 200 : 201).json({ ...(saved.extras ?? {}), ...rowFromDb(saved) });
     }),
   );
 

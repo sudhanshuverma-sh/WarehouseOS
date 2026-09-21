@@ -3,6 +3,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useApp } from '../context/AppContext';
 import { controlRoomSites, siteMatches } from '../lib/controlRoom/siteServiceStatus';
 import { usePendingWork } from './common/usePendingWork';
+import { usePersonas } from './common/usePersonas';
+import { Avatar } from './common/Avatar';
+import type { User } from '../types';
 import {
   LayoutDashboard,
   ClipboardCheck,
@@ -90,7 +93,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
   const pending = usePendingWork().total;
   const pendingBadge = pending > 0 ? `${pending} pending` : undefined;
   /** Active sites from Master Data: the same list every screen counts. */
-  const siteCount = useMemo(() => controlRoomSites(siteMasterRows, warehouses).length, [siteMasterRows, warehouses]);
+  const sites = useMemo(() => controlRoomSites(siteMasterRows, warehouses), [siteMasterRows, warehouses]);
+  const siteCount = sites.length;
+
+  // The real people in POC Master, not a handful of invented personas.
+  const personas = usePersonas();
+  const [personaQuery, setPersonaQuery] = useState('');
+
+  /** Their site, named the way Master Data names it. */
+  const siteLabelFor = (u: User) => {
+    if (u.role === 'SUPER_ADMIN') return 'ALL SITES';
+    const site = sites.find(s => siteMatches(s, u.warehouseId));
+    return site?.name ?? u.warehouseId ?? 'No site';
+  };
+
+  const shownPersonas = useMemo(() => {
+    const needle = personaQuery.trim().toLowerCase();
+    if (!needle) return personas;
+    return personas.filter(
+      u =>
+        u.fullName.toLowerCase().includes(needle) ||
+        u.email.toLowerCase().includes(needle) ||
+        siteLabelFor(u).toLowerCase().includes(needle),
+    );
+    // siteLabelFor reads `sites`, which is already a dependency through personas.
+  }, [personas, personaQuery, sites]);
 
   // Nav items dynamically filtered strictly by role
   const navItems = useMemo(() => {
@@ -482,11 +509,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
                     onClick={() => setShowPersonaMenu(!showPersonaMenu)}
                     className="w-full text-left p-2.5 rounded-[var(--r-chip)] bg-[var(--bg-subtle)] hover:bg-[var(--color-frost)] transition flex items-center gap-2.5 cursor-pointer"
                   >
-                    <img
-                      src={currentUser.avatar}
-                      alt=""
-                      className="w-8 h-8 rounded-lg object-cover shrink-0"
-                    />
+                    <Avatar name={currentUser.fullName} src={currentUser.avatar} />
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-bold text-[var(--color-ink)] truncate">
                         {currentUser.fullName}
@@ -511,35 +534,57 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -4 }}
                         transition={{ duration: 0.14 }}
-                        className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-[var(--r-card)] elevate-4 p-1.5 z-50 max-h-64 overflow-y-auto"
+                        className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-[var(--r-card)] elevate-4 p-1.5 z-50 flex flex-col max-h-80"
                       >
-                        {users.map(u => (
-                          <button
-                            key={u.id}
-                            onClick={() => {
-                              setCurrentUser(u);
-                              if (u.warehouseId) setSelectedWarehouseId(u.warehouseId);
-                              setShowPersonaMenu(false);
-                            }}
-                            className={`w-full text-left px-2.5 py-2 rounded-[var(--r-chip)] text-xs flex items-center gap-2.5 transition cursor-pointer ${
-                              currentUser.id === u.id
-                                ? 'bg-[var(--color-filed-tint)] font-bold'
-                                : 'hover:bg-[var(--bg-subtle)]'
-                            }`}
-                          >
-                            {u.role === 'SUPER_ADMIN' ? (
-                              <ShieldCheck className="w-4 h-4 text-[var(--color-missing)] shrink-0" />
-                            ) : (
-                              <UserCheck className="w-4 h-4 text-[var(--color-filed)] shrink-0" />
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <div className="truncate font-semibold text-[var(--color-ink)]">{u.fullName}</div>
-                              <div className="code-chip">
-                                {u.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : u.warehouseId}
-                              </div>
-                            </div>
-                          </button>
-                        ))}
+                        {/* POC Master holds a row per person per site, so this
+                            list is as long as the organisation. Typing beats
+                            scrolling past a hundred names. */}
+                        {personas.length > 8 && (
+                          <input
+                            type="search"
+                            value={personaQuery}
+                            onChange={e => setPersonaQuery(e.target.value)}
+                            placeholder="Find a person or site"
+                            autoFocus
+                            className="mb-1.5 w-full px-2.5 h-8 rounded-[var(--r-chip)] bg-[var(--bg-subtle)] text-xs text-[var(--color-ink)] placeholder:text-slate-500 focus:outline-none focus:bg-white focus:ring-1 focus:ring-[var(--color-frost)]"
+                          />
+                        )}
+
+                        <div className="flex-1 min-h-0 overflow-y-auto">
+                          {shownPersonas.length === 0 ? (
+                            <p className="px-2.5 py-6 text-center text-xs text-slate-500">
+                              Nobody matches “{personaQuery.trim()}”.
+                            </p>
+                          ) : (
+                            shownPersonas.map(u => (
+                              <button
+                                key={u.id}
+                                onClick={() => {
+                                  setCurrentUser(u);
+                                  if (u.warehouseId) setSelectedWarehouseId(u.warehouseId);
+                                  else setSelectedWarehouseId('ALL');
+                                  setShowPersonaMenu(false);
+                                  setPersonaQuery('');
+                                }}
+                                className={`w-full text-left px-2.5 py-2 rounded-[var(--r-chip)] text-xs flex items-center gap-2.5 transition cursor-pointer ${
+                                  currentUser.id === u.id
+                                    ? 'bg-[var(--color-filed-tint)] font-bold'
+                                    : 'hover:bg-[var(--bg-subtle)]'
+                                }`}
+                              >
+                                {u.role === 'SUPER_ADMIN' ? (
+                                  <ShieldCheck className="w-4 h-4 text-[var(--color-missing)] shrink-0" />
+                                ) : (
+                                  <UserCheck className="w-4 h-4 text-[var(--color-filed)] shrink-0" />
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <div className="truncate font-semibold text-[var(--color-ink)]">{u.fullName}</div>
+                                  <div className="code-chip truncate">{siteLabelFor(u)}</div>
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
                       </motion.div>
                     )}
                   </AnimatePresence>

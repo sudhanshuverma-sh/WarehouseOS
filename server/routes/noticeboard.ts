@@ -10,7 +10,7 @@
 import { Router } from 'express';
 import { isGoogleDriveLink } from '../../src/lib/services/validateSubmission';
 import { handle, HttpError } from '../http';
-import { iso, isPlainObject, numericId, optionalText, requiredText, requireSuperAdmin, runAs, type RouteDeps } from './common';
+import { iso, isPlainObject, numericId, optionalText, requiredText, runAs, type RouteDeps } from './common';
 
 type Row = Record<string, any>;
 
@@ -85,7 +85,12 @@ export function noticeboardRoutes(deps: RouteDeps): Router {
     handle(async (req, res) => {
       const n = noticeFrom(req.body);
       const saved = await run(req, async (c) => {
-        await requireSuperAdmin(c, 'Only a Super Admin can post to the noticeboard.');
+        // Asked before the insert so the refusal reads as a sentence, not as
+        // a policy violation. RLS (post_notice) refuses it regardless.
+        const { rows: can } = await c.query('select fn_can_post_notice() as ok');
+        if (!can[0]?.ok) {
+          throw new HttpError(403, 'Only a Super Admin or a Service Admin can post to the noticeboard.', 'FORBIDDEN');
+        }
         const { rows } = await c.query(
           `insert into notice (title, body, link_url, audience, site_code, person_email, posted_by_name)
            values ($1, $2, $3, $4, $5, $6, $7)

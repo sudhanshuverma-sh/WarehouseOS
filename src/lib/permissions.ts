@@ -54,6 +54,15 @@ export interface Capabilities {
    */
   canExport: boolean;
 
+  /**
+   * May post to the noticeboard: everyone, a site, or one person.
+   *
+   * Super Admin and Service Admin, matching fn_can_post_notice() in
+   * db/noticeboard_posters.sql. Not a Warehouse Admin: a notice can reach
+   * every POC in the company, which is not a one-site decision.
+   */
+  canPostNotices: boolean;
+
   /** 'ALL', or the warehouse ids this user may see. */
   siteScope: 'ALL' | string[];
 
@@ -97,6 +106,7 @@ export function capabilitiesFor(user: User): Capabilities {
     // take a file away. Widening this is one clause, if that turns out to
     // be wrong in practice.
     canExport: role === 'SUPER_ADMIN' || role === 'SERVICE_ADMIN',
+    canPostNotices: role === 'SUPER_ADMIN' || role === 'SERVICE_ADMIN',
     siteScope,
     canViewAllSites: spansAllSites
   };

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import {
   Bell,
@@ -91,6 +92,19 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     return smartAlerts;
   }, [smartAlerts, filterType]);
 
+  // Escape closes it, and the page behind stops scrolling while it is open.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSendNudge = (e: React.MouseEvent, alert: SmartAlert) => {
@@ -108,10 +122,26 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-      {/* Phone optimized bottom sheet / desktop centered modal */}
-      <div className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden animate-in slide-in-from-bottom-5 sm:zoom-in-95 duration-200 flex flex-col max-h-[88vh]">
+  // Portalled to <body>, not rendered where it is used. The top bar is
+  // `soft-glass`, which sets backdrop-filter, and a backdrop-filter makes an
+  // element the containing block for every `fixed` descendant. So this
+  // panel's `fixed inset-0` was measured against the thin top bar instead of
+  // the screen, and centring a tall panel inside a short bar pushed its top
+  // off the screen. Popover.tsx portals for the same reason.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="What is pending"
+      onClick={onClose}
+    >
+      {/* Phone optimized bottom sheet / desktop centered modal. A tap
+          outside closes it; a tap inside does not. */}
+      <div
+        onClick={e => e.stopPropagation()}
+        className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden animate-in slide-in-from-bottom-5 sm:zoom-in-95 duration-200 flex flex-col max-h-[88dvh]"
+      >
         
         {/* Header */}
         <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white flex items-center justify-between">
@@ -273,6 +303,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };

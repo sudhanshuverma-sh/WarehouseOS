@@ -13,6 +13,7 @@ import { SheetDataExplorer } from './components/SheetDataExplorer';
 import { FormBuilder } from './components/forms/FormBuilder';
 import { TaskChecklists } from './components/TaskChecklists';
 import { Noticeboard } from './components/Noticeboard';
+import { NoticePop } from './components/common/NoticePop';
 import { DieselTracker } from './components/DieselTracker';
 import { AdminDashboard } from './components/AdminDashboard';
 import { GoogleSheetsMasterConnector } from './components/GoogleSheetsMasterConnector';
@@ -313,6 +314,9 @@ const MainContent: React.FC = () => {
 
       {/* Global Toast Alerts */}
       <ToastNotification />
+
+      {/* Drops in at the top when a notice lands for this person. */}
+      <NoticePop currentView={currentView} onOpen={() => navigateTo('noticeboard')} />
     </div>
   );
 };

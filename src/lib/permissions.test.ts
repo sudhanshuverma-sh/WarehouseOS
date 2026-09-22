@@ -49,6 +49,15 @@ describe('capabilitiesFor()', () => {
     expect(caps.canApprove).toBe(true);
   });
 
+  it('lets a Super Admin and a Service Admin post notices, and nobody else', () => {
+    // Matches fn_can_post_notice() in db/noticeboard_posters.sql. A
+    // Warehouse Admin is out on purpose: a notice can reach every POC.
+    expect(capabilitiesFor(superAdmin).canPostNotices).toBe(true);
+    expect(capabilitiesFor(serviceAdmin).canPostNotices).toBe(true);
+    expect(capabilitiesFor(warehouseAdmin).canPostNotices).toBe(false);
+    expect(capabilitiesFor(poc).canPostNotices).toBe(false);
+  });
+
   it('a site-pinned user with no site sees nothing, rather than everything', () => {
     const caps = capabilitiesFor(user('SITE_POC', undefined));
     expect(caps.siteScope).toEqual([]);

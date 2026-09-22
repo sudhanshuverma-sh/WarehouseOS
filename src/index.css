@@ -641,6 +641,22 @@ select:focus-visible, textarea:focus-visible {
 }
 .animate-unread { animation: blink-unread 1.6s var(--ease-standard) infinite; border-radius: 0.75rem; }
 
+/* The Noticeboard banner: drops in from above once, then its timer bar
+   runs down. Motion that says "this just arrived" and "this is leaving",
+   not decoration. Reduced motion needs nothing extra: the global guard
+   below caps both at an instant, so the banner simply appears. */
+@keyframes notice-pop {
+  0%   { opacity: 0; transform: translateY(-16px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-notice-pop { animation: notice-pop var(--motion-base, 240ms) var(--ease-spring, cubic-bezier(0.2, 0.9, 0.3, 1.2)) both; }
+
+@keyframes notice-timer {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+.animate-notice-timer { animation-name: notice-timer; animation-timing-function: linear; animation-fill-mode: forwards; }
+
 /* =========================================================================
    Reduced motion.
 

@@ -384,25 +384,37 @@ describe('EB-DG: replacing a reading has to be asked for', () => {
 
 describe('noticeboard', () => {
   const notice = { title: 'Cold chain SOP v4', audience: 'ALL' };
-  const superAdmin = (text: string) =>
-    text.includes('is_super_admin()')
+  // fn_can_post_notice() is true for a Super Admin or a Service Admin; which
+  // one is decided in the database, so the fake just answers it.
+  const poster = (text: string) =>
+    text.includes('fn_can_post_notice()')
       ? { rows: [{ ok: true }] }
       : text.startsWith('insert into notice')
         ? { rows: [{ notice_id: 7, title: notice.title, audience: 'ALL', posted_by: 'boss@zomato.com', posted_at: new Date() }] }
         : undefined;
+  const superAdmin = poster;
 
-  it('lets a Super Admin post, and says they have read their own notice', async () => {
-    const { call } = await api(superAdmin, 'boss@zomato.com');
+  it('lets a poster post, and says they have read their own notice', async () => {
+    const { call } = await api(poster, 'boss@zomato.com');
     const res = await call('POST', '/notices', notice);
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ id: '7', title: notice.title, read: true });
   });
 
+  it('asks the database who may post, not a role list of its own', async () => {
+    // Super Admin and Service Admin both pass through fn_can_post_notice(),
+    // so the route never hard-codes which roles those are.
+    const { call, db } = await api(poster, 'svc.admin@zomato.com');
+    expect((await call('POST', '/notices', notice)).status).toBe(201);
+    expect(db.sql('fn_can_post_notice()')).toHaveLength(1);
+    expect(db.sql('is_super_admin()')).toHaveLength(0);
+  });
+
   it('refuses a post from anyone else, before writing anything', async () => {
-    const { call, db } = await api((t) => (t.includes('is_super_admin()') ? { rows: [{ ok: false }] } : undefined));
+    const { call, db } = await api((t) => (t.includes('fn_can_post_notice()') ? { rows: [{ ok: false }] } : undefined));
     const res = await call('POST', '/notices', notice);
     expect(res.status).toBe(403);
-    expect(res.body.message).toMatch(/noticeboard/);
+    expect(res.body.message).toMatch(/Super Admin or a Service Admin/);
     expect(db.sql('insert into notice')).toHaveLength(0);
   });
 

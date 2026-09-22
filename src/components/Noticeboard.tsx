@@ -16,11 +16,12 @@ import { PageHeader } from './common/PageHeader';
 import { Button } from './common/Button';
 import { Reveal } from './common/Reveal';
 import { usePersonas } from './common/usePersonas';
+import { Avatar } from './common/Avatar';
 
 /**
  * The noticeboard: one place the whole company reads.
  *
- * Everyone opens it; only a Super Admin posts. Documents are Google Drive
+ * Everyone opens it; a Super Admin or a Service Admin posts. Documents are Google Drive
  * links, never uploads, because a real deck is far past the 2 MB the app
  * stores and a link has no size. Who can see a notice is decided before it
  * reaches this screen (RLS against the API, `visibleNotices` in demo mode),
@@ -75,7 +76,7 @@ export const Noticeboard: React.FC<NoticeboardProps> = ({ onBack }) => {
         onBack={onBack}
         backLabel="Back"
         actions={
-          caps.canManageMasterData && !composing ? (
+          caps.canPostNotices && !composing ? (
             <Button variant="primary" icon={<Plus className="w-3.5 h-3.5" />} onClick={() => setComposing(true)}>
               New notice
             </Button>
@@ -90,7 +91,7 @@ export const Noticeboard: React.FC<NoticeboardProps> = ({ onBack }) => {
           <Megaphone className="w-7 h-7 mx-auto text-slate-300" />
           <p className="mt-3 text-sm font-semibold text-slate-700">Nothing posted yet</p>
           <p className="mt-1 text-xs text-slate-500">
-            {caps.canManageMasterData
+            {caps.canPostNotices
               ? 'Post an SOP, a deck or a message for everyone, one site, or one person.'
               : 'When the Admin team posts something for you, it appears here.'}
           </p>
@@ -103,8 +104,8 @@ export const Noticeboard: React.FC<NoticeboardProps> = ({ onBack }) => {
                 notice={n}
                 isNew={arrived.has(n.id)}
                 siteName={siteName}
-                showAudience={caps.canManageMasterData}
-                canMail={caps.canManageMasterData}
+                showAudience={caps.canPostNotices}
+                canMail={caps.canPostNotices}
               />
             </Reveal>
           ))}
@@ -123,30 +124,40 @@ const NoticeCard: React.FC<{
   canMail: boolean;
 }> = ({ notice, isNew, siteName, showAudience, canMail }) => {
   const mailUrl = canMail ? allPocsMailUrl(notice) : null;
+  const poster = notice.postedByName || notice.postedBy;
   return (
-  <article
-    className={`bg-white border rounded-(--r-card) p-4 sm:p-5 shadow-xs ${
-      isNew ? 'border-(--color-due) ring-1 ring-(--color-due)/30' : 'border-slate-200'
-    }`}
-  >
-    <div className="flex items-start justify-between gap-3">
-      <h2 className="text-sm font-semibold text-slate-900 min-w-0">{notice.title}</h2>
-      {isNew && (
-        <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-(--color-due-tint) text-(--color-ink)">
-          New
-        </span>
-      )}
-    </div>
+  // A message, not a record: who said it on the left, what they said in a
+  // bubble whose top corner points back at them. A new one is lifted and
+  // tinted in the due tone, the same colour the tab flashes in.
+  <article className="flex items-start gap-3">
+    <Avatar name={poster} className="w-9 h-9 mt-0.5" />
 
-    <p className="mt-1 text-[11px] text-slate-500">
-      {notice.postedByName || notice.postedBy}
-      {notice.postedAt && <> · {when(notice.postedAt)}</>}
-      {/* The addressee is the poster's business. A POC reading a notice
-          sent to them alone does not need telling it is private. */}
-      {showAudience && <> · to {audienceLabel(notice, siteName)}</>}
-    </p>
+    <div className="flex-1 min-w-0">
+      <p className="px-1 text-[11px] text-slate-500 truncate">
+        <span className="font-semibold text-slate-700">{poster}</span>
+        {notice.postedAt && <> · {when(notice.postedAt)}</>}
+        {/* The addressee is the poster's business. A POC reading a notice
+            sent to them alone does not need telling it is private. */}
+        {showAudience && <> · to {audienceLabel(notice, siteName)}</>}
+      </p>
 
-    {notice.body && <p className="mt-3 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{notice.body}</p>}
+      <div
+        className={`mt-1 rounded-2xl rounded-tl-md border p-4 transition-shadow ${
+          isNew
+            ? 'bg-(--color-due-tint) border-(--color-due)/40 shadow-[0_8px_24px_-12px_rgb(201_154_52/0.55)]'
+            : 'bg-white border-slate-200 shadow-[0_6px_20px_-14px_rgb(14_26_22/0.35)]'
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-sm font-semibold text-slate-900 min-w-0">{notice.title}</h2>
+          {isNew && (
+            <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-(--color-due) text-white">
+              New
+            </span>
+          )}
+        </div>
+
+        {notice.body && <p className="mt-1.5 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{notice.body}</p>}
 
     {(notice.linkUrl || mailUrl) && (
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -179,6 +190,8 @@ const NoticeCard: React.FC<{
         )}
       </div>
     )}
+      </div>
+    </div>
   </article>
   );
 };

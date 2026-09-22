@@ -25,6 +25,7 @@ import { BUILT_IN_FORM_SERVICES } from '../lib/services/formBuilder';
 import { controlRoomSites, siteMatches } from '../lib/controlRoom/siteServiceStatus';
 import { visibleNotices, type Notice, type NoticeAudience } from '../lib/notices/audience';
 import { isGoogleDriveLink } from '../lib/services/validateSubmission';
+import { capabilitiesFor } from '../lib/permissions';
 
 /** What a Super Admin fills in to post a notice. */
 export interface NoticeInput {
@@ -3480,8 +3481,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [allNotices, demoReads, currentUser, siteMasterRows, warehouses, dataMode]);
 
   const postNotice: AppContextType['postNotice'] = async input => {
-    if (currentUser.role !== 'SUPER_ADMIN') {
-      return { ok: false, message: 'Only a Super Admin can post to the noticeboard.' };
+    if (!capabilitiesFor(currentUser).canPostNotices) {
+      return { ok: false, message: 'Only a Super Admin or a Service Admin can post to the noticeboard.' };
     }
     const body = { ...input, postedByName: currentUser.fullName };
 

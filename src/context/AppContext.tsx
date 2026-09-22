@@ -23,6 +23,18 @@ import { fetchMasterData, fetchMasterDataFromAppsScript, parseMasterDataJson, di
 import { servicesForUser } from '../lib/services/servicesForUser';
 import { BUILT_IN_FORM_SERVICES } from '../lib/services/formBuilder';
 import { controlRoomSites, siteMatches } from '../lib/controlRoom/siteServiceStatus';
+import { visibleNotices, type Notice, type NoticeAudience } from '../lib/notices/audience';
+import { isGoogleDriveLink } from '../lib/services/validateSubmission';
+
+/** What a Super Admin fills in to post a notice. */
+export interface NoticeInput {
+  title: string;
+  body?: string;
+  linkUrl?: string;
+  audience: NoticeAudience;
+  siteCode?: string;
+  personEmail?: string;
+}
 import { buildDieselSheetBatch, buildDieselSheetPayload } from '../lib/sheetSync/dieselSheet';
 import { validateSite, validateService, type EditMode, type MasterWriteResult } from '../lib/masterData/validate';
 import {
@@ -35,6 +47,7 @@ import {
   OPERATIONAL_SHEETS,
   INITIAL_SHEET_RECORDS,
   INITIAL_VENDORS,
+  INITIAL_NOTICES,
   VENDOR_EMAIL_MAP,
   FIXED_CC_EMAILS,
   POD_CC_EMAILS
@@ -121,6 +134,17 @@ interface AppContextType {
   submissions: TaskSubmission[];
   dieselLogs: DieselLog[];
   dailySiteLogs: DailySiteLog[];
+
+  /**
+   * The noticeboard, already narrowed to what this person may read and
+   * carrying `read` for THEM: in API mode RLS narrows it, in demo mode
+   * `visibleNotices` does, and the two follow the same rule.
+   */
+  notices: Notice[];
+  postNotice: (input: NoticeInput) => Promise<{ ok: boolean; message: string }>;
+  /** Records that this person has opened these. Idempotent. */
+  markNoticesRead: (ids: string[]) => void;
+
   housekeepingLogs: any[];
   dgPowerLogs: any[];
   operationalSheets: OperationalSheetDef[];
@@ -752,6 +776,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : INITIAL_DAILY_SITE_LOGS;
   });
 
+  // Every notice in this browser, before the audience rule. Demo mode only
+  // keeps these; in API mode the server has already narrowed them.
+  const [allNotices, setAllNotices] = useState<Notice[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'notices');
+      return saved ? JSON.parse(saved) : INITIAL_NOTICES;
+    } catch {
+      return INITIAL_NOTICES;
+    }
+  });
+
+  /**
+   * Who has read what, in demo mode: notice id -> the emails that opened it.
+   * Kept apart from the notices because reading is per PERSON, and one
+   * browser switches between personas. A single `read` flag on the notice
+   * would let one persona's reading switch the blink off for all of them.
+   */
+  const [demoReads, setDemoReads] = useState<Record<string, string[]>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'noticeReads');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
   const [operationalSheets, setOperationalSheets] = useState<OperationalSheetDef[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'operationalSheets');
     return saved ? JSON.parse(saved) : OPERATIONAL_SHEETS;
@@ -843,6 +893,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (dataMode === 'demo') localStorage.setItem(STORAGE_KEY_PREFIX + 'dailySiteLogs', JSON.stringify(dailySiteLogs));
   }, [dailySiteLogs]);
+
+  useEffect(() => {
+    if (dataMode !== 'demo') return;
+    try {
+      localStorage.setItem(STORAGE_KEY_PREFIX + 'notices', JSON.stringify(allNotices));
+      localStorage.setItem(STORAGE_KEY_PREFIX + 'noticeReads', JSON.stringify(demoReads));
+    } catch {
+      /* storage full or blocked: the board still works for this session */
+    }
+  }, [allNotices, demoReads, dataMode]);
 
   useEffect(() => {
     if (dataMode === 'demo') localStorage.setItem(STORAGE_KEY_PREFIX + 'operationalSheets', JSON.stringify(operationalSheets));
@@ -2953,8 +3013,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDailySiteLogs(INITIAL_DAILY_SITE_LOGS);
     setOperationalSheets(OPERATIONAL_SHEETS);
     setSheetRecords(INITIAL_SHEET_RECORDS);
+    setAllNotices(INITIAL_NOTICES);
+    setDemoReads({});
     setCurrentUser(INITIAL_USERS[0]);
     setSelectedWarehouseIdState('ALL');
+    localStorage.removeItem(STORAGE_KEY_PREFIX + 'notices');
+    localStorage.removeItem(STORAGE_KEY_PREFIX + 'noticeReads');
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'warehouses');
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'templates');
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'submissions');
@@ -3042,6 +3106,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     void load<DieselLog[]>('/diesel?limit=5000', setDieselLogs, 'diesel requests');
     void load<Vendor[]>('/vendors', setVendors, 'vendors');
     void load<DailySiteLog[]>('/daily-site?limit=2000', setDailySiteLogs, 'daily site reports');
+    void load<Notice[]>('/notices', setAllNotices, 'the noticeboard');
     // This month's EB-DG entries — enough for the Control Room's daily status.
     void load<{ Site_Code: string; Date: string }[]>(
       `/ebdg/rows?from=${new Date().toISOString().slice(0, 7)}-01&limit=5000`,
@@ -3390,6 +3455,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // ------------------------------------------------------------ noticeboard
+
+  const notices = useMemo(() => {
+    const sites = controlRoomSites(siteMasterRows, warehouses);
+    // In API mode `read` came back from the server for this caller. In demo
+    // mode it is looked up per person, so switching persona shows that
+    // persona's unread notices, not whoever opened them last.
+    const withRead =
+      dataMode === 'api'
+        ? allNotices
+        : allNotices.map(n => ({
+            ...n,
+            read: (demoReads[n.id] ?? []).includes(currentUser.email.toLowerCase()),
+          }));
+    return visibleNotices(withRead, currentUser, sites);
+  }, [allNotices, demoReads, currentUser, siteMasterRows, warehouses, dataMode]);
+
+  const postNotice: AppContextType['postNotice'] = async input => {
+    if (currentUser.role !== 'SUPER_ADMIN') {
+      return { ok: false, message: 'Only a Super Admin can post to the noticeboard.' };
+    }
+    const body = { ...input, postedByName: currentUser.fullName };
+
+    if (dataMode === 'api') {
+      try {
+        const saved = await api.post<Notice>('/notices', body);
+        setAllNotices(prev => [saved, ...prev]);
+        return { ok: true, message: 'Posted.' };
+      } catch (err) {
+        return { ok: false, message: errorText(err) };
+      }
+    }
+
+    // Demo: the same shape the server would return, and the same rule the
+    // database enforces for a Drive link.
+    if (input.linkUrl && !isGoogleDriveLink(input.linkUrl)) {
+      return { ok: false, message: 'Share the document as a Google Drive or Docs link.' };
+    }
+    const saved: Notice = {
+      id: `N-${Date.now()}`,
+      title: input.title.trim(),
+      body: input.body?.trim() || undefined,
+      linkUrl: input.linkUrl?.trim() || undefined,
+      audience: input.audience,
+      siteCode: input.audience === 'SITE' ? input.siteCode : undefined,
+      personEmail: input.audience === 'PERSON' ? input.personEmail?.toLowerCase() : undefined,
+      postedBy: currentUser.email,
+      postedByName: currentUser.fullName,
+      postedAt: new Date().toISOString(),
+      read: false,
+    };
+    setAllNotices(prev => [saved, ...prev]);
+    // Whoever posts a notice has read it; it should not blink back at them.
+    setDemoReads(prev => ({ ...prev, [saved.id]: [currentUser.email.toLowerCase()] }));
+    return { ok: true, message: 'Posted.' };
+  };
+
+  const markNoticesRead: AppContextType['markNoticesRead'] = ids => {
+    const fresh = ids.filter(id => notices.find(n => n.id === id && !n.read));
+    if (fresh.length === 0) return;
+
+    if (dataMode === 'api') {
+      // Optimistic: the blink stops the moment they look. The write is an
+      // upsert, so a retry or a second tab cannot fail it.
+      setAllNotices(prev => prev.map(n => (fresh.includes(n.id) ? { ...n, read: true } : n)));
+      for (const id of fresh) void api.post(`/notices/${encodeURIComponent(id)}/read`, {}).catch(() => undefined);
+      return;
+    }
+
+    const me = currentUser.email.toLowerCase();
+    setDemoReads(prev => {
+      const next = { ...prev };
+      for (const id of fresh) next[id] = [...new Set([...(next[id] ?? []), me])];
+      return next;
+    });
+  };
+
   const housekeepingLogs = useMemo(() => {
     return sheetRecords['SHEET_HOUSEKEEPING'] || [];
   }, [sheetRecords]);
@@ -3409,6 +3551,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         submissions,
         dieselLogs,
         dailySiteLogs,
+        notices,
+        postNotice,
+        markNoticesRead,
         housekeepingLogs,
         dgPowerLogs,
         emailLogs,

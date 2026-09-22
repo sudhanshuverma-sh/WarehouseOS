@@ -5,6 +5,7 @@ import { controlRoomSites, siteMatches } from '../lib/controlRoom/siteServiceSta
 import { navFor, scopeNav } from '../lib/nav/navConfig';
 import { Avatar } from './common/Avatar';
 import { usePendingWork } from './common/usePendingWork';
+import { useUnreadNotices } from './common/useUnreadNotices';
 import type { UserRole } from '../types';
 
 /**
@@ -50,6 +51,7 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
 
   const panel = useRef<HTMLDivElement>(null);
   const pending = usePendingWork().total;
+  const unread = useUnreadNotices();
 
   const registered = useMemo(
     () => new Set(serviceRegistryRows.filter(s => s.Active === 'Yes').map(s => s.Service_Code)),
@@ -160,6 +162,7 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
               {group.items.map(item => {
                 const Icon = item.icon;
                 const isActive = currentView === item.id;
+                const unreadHere = item.id === 'noticeboard' && unread > 0 && !isActive;
                 return (
                   <button
                     key={item.id}
@@ -168,7 +171,7 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
                     aria-current={isActive ? 'page' : undefined}
                     className={`w-full flex items-center gap-2.5 p-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                       isActive ? 'bg-(--color-ink) text-white' : 'text-slate-700 hover:bg-slate-100'
-                    }`}
+                    } ${unreadHere ? 'animate-unread' : ''}`}
                   >
                     <span
                       className={`p-1.5 rounded-lg shrink-0 ${
@@ -183,7 +186,13 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
                         {item.subLabel}
                       </span>
                     </span>
-                    {!isActive && <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />}
+                    {unreadHere ? (
+                      <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-(--color-due-tint) text-(--color-ink)">
+                        {unread} new
+                      </span>
+                    ) : (
+                      !isActive && <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                    )}
                   </button>
                 );
               })}

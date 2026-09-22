@@ -38,6 +38,17 @@ describe('navFor()', () => {
     expect(poc).not.toContain('createForm');
   });
 
+  it('gives everyone the noticeboard, and never scopes it away', () => {
+    // It is for everyone to read, so no role may lose it, and Master Data
+    // must not hide it: it is not a service and carries no codes.
+    for (const role of ['SITE_POC', 'SERVICE_ADMIN', 'SUPER_ADMIN'] as const) {
+      expect(ids(role)).toContain('noticeboard');
+      const scoped = scopeNav(navFor(role), withRegistry({ held: [], atSite: [] }));
+      expect(flattenNav(scoped).map(i => i.id)).toContain('noticeboard');
+    }
+    expect(flattenNav(navFor('SITE_POC')).find(i => i.id === 'noticeboard')?.codes).toBeUndefined();
+  });
+
   it('keeps the sheets console away from a service admin', () => {
     // Shaping a form is canEditSchema, which only a Super Admin holds.
     expect(ids('SERVICE_ADMIN')).not.toContain('sheets');

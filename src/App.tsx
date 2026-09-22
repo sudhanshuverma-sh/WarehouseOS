@@ -12,6 +12,7 @@ import { OperationalSheetsHub } from './components/OperationalSheetsHub';
 import { SheetDataExplorer } from './components/SheetDataExplorer';
 import { FormBuilder } from './components/forms/FormBuilder';
 import { TaskChecklists } from './components/TaskChecklists';
+import { Noticeboard } from './components/Noticeboard';
 import { DieselTracker } from './components/DieselTracker';
 import { AdminDashboard } from './components/AdminDashboard';
 import { GoogleSheetsMasterConnector } from './components/GoogleSheetsMasterConnector';
@@ -273,6 +274,10 @@ const MainContent: React.FC = () => {
                 ? <GoogleSheetsMasterConnector onBack={handleGoBack} />
                 : <AccessDenied what="master data and sheet connections" onBack={handleGoBack} />
             )}
+
+            {/* Ungated: everyone reads the noticeboard. Posting is the one
+                Super Admin act, and the screen checks that itself. */}
+            {currentView === 'noticeboard' && <Noticeboard onBack={handleGoBack} />}
 
             {currentView === 'adminDashboard' && (
               <AdminDashboard

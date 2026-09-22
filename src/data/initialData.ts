@@ -1,3 +1,4 @@
+import type { Notice } from '../lib/notices/audience';
 import { Warehouse, User, TaskTemplate, TaskSubmission, DieselLog, DailySiteLog, OperationalSheetDef, HousekeepingLog, DGPowerWaterLog, Vendor } from '../types';
 import { MASTER_WAREHOUSES, POC_MASTER_USERS } from './pocMasterData';
 
@@ -672,3 +673,22 @@ export const INITIAL_SHEET_RECORDS: Record<string, any[]> = {
   ]
 };
 
+
+/**
+ * One notice, so the board is not empty the first time it opens and the
+ * unread signal can be seen working. Addressed to everyone, from nobody in
+ * particular, and saying only what the board is for.
+ */
+export const INITIAL_NOTICES: Notice[] = [
+  {
+    id: 'N-WELCOME',
+    title: 'The noticeboard is here',
+    body:
+      'SOPs, decks and messages from the operations team will be posted here. A notice can be for everyone, for one site, or for you alone. The tab keeps flashing until you have opened what is new.',
+    audience: 'ALL',
+    postedBy: 'system',
+    postedByName: 'WarehouseOS',
+    postedAt: '2026-09-22T09:00:00+05:30',
+    read: false,
+  },
+];

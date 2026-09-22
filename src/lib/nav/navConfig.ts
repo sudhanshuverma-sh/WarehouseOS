@@ -19,6 +19,7 @@ import {
   Award,
   LayoutDashboard,
   Layers,
+  Megaphone,
   PlusCircle,
   Smartphone,
   Users,
@@ -62,6 +63,9 @@ const SCREENS = {
   recordsOwn: { id: 'database', label: 'Records', subLabel: 'Everything filed at your site', icon: Database },
   newForm: { id: 'createForm', label: 'New Form', subLabel: 'Build a form to file', icon: PlusCircle },
   masterData: { id: 'masterData', label: 'Master Data', subLabel: 'POC, Site and Service', icon: Database, highlight: true },
+  // No `codes`: this is not a service, so Master Data scoping must never
+  // hide it. Everyone reads it; only a Super Admin posts to it.
+  noticeboard: { id: 'noticeboard', label: 'Noticeboard', subLabel: 'SOPs, decks and messages', icon: Megaphone },
 
   diesel: { id: 'diesel', label: 'Diesel', subLabel: 'Requests, approvals, PODs', icon: Fuel, codes: ['DIESEL'], sheetId: 'SHEET_DIESEL' },
   dailyReport: { id: 'dailyForm', label: 'Daily Site Report', subLabel: 'The 43 point checklist', icon: ClipboardCheck, codes: ['SITE_ACTIVITY'], sheetId: 'SHEET_DAILY_SITE' },
@@ -92,7 +96,7 @@ export function navFor(role: UserRole): NavGroup[] {
           SCREENS.washing,
         ],
       },
-      { group: 'RECORDS', items: [SCREENS.recordsOwn] },
+      { group: 'RECORDS', items: [SCREENS.recordsOwn, SCREENS.noticeboard] },
     ];
   }
 
@@ -111,7 +115,7 @@ export function navFor(role: UserRole): NavGroup[] {
           SCREENS.washing,
         ],
       },
-      { group: 'RECORDS', items: [SCREENS.records] },
+      { group: 'RECORDS', items: [SCREENS.records, SCREENS.noticeboard] },
     ];
   }
 
@@ -126,7 +130,7 @@ export function navFor(role: UserRole): NavGroup[] {
       items: [SCREENS.sheets, SCREENS.diesel, SCREENS.dailyReport, SCREENS.housekeeping, SCREENS.ebDg, SCREENS.washing],
     },
     { group: 'RECORDS & FORMS', items: [SCREENS.records, SCREENS.newForm] },
-    { group: 'MASTER DATA', items: [SCREENS.masterData] },
+    { group: 'MASTER DATA', items: [SCREENS.masterData, SCREENS.noticeboard] },
   ];
 }
 

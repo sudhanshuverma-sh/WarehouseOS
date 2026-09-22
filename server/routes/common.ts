@@ -75,9 +75,12 @@ export function limitFrom(v: unknown, fallback = 500, max = 5000): number {
   return Number.isInteger(n) && n > 0 ? Math.min(n, max) : fallback;
 }
 
-export async function requireSuperAdmin(c: Queryable): Promise<void> {
+export async function requireSuperAdmin(
+  c: Queryable,
+  message = 'Only a Super Admin can change master data.',
+): Promise<void> {
   const { rows } = await c.query('select is_super_admin() as ok');
-  if (!rows[0]?.ok) throw new HttpError(403, 'Only a Super Admin can change master data.', 'FORBIDDEN');
+  if (!rows[0]?.ok) throw new HttpError(403, message, 'FORBIDDEN');
 }
 
 /**

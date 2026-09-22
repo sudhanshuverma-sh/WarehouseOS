@@ -621,6 +621,26 @@ select:focus-visible, textarea:focus-visible {
 }
 .animate-attention { animation: pulse-attention 2s var(--ease-out-soft) infinite; }
 
+/* The third pulsing thing, added on purpose, and against the note above.
+
+   The owner asked for the Noticeboard tab to keep blinking until a new
+   notice has been read, knowing the rationing rule. What keeps it from
+   being decoration: it is tied to something unread BY THIS PERSON (not a
+   global count), and it stops the moment they open the tab, rather than
+   running forever on a screen state. If it ever blinks for anything else,
+   that is the rule being broken; take it out.
+
+   Amber, not rose: this means "for you", which is the due tone. Rose is
+   kept for things that have gone wrong, like a DG past its B-check.
+
+   Reduced motion needs nothing extra: the guard below targets `*` and caps
+   every animation at one iteration, so it pulses once and settles. */
+@keyframes blink-unread {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(201 154 52 / 0); background-color: transparent; }
+  50%      { box-shadow: 0 0 0 4px rgb(201 154 52 / 0.35); background-color: rgb(201 154 52 / 0.14); }
+}
+.animate-unread { animation: blink-unread 1.6s var(--ease-standard) infinite; border-radius: 0.75rem; }
+
 /* =========================================================================
    Reduced motion.
 

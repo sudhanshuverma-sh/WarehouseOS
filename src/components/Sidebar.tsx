@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { controlRoomSites, siteMatches } from '../lib/controlRoom/siteServiceStatus';
 import { usePendingWork } from './common/usePendingWork';
 import { usePersonas } from './common/usePersonas';
+import { useUnreadNotices } from './common/useUnreadNotices';
 import { navFor, scopeNav } from '../lib/nav/navConfig';
 import { Avatar } from './common/Avatar';
 import type { User, UserRole } from '../types';
@@ -85,6 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
   // opens showed 120 sites; one number, or none, is worth more than that.
   const pending = usePendingWork().total;
   const pendingBadge = pending > 0 ? `${pending} pending` : undefined;
+  const unreadNotices = useUnreadNotices();
   /** Active sites from Master Data: the same list every screen counts. */
   const sites = useMemo(() => controlRoomSites(siteMasterRows, warehouses), [siteMasterRows, warehouses]);
   const siteCount = sites.length;
@@ -143,10 +145,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
         ...group,
         // The badge and the highlight belong to this surface, not the tree.
         items: group.items.map(item =>
-          item.highlight ? { ...item, badge: pendingBadge } : item
+          item.id === 'noticeboard' && unreadNotices > 0
+            ? { ...item, badge: `${unreadNotices} new` }
+            : item.highlight
+              ? { ...item, badge: pendingBadge }
+              : item
         ),
       })),
-    [currentUser.role, currentUser.serviceCodes, registeredCodes, siteServices, isServiceAccessible, pendingBadge]
+    [currentUser.role, currentUser.serviceCodes, registeredCodes, siteServices, isServiceAccessible, pendingBadge, unreadNotices]
   );
 
 
@@ -191,8 +197,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
                   <button
                     onClick={() => onSelectView(item.id)}
                     data-active={isActive}
-                    className="rail-item shrink-0 cursor-pointer"
-                    title={item.label}
+                    // Flashes while this person has an unread notice; see
+                    // .animate-unread in index.css for why it is allowed.
+                    className={`rail-item shrink-0 cursor-pointer ${
+                      item.id === 'noticeboard' && unreadNotices > 0 && !isActive ? 'animate-unread' : ''
+                    }`}
+                    title={item.id === 'noticeboard' && unreadNotices > 0 ? `${item.label}, ${unreadNotices} new` : item.label}
                     aria-current={isActive ? 'page' : undefined}
                   >
                     <Icon className="w-[1.15rem] h-[1.15rem]" />
@@ -358,7 +368,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
                               isActive
                                 ? 'bg-[var(--color-ink)] text-white'
                                 : 'hover:bg-[var(--bg-subtle)] text-[var(--text-secondary)]'
-                            }`}
+                            } ${item.id === 'noticeboard' && unreadNotices > 0 && !isActive ? 'animate-unread' : ''}`}
                           >
                             <Icon
                               className={`w-4 h-4 shrink-0 ${

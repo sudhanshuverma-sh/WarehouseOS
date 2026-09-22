@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { controlRoomSites, siteMatches } from '../lib/controlRoom/siteServiceStatus';
 import { flattenNav, homeFor, navFor, scopeNav, type NavItem } from '../lib/nav/navConfig';
 import { MobileMenuDrawer } from './MobileMenuDrawer';
+import { useUnreadNotices } from './common/useUnreadNotices';
 
 /**
  * The five slots at the bottom of a phone.
@@ -41,6 +42,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     warehouses,
   } = useApp();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const unreadNotices = useUnreadNotices();
 
   const registered = useMemo(
     () => new Set(serviceRegistryRows.filter(s => s.Active === 'Yes').map(s => s.Service_Code)),
@@ -99,7 +101,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               type="button"
               onClick={() => onNavigate(item.id)}
               aria-current={active ? 'page' : undefined}
-              className="flex flex-col items-center justify-start gap-0.5 p-1 rounded-2xl min-w-[56px] flex-1 transition active:scale-95 cursor-pointer"
+              className="flex flex-col items-center justify-start gap-0.5 p-1 rounded-2xl min-w-14 flex-1 transition active:scale-95 cursor-pointer"
             >
               <span
                 className={`p-1.5 rounded-xl transition ${
@@ -122,7 +124,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <button
           type="button"
           onClick={onOpenNotifications}
-          className="flex flex-col items-center justify-start gap-0.5 p-1 rounded-2xl min-w-[56px] flex-1 transition active:scale-95 cursor-pointer"
+          className="flex flex-col items-center justify-start gap-0.5 p-1 rounded-2xl min-w-14 flex-1 transition active:scale-95 cursor-pointer"
         >
           <span className="p-1.5 rounded-xl relative text-slate-500">
             <Bell className="w-5 h-5" />
@@ -135,18 +137,27 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           <span className="text-[10px] tracking-tight text-slate-500">Alerts</span>
         </button>
 
+        {/* The Noticeboard has no slot of its own, so it lives in More.
+            That makes More the only place a POC on a phone can see a new
+            notice waiting, so the count and the flash go here too. */}
         <button
           type="button"
           onClick={() => setIsMenuOpen(true)}
           aria-expanded={isMenuOpen}
-          className="flex flex-col items-center justify-start gap-0.5 p-1 rounded-2xl min-w-[56px] flex-1 transition active:scale-95 cursor-pointer"
+          aria-label={unreadNotices > 0 ? `More, ${unreadNotices} new notices` : 'More'}
+          className="flex flex-col items-center justify-start gap-0.5 p-1 rounded-2xl min-w-14 flex-1 transition active:scale-95 cursor-pointer"
         >
           <span
-            className={`p-1.5 rounded-xl transition ${
+            className={`relative p-1.5 rounded-xl transition ${
               !inSlots ? 'bg-(--color-ink) text-white' : 'text-slate-500'
-            }`}
+            } ${unreadNotices > 0 && currentView !== 'noticeboard' ? 'animate-unread' : ''}`}
           >
             <Menu className="w-5 h-5" />
+            {unreadNotices > 0 && currentView !== 'noticeboard' && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-(--color-due) text-white font-bold text-[9px] rounded-full flex items-center justify-center border-2 border-white">
+                {unreadNotices > 9 ? '9+' : unreadNotices}
+              </span>
+            )}
           </span>
           <span className={`text-[10px] tracking-tight ${!inSlots ? 'text-(--color-ink) font-semibold' : 'text-slate-500'}`}>
             More

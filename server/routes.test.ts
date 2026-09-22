@@ -382,6 +382,86 @@ describe('EB-DG: replacing a reading has to be asked for', () => {
   });
 });
 
+describe('noticeboard', () => {
+  const notice = { title: 'Cold chain SOP v4', audience: 'ALL' };
+  const superAdmin = (text: string) =>
+    text.includes('is_super_admin()')
+      ? { rows: [{ ok: true }] }
+      : text.startsWith('insert into notice')
+        ? { rows: [{ notice_id: 7, title: notice.title, audience: 'ALL', posted_by: 'boss@zomato.com', posted_at: new Date() }] }
+        : undefined;
+
+  it('lets a Super Admin post, and says they have read their own notice', async () => {
+    const { call } = await api(superAdmin, 'boss@zomato.com');
+    const res = await call('POST', '/notices', notice);
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ id: '7', title: notice.title, read: true });
+  });
+
+  it('refuses a post from anyone else, before writing anything', async () => {
+    const { call, db } = await api((t) => (t.includes('is_super_admin()') ? { rows: [{ ok: false }] } : undefined));
+    const res = await call('POST', '/notices', notice);
+    expect(res.status).toBe(403);
+    expect(res.body.message).toMatch(/noticeboard/);
+    expect(db.sql('insert into notice')).toHaveLength(0);
+  });
+
+  it('refuses a document that is not a Drive link, without asking the database', async () => {
+    // A 30 MB deck belongs in Drive; the app never stores one.
+    const { call, db } = await api(superAdmin);
+    const res = await call('POST', '/notices', { ...notice, linkUrl: 'https://evil.example/deck.pptx' });
+    expect(res.status).toBe(400);
+    expect(db.calls).toHaveLength(0);
+  });
+
+  it('accepts a Slides link', async () => {
+    const { call } = await api(superAdmin, 'boss@zomato.com');
+    const res = await call('POST', '/notices', { ...notice, linkUrl: 'https://docs.google.com/presentation/d/abc/edit' });
+    expect(res.status).toBe(201);
+  });
+
+  it('needs a site for a site notice and a person for a personal one', async () => {
+    const { call } = await api(superAdmin);
+    expect((await call('POST', '/notices', { title: 'x', audience: 'SITE' })).status).toBe(400);
+    expect((await call('POST', '/notices', { title: 'x', audience: 'PERSON' })).status).toBe(400);
+    expect((await call('POST', '/notices', { title: 'x', audience: 'EVERYONE' })).status).toBe(400);
+  });
+
+  it('marks a notice read idempotently, as the caller', async () => {
+    const { call, db } = await api(() => undefined, 'poc@zomato.com');
+    expect((await call('POST', '/notices/7/read')).status).toBe(204);
+    expect((await call('POST', '/notices/7/read')).status).toBe(204); // twice is fine
+    const writes = db.sql('insert into notice_read');
+    expect(writes).toHaveLength(2);
+    expect(writes[0].text).toMatch(/on conflict do nothing/);
+    expect(new Set(writes.map((w) => w.actor))).toEqual(new Set(['poc@zomato.com']));
+  });
+
+  it('only records reading a notice the caller can see, and never says whether one exists', async () => {
+    // It inserts FROM a select on notice, which runs under RLS. Inserting the
+    // raw id let a POC record reading someone else's private notice, and was
+    // an oracle: a missing id failed the foreign key (400) while a real
+    // private one succeeded (204). Proved end to end against Postgres; this
+    // pins the shape so a refactor cannot put `values ($1)` back.
+    const { call, db } = await api(() => undefined, 'poc@zomato.com');
+    expect((await call('POST', '/notices/8/read')).status).toBe(204);
+    const [write] = db.sql('insert into notice_read');
+    expect(write.text).toMatch(/select notice_id from notice where notice_id = \$1/);
+    expect(write.text).not.toMatch(/values\s*\(\s*\$1\s*\)/);
+  });
+
+  it('lists with a read flag computed for the caller', async () => {
+    const { call, db } = await api((t) =>
+      t.includes('from notice n')
+        ? { rows: [{ notice_id: 1, title: 'a', audience: 'ALL', posted_by: 'b', posted_at: new Date(), read: false }] }
+        : undefined,
+    'poc@zomato.com');
+    const res = await call('GET', '/notices');
+    expect(res.body).toEqual([expect.objectContaining({ id: '1', read: false })]);
+    expect(db.sql('from notice n')[0].values).toEqual(['poc@zomato.com']);
+  });
+});
+
 describe('the rest', () => {
   it('refuses a compliance check for an event-driven service', async () => {
     const { call } = await api((text) => (text.includes('select cadence') ? { rows: [{ cadence: 'EVENT_DRIVEN' }] } : undefined));

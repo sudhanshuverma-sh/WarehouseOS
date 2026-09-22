@@ -19,6 +19,7 @@
  *   services   every other service, defined as data         routes/submissions.ts
  *   attachments photos and Drive links                      routes/attachments.ts
  *   compliance who has not filed today                      routes/compliance.ts
+ *   notices    noticeboard posts and who has read them      routes/noticeboard.ts
  */
 
 import { Router } from 'express';
@@ -30,6 +31,7 @@ import { complianceRoutes } from './routes/compliance';
 import { dailySiteRoutes } from './routes/dailySite';
 import { dieselRoutes } from './routes/diesel';
 import { masterRoutes } from './routes/master';
+import { noticeboardRoutes } from './routes/noticeboard';
 import { submissionRoutes } from './routes/submissions';
 
 export type { RouteDeps } from './routes/common';
@@ -350,6 +352,7 @@ export function createRoutes(deps: RouteDeps): Router {
   router.use(submissionRoutes(deps));
   router.use(attachmentRoutes(deps));
   router.use(complianceRoutes(deps));
+  router.use(noticeboardRoutes(deps));
 
   // Unknown /api paths are a JSON 404, not the SPA's index.html.
   router.use((_req, _res, next) => next(new HttpError(404, 'No such API endpoint.', 'NOT_FOUND')));

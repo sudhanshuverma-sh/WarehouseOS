@@ -781,7 +781,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [allNotices, setAllNotices] = useState<Notice[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'notices');
-      return saved ? JSON.parse(saved) : INITIAL_NOTICES;
+      if (!saved) return INITIAL_NOTICES;
+      // The app's own seeded notices are refreshed from the current seed on
+      // every load. The seed only applies when nothing is stored, so without
+      // this a corrected wording never reached a browser that had already
+      // saved the old one. Only the app's own ids are touched: anything a
+      // person posted is left exactly as they wrote it.
+      const seeded = new Map(INITIAL_NOTICES.map(n => [n.id, n]));
+      return (JSON.parse(saved) as Notice[]).map(n => seeded.get(n.id) ?? n);
     } catch {
       return INITIAL_NOTICES;
     }

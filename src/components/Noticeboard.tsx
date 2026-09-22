@@ -1,10 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ExternalLink, FileText, Megaphone, Plus, Search, Send, X } from 'lucide-react';
+import { ExternalLink, FileText, Mail, Megaphone, Plus, Search, Send, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import type { NoticeInput } from '../context/AppContext';
 import { capabilitiesFor } from '../lib/permissions';
 import { controlRoomSites } from '../lib/controlRoom/siteServiceStatus';
-import { audienceLabel, type Notice, type NoticeAudience } from '../lib/notices/audience';
+import {
+  ALL_POCS_MAILING_LIST,
+  allPocsMailUrl,
+  audienceLabel,
+  type Notice,
+  type NoticeAudience,
+} from '../lib/notices/audience';
 import { isGoogleDriveLink } from '../lib/services/validateSubmission';
 import { PageHeader } from './common/PageHeader';
 import { Button } from './common/Button';
@@ -64,7 +70,7 @@ export const Noticeboard: React.FC<NoticeboardProps> = ({ onBack }) => {
     <div className="max-w-3xl mx-auto space-y-5 pb-12">
       <PageHeader
         title="Noticeboard"
-        description="SOPs, decks and messages from the operations team."
+        description="SOPs, decks and messages from the Admin team."
         icon={Megaphone}
         onBack={onBack}
         backLabel="Back"
@@ -86,14 +92,20 @@ export const Noticeboard: React.FC<NoticeboardProps> = ({ onBack }) => {
           <p className="mt-1 text-xs text-slate-500">
             {caps.canManageMasterData
               ? 'Post an SOP, a deck or a message for everyone, one site, or one person.'
-              : 'When the operations team posts something for you, it appears here.'}
+              : 'When the Admin team posts something for you, it appears here.'}
           </p>
         </div>
       ) : (
         <ul className="space-y-3">
           {notices.map((n, i) => (
             <Reveal as="li" key={n.id} index={i}>
-              <NoticeCard notice={n} isNew={arrived.has(n.id)} siteName={siteName} showAudience={caps.canManageMasterData} />
+              <NoticeCard
+                notice={n}
+                isNew={arrived.has(n.id)}
+                siteName={siteName}
+                showAudience={caps.canManageMasterData}
+                canMail={caps.canManageMasterData}
+              />
             </Reveal>
           ))}
         </ul>
@@ -107,7 +119,11 @@ const NoticeCard: React.FC<{
   isNew: boolean;
   siteName: (code: string) => string | undefined;
   showAudience: boolean;
-}> = ({ notice, isNew, siteName, showAudience }) => (
+  /** The poster, who may send an Everyone notice out on the mailing list. */
+  canMail: boolean;
+}> = ({ notice, isNew, siteName, showAudience, canMail }) => {
+  const mailUrl = canMail ? allPocsMailUrl(notice) : null;
+  return (
   <article
     className={`bg-white border rounded-(--r-card) p-4 sm:p-5 shadow-xs ${
       isNew ? 'border-(--color-due) ring-1 ring-(--color-due)/30' : 'border-slate-200'
@@ -132,20 +148,40 @@ const NoticeCard: React.FC<{
 
     {notice.body && <p className="mt-3 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{notice.body}</p>}
 
-    {notice.linkUrl && (
-      <a
-        href={notice.linkUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="mt-3 inline-flex items-center gap-2 h-9 px-3 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 hover:bg-slate-100 transition"
-      >
-        <FileText className="w-3.5 h-3.5 text-slate-500" />
-        Open document
-        <ExternalLink className="w-3 h-3 text-slate-400" />
-      </a>
+    {(notice.linkUrl || mailUrl) && (
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {notice.linkUrl && (
+          <a
+            href={notice.linkUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 h-9 px-3 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 hover:bg-slate-100 transition"
+          >
+            <FileText className="w-3.5 h-3.5 text-slate-500" />
+            Open document
+            <ExternalLink className="w-3 h-3 text-slate-400" />
+          </a>
+        )}
+        {/* Only an Everyone notice, only for the poster. allPocsMailUrl
+            returns null for anything else, so this cannot broadcast a
+            private message even if the condition here were wrong. */}
+        {mailUrl && (
+          <a
+            href={mailUrl}
+            target="_blank"
+            rel="noreferrer"
+            title={`Opens Gmail to ${ALL_POCS_MAILING_LIST}, which reaches every POC`}
+            className="inline-flex items-center gap-2 h-9 px-3 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-slate-800 hover:bg-slate-50 transition"
+          >
+            <Mail className="w-3.5 h-3.5 text-slate-500" />
+            Email all POCs
+          </a>
+        )}
+      </div>
     )}
   </article>
-);
+  );
+};
 
 const AUDIENCES: { value: NoticeAudience; label: string; hint: string }[] = [
   { value: 'ALL', label: 'Everyone', hint: 'Every person in the app' },
@@ -198,7 +234,14 @@ const Composer: React.FC<{ onDone: () => void; sites: ReturnType<typeof controlR
     const res = await postNotice(input);
     setSaving(false);
     if (!res.ok) return setError(res.message);
-    notify('success', 'Notice posted', title);
+    // An Everyone notice can also go out on the all-POCs mailing list. The
+    // new notice sits at the top of the list with that button on it; only
+    // Everyone notices ever get one.
+    notify(
+      'success',
+      'Notice posted',
+      audience === 'ALL' ? `${title}. Use "Email all POCs" on it to send it to every POC too.` : title,
+    );
     onDone();
   };
 

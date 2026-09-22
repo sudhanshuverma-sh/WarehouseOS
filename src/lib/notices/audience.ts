@@ -57,6 +57,45 @@ export function visibleNotices(notices: readonly Notice[], user: User, sites: re
 /** How many of those this person has not opened. */
 export const unreadCount = (notices: readonly Notice[]): number => notices.filter((n) => !n.read).length;
 
+/**
+ * The Admin team's mailing list. One mail to it reaches every POC.
+ *
+ * A mailing address, not a secret. Because it reaches everyone, it may only
+ * ever carry an Everyone notice: see allPocsMailUrl.
+ */
+export const ALL_POCS_MAILING_LIST = 'hp.admin@zomato.com';
+
+/**
+ * A Gmail compose window addressed to the all-POCs list, filled in with
+ * this notice, or null when the notice must not go there.
+ *
+ * The app cannot send mail itself: like the diesel and daily report mails,
+ * this opens Gmail and the poster presses Send. It returns null for a site
+ * or personal notice on purpose, so a private message can never be
+ * broadcast to every POC by a button that should not have been shown.
+ */
+export function allPocsMailUrl(notice: Notice): string | null {
+  if (notice.audience !== 'ALL') return null;
+
+  const body = [
+    notice.body?.trim(),
+    notice.linkUrl ? `Document: ${notice.linkUrl}` : undefined,
+    'Also on the Noticeboard in WarehouseOS.',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const params = new URLSearchParams({
+    view: 'cm',
+    fs: '1',
+    tf: '1',
+    to: ALL_POCS_MAILING_LIST,
+    su: notice.title,
+    body,
+  });
+  return `https://mail.google.com/mail/?${params.toString()}`;
+}
+
 /** "Everyone", "ZHPL-KA-01", "ramesh@..." — who the poster sent it to. */
 export function audienceLabel(notice: Notice, siteName?: (code: string) => string | undefined): string {
   if (notice.audience === 'ALL') return 'Everyone';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isForMe, unreadCount, visibleNotices, type Notice } from './audience';
+import { allPocsMailUrl, isForMe, unreadCount, visibleNotices, type Notice } from './audience';
 import type { ControlRoomSite } from '../controlRoom/siteServiceStatus';
 import type { User, UserRole } from '../../types';
 
@@ -92,6 +92,34 @@ describe('visibleNotices()', () => {
       notice({ id: 'theirs', audience: 'PERSON', personEmail: 'sunita@zomato.com', postedAt: '2026-09-21T09:00:00Z' }),
     ];
     expect(visibleNotices(all, ramesh, sites).map((n) => n.id)).toEqual(['mine', 'old']);
+  });
+});
+
+describe('allPocsMailUrl()', () => {
+  const read = (url: string) => new URL(url).searchParams;
+
+  it('addresses the all-POCs list with the notice filled in', () => {
+    const url = allPocsMailUrl(
+      notice({ title: 'Cold chain SOP v4', body: 'Read before Monday.', linkUrl: 'https://docs.google.com/document/d/x' }),
+    );
+    expect(url).not.toBeNull();
+    const p = read(url!);
+    expect(p.get('to')).toBe('hp.admin@zomato.com');
+    expect(p.get('su')).toBe('Cold chain SOP v4');
+    expect(p.get('body')).toContain('Read before Monday.');
+    expect(p.get('body')).toContain('https://docs.google.com/document/d/x');
+  });
+
+  it('never offers a site or personal notice to a list that reaches everyone', () => {
+    // The list reaches every POC, so this is what keeps a private message
+    // private even if a button is shown where it should not be.
+    expect(allPocsMailUrl(notice({ audience: 'SITE', siteCode: 'ZHPL-KA-01' }))).toBeNull();
+    expect(allPocsMailUrl(notice({ audience: 'PERSON', personEmail: 'ramesh@zomato.com' }))).toBeNull();
+  });
+
+  it('keeps a title with an ampersand intact', () => {
+    // Hand-built query strings split on &; URLSearchParams does not.
+    expect(read(allPocsMailUrl(notice({ title: 'HK & washing SOP' }))!).get('su')).toBe('HK & washing SOP');
   });
 });
 

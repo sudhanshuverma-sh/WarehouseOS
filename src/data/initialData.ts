@@ -684,7 +684,7 @@ export const INITIAL_NOTICES: Notice[] = [
     id: 'N-WELCOME',
     title: 'The noticeboard is here',
     body:
-      'SOPs, decks and messages from the operations team will be posted here. A notice can be for everyone, for one site, or for you alone. The tab keeps flashing until you have opened what is new.',
+      'SOPs, decks and messages from the Admin team will be posted here. A notice can be for everyone, for one site, or for you alone. The tab keeps flashing until you have opened what is new.',
     audience: 'ALL',
     postedBy: 'system',
     postedByName: 'WarehouseOS',

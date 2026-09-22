@@ -49,6 +49,24 @@ describe('navFor()', () => {
     expect(flattenNav(navFor('SITE_POC')).find(i => i.id === 'noticeboard')?.codes).toBeUndefined();
   });
 
+  it('puts the noticeboard straight after the Filing Desk', () => {
+    // Where people look first, so a new notice is seen before filing starts.
+    const after = (role: Parameters<typeof navFor>[0], anchor: string) => {
+      const list = ids(role);
+      return list[list.indexOf(anchor) + 1];
+    };
+    expect(after('SITE_POC', 'pocFiling')).toBe('noticeboard');
+    expect(after('SUPER_ADMIN', 'pocFiling')).toBe('noticeboard');
+    // No Filing Desk for a service admin: it follows their home instead.
+    expect(after('SERVICE_ADMIN', 'adminDashboard')).toBe('noticeboard');
+  });
+
+  it('appears once per role, not twice', () => {
+    for (const role of ['SITE_POC', 'SERVICE_ADMIN', 'SUPER_ADMIN'] as const) {
+      expect(ids(role).filter(id => id === 'noticeboard')).toHaveLength(1);
+    }
+  });
+
   it('keeps the sheets console away from a service admin', () => {
     // Shaping a form is canEditSchema, which only a Super Admin holds.
     expect(ids('SERVICE_ADMIN')).not.toContain('sheets');

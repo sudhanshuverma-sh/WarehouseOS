@@ -89,6 +89,9 @@ export function navFor(role: UserRole): NavGroup[] {
         group: 'MY SITE',
         items: [
           { ...SCREENS.pocDesk, highlight: true },
+          // Right under the Filing Desk: where people look first, so a new
+          // notice is seen before the day's filing starts.
+          SCREENS.noticeboard,
           SCREENS.diesel,
           SCREENS.dailyReport,
           SCREENS.housekeeping,
@@ -96,7 +99,7 @@ export function navFor(role: UserRole): NavGroup[] {
           SCREENS.washing,
         ],
       },
-      { group: 'RECORDS', items: [SCREENS.recordsOwn, SCREENS.noticeboard] },
+      { group: 'RECORDS', items: [SCREENS.recordsOwn] },
     ];
   }
 
@@ -106,6 +109,8 @@ export function navFor(role: UserRole): NavGroup[] {
         group: 'MY SERVICES',
         items: [
           { ...SCREENS.serviceHub, highlight: true },
+          // A service admin has no Filing Desk, so it sits under their home.
+          SCREENS.noticeboard,
           // Not Operational Sheets: shaping a service's form is
           // canEditSchema, which a service admin does not hold.
           SCREENS.diesel,
@@ -115,7 +120,7 @@ export function navFor(role: UserRole): NavGroup[] {
           SCREENS.washing,
         ],
       },
-      { group: 'RECORDS', items: [SCREENS.records, SCREENS.noticeboard] },
+      { group: 'RECORDS', items: [SCREENS.records] },
     ];
   }
 
@@ -123,14 +128,14 @@ export function navFor(role: UserRole): NavGroup[] {
   return [
     {
       group: 'MONITOR',
-      items: [SCREENS.controlRoom, { ...SCREENS.serviceHub, highlight: true }, SCREENS.pocDeskAdmin],
+      items: [SCREENS.controlRoom, { ...SCREENS.serviceHub, highlight: true }, SCREENS.pocDeskAdmin, SCREENS.noticeboard],
     },
     {
       group: 'SERVICES',
       items: [SCREENS.sheets, SCREENS.diesel, SCREENS.dailyReport, SCREENS.housekeeping, SCREENS.ebDg, SCREENS.washing],
     },
     { group: 'RECORDS & FORMS', items: [SCREENS.records, SCREENS.newForm] },
-    { group: 'MASTER DATA', items: [SCREENS.masterData, SCREENS.noticeboard] },
+    { group: 'MASTER DATA', items: [SCREENS.masterData] },
   ];
 }
 

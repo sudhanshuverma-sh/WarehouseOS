@@ -18,7 +18,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import pg from 'pg';
 
-const FILES = ['schema.sql', 'ebdg.sql', 'services.sql', 'extras.sql', 'filings.sql', 'noticeboard.sql', 'noticeboard_posters.sql'];
+const FILES = ['schema.sql', 'ebdg.sql', 'services.sql', 'extras.sql', 'filings.sql', 'noticeboard.sql', 'noticeboard_posters.sql', 'ebdg_dg3.sql', 'fire_pump.sql'];
 if (process.argv.includes('--seed')) FILES.push('seed.sql');
 
 const url = process.env.DATABASE_URL;

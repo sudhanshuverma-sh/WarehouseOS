@@ -1,6 +1,7 @@
 import type { Notice } from '../lib/notices/audience';
 import { Warehouse, User, TaskTemplate, TaskSubmission, DieselLog, DailySiteLog, OperationalSheetDef, HousekeepingLog, DGPowerWaterLog, Vendor } from '../types';
 import { MASTER_WAREHOUSES, POC_MASTER_USERS } from './pocMasterData';
+import { FIRE_PUMP_RECORD_FIELDS } from '../lib/firePump/records';
 
 export const OPERATIONAL_SHEETS: OperationalSheetDef[] = [
   {
@@ -239,13 +240,15 @@ export const OPERATIONAL_SHEETS: OperationalSheetDef[] = [
   {
     id: 'SHEET_FIRE',
     code: 'OPS_12_FIRE',
-    title: 'Fire Safety & Hydrant System Sheet',
+    title: 'Fire Pump Healthiness',
     category: 'EHS & Facilities',
     iconName: 'ShieldAlert',
-    frequency: 'DAILY / WEEKLY',
-    description: 'Jockey pump pressure (7.0 kg/cm²), diesel fire engine test start, hose reel boxes clear, and 100% unobstructed fire exits.',
-    fieldsCount: 13,
-    tableTarget: 'AS_FireSafety_Log',
+    frequency: 'DAILY',
+    description: 'Daily check of the fire alarm, MCPs, pump room, hydrant pressure, line, boxes and hose reels, and the sprinkler line where there is one. Every failed check carries a remark and a photo and alerts the Service Admin.',
+    // Its own screen (FirePumpHealthForm); these are the columns Records shows.
+    fieldsConfig: FIRE_PUMP_RECORD_FIELDS,
+    fieldsCount: FIRE_PUMP_RECORD_FIELDS.length,
+    tableTarget: 'fire_pump_log',
     defaultShift: 'MORNING'
   },
   {

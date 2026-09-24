@@ -15,6 +15,7 @@ import {
   ClipboardCheck,
   Database,
   Droplet,
+  Flame,
   Fuel,
   Award,
   LayoutDashboard,
@@ -72,6 +73,7 @@ const SCREENS = {
   housekeeping: { id: 'housekeeping', label: 'Housekeeping', subLabel: 'Agency headcount', icon: Users, codes: ['HOUSEKEEPING'], sheetId: 'SHEET_HOUSEKEEPING' },
   ebDg: { id: 'dgPower', label: 'EB and DG', subLabel: 'Meter readings and fuel', icon: Zap, codes: ['EB_DG'], sheetId: 'SHEET_EB_DG' },
   washing: { id: 'washing', label: 'Crate Washing', subLabel: 'Washing and ad-hoc jobs', icon: Droplet, codes: ['WASHING', 'ADHOC'], sheetId: 'SHEET_WASHING' },
+  firePump: { id: 'firePump', label: 'Fire Pump Healthiness', subLabel: 'Daily fire safety check', icon: Flame, codes: ['FIRE'], sheetId: 'SHEET_FIRE' },
 } satisfies Record<string, NavItem>;
 
 /** Where a role lands, and what its primary screen is. */
@@ -97,6 +99,7 @@ export function navFor(role: UserRole): NavGroup[] {
           SCREENS.housekeeping,
           SCREENS.ebDg,
           SCREENS.washing,
+          SCREENS.firePump,
         ],
       },
       { group: 'RECORDS', items: [SCREENS.recordsOwn] },
@@ -118,6 +121,7 @@ export function navFor(role: UserRole): NavGroup[] {
           SCREENS.housekeeping,
           SCREENS.dailyReport,
           SCREENS.washing,
+          SCREENS.firePump,
         ],
       },
       { group: 'RECORDS', items: [SCREENS.records] },
@@ -132,7 +136,7 @@ export function navFor(role: UserRole): NavGroup[] {
     },
     {
       group: 'SERVICES',
-      items: [SCREENS.sheets, SCREENS.diesel, SCREENS.dailyReport, SCREENS.housekeeping, SCREENS.ebDg, SCREENS.washing],
+      items: [SCREENS.sheets, SCREENS.diesel, SCREENS.dailyReport, SCREENS.housekeeping, SCREENS.ebDg, SCREENS.washing, SCREENS.firePump],
     },
     { group: 'RECORDS & FORMS', items: [SCREENS.records, SCREENS.newForm] },
     { group: 'MASTER DATA', items: [SCREENS.masterData] },

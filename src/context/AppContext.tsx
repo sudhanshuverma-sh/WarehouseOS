@@ -37,6 +37,13 @@ export interface NoticeInput {
   personEmail?: string;
 }
 import { buildDieselSheetBatch, buildDieselSheetPayload } from '../lib/sheetSync/dieselSheet';
+import { buildEbDgSheetBatch, buildSheetPayload as buildEbDgSheetPayload, type EbDgRecord } from '../lib/ebdg/sheetWriter';
+import { ebDgRepositoryFor, loadAllLocalRows, type SubmitResult as EbDgSubmitResult } from '../lib/ebdg/repository';
+import { sheetForChannel } from '../lib/ebdg/columns';
+import { refreshBuiltInSheets, withBuiltInServices } from '../lib/services/builtInServices';
+import { firePumpRecord, type FirePumpLog, type FirePumpSubmission, type FirePumpSubmitResult } from '../lib/firePump/records';
+import { scoreFirePump, visibleChecks, type FirePumpAnswers, type FirePumpKey } from '../lib/firePump/checks';
+import type { EbDgChannel, EbDgRow } from '../types/ebdg';
 import { validateSite, validateService, type EditMode, type MasterWriteResult } from '../lib/masterData/validate';
 import {
   INITIAL_WAREHOUSES,
@@ -155,6 +162,10 @@ interface AppContextType {
   
   // Generic Sheet Records Database
   sheetRecords: Record<string, any[]>;
+  /** Fire Pump Healthiness checks — their own table, like the Daily Site Report. */
+  firePumpLogs: FirePumpLog[];
+  /** Files (or, with `amend`, corrects) one site's fire pump check for a day. */
+  submitFirePumpLog: (payload: FirePumpSubmission) => Promise<FirePumpSubmitResult>;
   addSheetRecord: (sheetId: string, recordData: Record<string, any>) => Promise<{ ok: boolean; id: string; message: string }>;
   addOperationalSheet: (sheetDef: OperationalSheetDef) => Promise<{ ok: boolean; message: string }>;
   /** Renames a form, changes how often it is filed, and replaces its questions. */
@@ -298,8 +309,19 @@ interface AppContextType {
   sheetWebhookUrls: Record<string, string>;
   /** In API mode the link is saved in the database, so every POC's browser uses it. */
   setSheetWebhookUrl: (sheetId: string, url: string) => Promise<{ ok: boolean; message?: string }>;
-  /** Re-sends every record of a service to its sheet in one post (Diesel so far). Must be called from a click. */
+  /** Re-sends every record of a service to its sheet in one post (Diesel, EB-DG). Must be called from a click. */
   syncSheetNow: (sheetId: string) => { ok: boolean; message: string };
+  /**
+   * Files one EB-DG day: saves it (database, or this device in demo mode),
+   * then copies it to the site's EB_DG_B2B / EB_DG_B2C tab. Call it straight
+   * from the Submit click, before any await, so the sheet popup is allowed.
+   */
+  submitEbDgEntry: (
+    row: EbDgRow,
+    channel: EbDgChannel,
+    extras?: Record<string, unknown>,
+    amend?: boolean
+  ) => Promise<EbDgSubmitResult>;
 
   // Master Data — live read from WarehouseOS_MasterData (POC_Master / Site_Master / Service_Registry),
   // per MASTERDATA.md. Raw rows only; not yet the source of truth for `warehouses`/`users` above.
@@ -307,7 +329,10 @@ interface AppContextType {
   setMasterDataSpreadsheetId: (id: string) => void;
   pocMasterRows: PocMaster[];
   siteMasterRows: SiteMaster[];
+  /** Service_Registry as the screens use it: the sheet's rows plus services the app always offers (Fire Pump Healthiness). */
   serviceRegistryRows: ServiceRegistry[];
+  /** Exactly the rows the Master Data sheet holds — for the Master Data screen. */
+  masterServiceRegistryRows: ServiceRegistry[];
   masterAuditRows: MasterAudit[];
   dropdownLists: Record<string, string[]>;
   lastMasterDataSyncAt: string | null;
@@ -330,7 +355,7 @@ interface AppContextType {
   /** Set when the API answered but this person cannot use the app: not signed in, no access row, server down. */
   accessProblem: ApiError | null;
   /** EB-DG entries (site + date) for the Control Room. */
-  ebdgRows: { Site_Code: string; Date: string }[];
+  ebdgRows: EbDgRecord[];
 
   // Reset & Notifications
   resetToDefaultData: () => void;
@@ -374,7 +399,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [dataMode, setDataMode] = useState<DataMode>('loading');
   const [accessProblem, setAccessProblem] = useState<ApiError | null>(null);
   /** EB-DG entries (site + date) — what the Control Room needs to mark EB-DG done. */
-  const [ebdgRows, setEbdgRows] = useState<{ Site_Code: string; Date: string }[]>([]);
+  const [ebdgRows, setEbdgRows] = useState<EbDgRecord[]>([]);
 
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'users');
@@ -772,6 +797,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(STORAGE_KEY_PREFIX + 'dieselAuditLog', JSON.stringify(dieselAuditLog));
   }, [dieselAuditLog]);
 
+  const [firePumpLogs, setFirePumpLogs] = useState<FirePumpLog[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'firePumpLogs');
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [dailySiteLogs, setDailySiteLogs] = useState<DailySiteLog[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'dailySiteLogs');
     return saved ? JSON.parse(saved) : INITIAL_DAILY_SITE_LOGS;
@@ -812,7 +847,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [operationalSheets, setOperationalSheets] = useState<OperationalSheetDef[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'operationalSheets');
-    return saved ? JSON.parse(saved) : OPERATIONAL_SHEETS;
+    // A list saved before a built-in service changed keeps its questions, but
+    // takes the app's current definition (Fire Pump Healthiness replaced the
+    // old Fire Safety sheet).
+    return saved ? refreshBuiltInSheets(JSON.parse(saved) as OperationalSheetDef[], OPERATIONAL_SHEETS, serviceCodeFor) : OPERATIONAL_SHEETS;
   });
 
   const [sheetRecords, setSheetRecords] = useState<Record<string, any[]>>(() => {
@@ -901,6 +939,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (dataMode === 'demo') localStorage.setItem(STORAGE_KEY_PREFIX + 'dailySiteLogs', JSON.stringify(dailySiteLogs));
   }, [dailySiteLogs]);
+
+  useEffect(() => {
+    if (dataMode !== 'demo') return;
+    try {
+      localStorage.setItem(STORAGE_KEY_PREFIX + 'firePumpLogs', JSON.stringify(firePumpLogs));
+    } catch {
+      /* demo photos are data URLs; a full browser store keeps the entry in memory only */
+    }
+  }, [firePumpLogs]);
 
   useEffect(() => {
     if (dataMode !== 'demo') return;
@@ -3032,6 +3079,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'submissions');
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'dieselLogs');
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'dailySiteLogs');
+    localStorage.removeItem(STORAGE_KEY_PREFIX + 'firePumpLogs');
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'operationalSheets');
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'sheetRecords');
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'currentUser');
@@ -3114,13 +3162,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     void load<DieselLog[]>('/diesel?limit=5000', setDieselLogs, 'diesel requests');
     void load<Vendor[]>('/vendors', setVendors, 'vendors');
     void load<DailySiteLog[]>('/daily-site?limit=2000', setDailySiteLogs, 'daily site reports');
+    void load<FirePumpLog[]>('/fire-pump?limit=2000', setFirePumpLogs, 'fire pump checks');
     void load<Notice[]>('/notices', setAllNotices, 'the noticeboard');
-    // This month's EB-DG entries — enough for the Control Room's daily status.
-    void load<{ Site_Code: string; Date: string }[]>(
-      `/ebdg/rows?from=${new Date().toISOString().slice(0, 7)}-01&limit=5000`,
-      setEbdgRows,
-      'EB-DG entries'
-    );
+    // Full rows, not only this month: Records shows every entry in the sheet's
+    // own columns. The Control Room picks today's out of the same list.
+    void load<EbDgRecord[]>('/ebdg/rows?limit=5000', setEbdgRows, 'EB-DG entries');
     return () => {
       cancelled = true;
     };
@@ -3129,16 +3175,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Demo mode: EB-DG entries live in the EB-DG form's own browser storage.
   useEffect(() => {
     if (dataMode !== 'demo') return;
-    const rows: { Site_Code: string; Date: string }[] = [];
-    for (const key of ['wos_ebdg_EB_DG_B2B_rows', 'wos_ebdg_EB_DG_B2C_rows']) {
-      try {
-        const parsed = JSON.parse(localStorage.getItem(key) || '[]');
-        if (Array.isArray(parsed)) rows.push(...parsed);
-      } catch {
-        /* unreadable demo data counts as none */
-      }
-    }
-    setEbdgRows(rows);
+    setEbdgRows(loadAllLocalRows().map(e => e.row));
   }, [dataMode]);
 
   const submitDieselProcurement: AppContextType['submitDieselProcurement'] = async data => {
@@ -3227,10 +3264,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const syncSheetNow: AppContextType['syncSheetNow'] = sheetId => {
-    if (sheetId !== 'SHEET_DIESEL') return { ok: false, message: 'Send-all is available for Diesel so far.' };
+    if (sheetId !== 'SHEET_DIESEL' && sheetId !== 'SHEET_EB_DG') {
+      return { ok: false, message: 'Send-all is available for Diesel and EB-DG so far.' };
+    }
     if (!sheetWebhookUrls[sheetId]) return { ok: false, message: 'Link the sheet first.' };
     const win = reserveSheetWindow(sheetId);
     if (!win) return { ok: false, message: 'Pop-ups are blocked for this site. Allow them, then press again.' };
+    if (sheetId === 'SHEET_EB_DG') return sendAllEbDgToSheet(win);
     // One post for everything; a large batch needs longer before the window closes.
     sendIntoSheetWindow(win, buildDieselSheetBatch(dieselLogs, window.location.origin), 45000);
     return {
@@ -3238,6 +3278,125 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       message: `Sent ${dieselLogs.length} requests. Rows already in the sheet are updated, missing ones added. Keep the small window open until it closes itself.`
     };
   };
+
+  /** Which tab a site's EB-DG rows go to — the site's channel, B2B when unknown. */
+  const ebDgChannelOf = (siteCode: string): EbDgChannel =>
+    sheetForChannel(warehouses.find(w => w.id === siteCode)?.channel ?? 'B2B');
+
+  /**
+   * EB-DG's "Send all to sheet". The window is already open (reserved in the
+   * click); the rows are fetched after, then posted into it in one batch that
+   * carries each row's own tab.
+   */
+  const sendAllEbDgToSheet = (win: SheetWindow): { ok: boolean; message: string } => {
+    if (dataMode !== 'api') {
+      const entries = loadAllLocalRows();
+      sendIntoSheetWindow(win, buildEbDgSheetBatch(entries), 45000);
+      return { ok: true, message: `Sent ${entries.length} entries from this device. Keep the small window open until it closes itself.` };
+    }
+    void api
+      .get<EbDgRow[]>('/ebdg/rows?limit=5000')
+      .then(rows => {
+        sendIntoSheetWindow(win, buildEbDgSheetBatch(rows.map(row => ({ row, channel: ebDgChannelOf(row.Site_Code) }))), 45000);
+        notify('success', 'EB-DG sent to the sheet', `${rows.length} entries. Rows already in the sheet are updated, missing ones added.`);
+      })
+      .catch(err => {
+        closeSheetWindow(win);
+        notify('error', 'Could not load EB-DG entries', errorText(err));
+      });
+    return { ok: true, message: 'Sending the latest 5,000 entries. Keep the small window open until it closes itself.' };
+  };
+
+  const submitEbDgEntry: AppContextType['submitEbDgEntry'] = async (row, channel, extras, amend) => {
+    const sheetWindow = reserveSheetWindow('SHEET_EB_DG'); // before any await — see reserveSheetWindow
+    let result: EbDgSubmitResult;
+    try {
+      result = await ebDgRepositoryFor(dataMode).submit(row, channel, extras, amend);
+    } catch (err) {
+      result = { success: false, message: errorText(err) };
+    }
+    if (!result.success) {
+      closeSheetWindow(sheetWindow);
+      return result;
+    }
+    // Records shows the entry straight away, and the Control Room counts it filed.
+    const status = result.mode === 'updated' ? 'Amended' : 'Submitted';
+    const record: EbDgRecord = { ...row, ...(extras ?? {}), Status: status };
+    setEbdgRows(prev => [record, ...prev.filter(r => r.Record_ID !== row.Record_ID)]);
+    if (sheetWindow) {
+      sendIntoSheetWindow(sheetWindow, buildEbDgSheetPayload(row, channel, status));
+      return { ...result, message: `${result.message} Copied to ${channel}.` };
+    }
+    return sheetWebhookUrls['SHEET_EB_DG']
+      ? result
+      : { ...result, message: `${result.message} No sheet is linked yet, so it is not in ${channel}.` };
+  };
+
+  /**
+   * The server scores the check (OK / CRITICAL) and refuses a failed check
+   * without its remark and photo; demo mode applies the same rules from
+   * src/lib/firePump/checks.ts on this device.
+   */
+  const submitFirePumpLog: AppContextType['submitFirePumpLog'] = async payload => {
+    const keep = (log: FirePumpLog) =>
+      setFirePumpLogs(prev => [log, ...prev.filter(l => !(l.siteCode === log.siteCode && l.date === log.date))]);
+
+    if (dataMode !== 'api') {
+      const existing = firePumpLogs.find(l => l.siteCode === payload.site && l.date === payload.date);
+      if (existing && !payload.amend) {
+        return {
+          ok: false,
+          message: 'The fire pump check for this site and date has already been filed.',
+          alreadyFiled: { by: existing.submittedByName || existing.submittedBy || '', at: existing.submittedAt || '' },
+        };
+      }
+      const asked = new Set(visibleChecks(payload.answers).map(c => c.key));
+      const answers = Object.fromEntries(Object.entries(payload.answers).filter(([k]) => asked.has(k as FirePumpKey))) as FirePumpAnswers;
+      const score = scoreFirePump(answers);
+      const failed = new Set<string>(score.issues);
+      const log: FirePumpLog = {
+        ...(payload.extras ?? {}),
+        id: existing?.id ?? `FP-${Date.now()}`,
+        siteCode: payload.site,
+        date: payload.date,
+        submittedAt: new Date().toISOString(),
+        submittedBy: currentUser.email,
+        submittedByName: currentUser.fullName,
+        answers,
+        remarks: Object.fromEntries(Object.entries(payload.remarks).filter(([k]) => failed.has(k))),
+        photos: Object.fromEntries(Object.entries(payload.photos).filter(([k]) => failed.has(k))),
+        hydrantPressureBar: payload.pressure === '' || payload.pressure == null ? null : Number(payload.pressure),
+        overallStatus: score.overall,
+        issuesCount: score.issues.length,
+      };
+      keep(log);
+      return { ok: true, log, message: existing ? 'Fire pump check updated.' : 'Fire pump check filed.' };
+    }
+
+    try {
+      const saved = await api.post<FirePumpLog>('/fire-pump', { ...payload, submittedByName: currentUser.fullName });
+      keep(saved);
+      return { ok: true, log: saved, message: payload.amend ? 'Fire pump check updated.' : 'Fire pump check filed.' };
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'DUPLICATE') {
+        const d = (err.details ?? {}) as { submittedBy?: string; submittedAt?: string };
+        return { ok: false, message: err.message, alreadyFiled: { by: d.submittedBy ?? '', at: d.submittedAt ?? '' } };
+      }
+      return { ok: false, message: errorText(err) };
+    }
+  };
+
+  /**
+   * Records, the Control Room and the bell read every service as flat rows in
+   * sheetRecords. Fire pump checks live in their own table, so their rows are
+   * added here rather than stored twice.
+   */
+  const serviceRegistryView = useMemo(() => withBuiltInServices(serviceRegistryRows), [serviceRegistryRows]);
+
+  const sheetRecordsView = useMemo(
+    () => ({ ...sheetRecords, SHEET_FIRE: firePumpLogs.map(l => firePumpRecord(l, window.location.origin)) }),
+    [sheetRecords, firePumpLogs]
+  );
 
   // The server scores the report and enforces one per site per day, so a
   // second POC at the same site gets "already filed" even from another phone.
@@ -3580,7 +3739,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         buildDieselMailPreview,
         operationalSheets,
         setOperationalSheets,
-        sheetRecords,
+        sheetRecords: sheetRecordsView,
+        firePumpLogs,
+        submitFirePumpLog,
         addSheetRecord,
         addOperationalSheet,
         updateOperationalSheet,
@@ -3624,11 +3785,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         sheetWebhookUrls,
         setSheetWebhookUrl,
         syncSheetNow,
+        submitEbDgEntry,
         masterDataSpreadsheetId,
         setMasterDataSpreadsheetId,
         pocMasterRows,
         siteMasterRows,
-        serviceRegistryRows,
+        serviceRegistryRows: serviceRegistryView,
+        masterServiceRegistryRows: serviceRegistryRows,
         masterAuditRows,
         dropdownLists,
         lastMasterDataSyncAt,

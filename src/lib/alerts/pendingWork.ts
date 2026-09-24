@@ -9,7 +9,8 @@
  *
  * This counts the same way for everyone: the services still pending for
  * their period at the sites in view, plus the diesel requests waiting on
- * somebody. Pass the sites already narrowed to what the person may see.
+ * somebody, plus today's safety checks that came back CRITICAL (a failed
+ * fire pump check). Pass the sites already narrowed to what the person may see.
  */
 
 import {
@@ -20,7 +21,7 @@ import {
 } from '../controlRoom/siteServiceStatus';
 
 export interface PendingItem {
-  kind: 'service' | 'diesel';
+  kind: 'service' | 'diesel' | 'critical';
   /** Service code, or 'DIESEL'. */
   code: string;
   /** What is waiting, in words. */
@@ -36,6 +37,8 @@ export interface PendingWork {
   services: number;
   /** Diesel requests waiting for approval or a POD. */
   diesel: number;
+  /** Today's checks that found a fault (fire pump CRITICAL). */
+  critical: number;
   /** How many sites have anything outstanding. */
   sites: number;
   /** The first few, for a list. `total` is the real count. */
@@ -47,6 +50,15 @@ export interface DieselWaiting {
   status?: string;
   validation?: string;
   uniqueId?: string;
+}
+
+/** A flattened fire pump check (see src/lib/firePump/records.ts). */
+interface CriticalRow {
+  warehouseId?: string;
+  site?: string;
+  date?: string;
+  status?: string;
+  issues?: string;
 }
 
 /** Diesel states that are somebody's turn to act. */
@@ -103,7 +115,30 @@ export function pendingWork(input: {
     }
   }
 
-  return { total: servicesDue + dieselDue, services: servicesDue, diesel: dieselDue, sites: withWork.size, items };
+  // A failed fire check is the most urgent thing on the list, so it goes first.
+  const criticalItems: PendingItem[] = [];
+  for (const row of (records.sheetRecords.SHEET_FIRE ?? []) as CriticalRow[]) {
+    if (row.date !== today || String(row.status).toUpperCase() !== 'CRITICAL') continue;
+    const site = known.get(String(row.warehouseId ?? row.site ?? '').toLowerCase());
+    if (!site) continue;
+    withWork.add(site.id);
+    criticalItems.push({
+      kind: 'critical',
+      code: 'FIRE',
+      label: `Fire pump CRITICAL: ${row.issues || 'a check failed'}`,
+      site: site.name,
+      siteCode: site.id,
+    });
+  }
+
+  return {
+    total: servicesDue + dieselDue + criticalItems.length,
+    services: servicesDue,
+    diesel: dieselDue,
+    critical: criticalItems.length,
+    sites: withWork.size,
+    items: [...criticalItems, ...items].slice(0, MAX_ITEMS),
+  };
 }
 
 /** One line for the bell: honest about what the number counts. */
@@ -111,6 +146,7 @@ export function pendingSummary(work: PendingWork): string {
   if (work.total === 0) return 'Nothing pending today';
   const parts: string[] = [];
   if (work.services) parts.push(`${work.services} ${work.services === 1 ? 'filing' : 'filings'} due`);
+  if (work.critical) parts.push(`${work.critical} critical ${work.critical === 1 ? 'check' : 'checks'}`);
   if (work.diesel) parts.push(`${work.diesel} diesel ${work.diesel === 1 ? 'request' : 'requests'}`);
   const where = work.sites === 1 ? '1 site' : `${work.sites} sites`;
   return `${parts.join(', ')} at ${where}`;

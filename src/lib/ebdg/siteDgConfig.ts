@@ -15,7 +15,7 @@
 import { resolveSiteDgConfig, SiteDgConfig } from '../../types/ebdg';
 
 const DEFAULT_CONFIG: Omit<SiteDgConfig, 'Site_Code'> = {
-  DG_Count: 2,
+  DG_Count: 3, // every site is shown DG 1, 2 and 3; a DG left blank books nothing
   Has_DEF: 'Yes',
   Has_Solar: 'No',
   B_Check_Interval_Hrs: 500,

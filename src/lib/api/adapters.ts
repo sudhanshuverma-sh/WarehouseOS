@@ -80,7 +80,7 @@ export interface SubmissionRow {
 }
 
 /** Services with their own tables and endpoints, never sent as generic entries. */
-export const DEDICATED_SERVICES: ReadonlySet<string> = new Set(['DIESEL', 'EB_DG', 'SITE_ACTIVITY']);
+export const DEDICATED_SERVICES: ReadonlySet<string> = new Set(['DIESEL', 'EB_DG', 'SITE_ACTIVITY', 'FIRE']);
 
 const SHIFTS: readonly Shift[] = ['MORNING', 'EVENING', 'NIGHT'];
 

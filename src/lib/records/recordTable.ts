@@ -105,7 +105,7 @@ export type StatusTone = 'good' | 'wait' | 'bad';
 export function statusTone(value: unknown): StatusTone | null {
   const s = String(value ?? '').toLowerCase();
   if (!s) return null;
-  if (/reject|flag|not delivered|overdue|fail|missing/.test(s)) return 'bad';
+  if (/reject|flag|not delivered|overdue|fail|missing|critical/.test(s)) return 'bad';
   if (/pending|partial|processing|ready|due|warning|awaiting/.test(s)) return 'wait';
   if (/approv|verif|complet|deliver|submit|\bok\b|done|clear|active/.test(s)) return 'good';
   return null;

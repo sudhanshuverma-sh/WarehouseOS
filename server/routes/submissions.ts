@@ -33,6 +33,7 @@ const DEDICATED: Record<string, string> = {
   DIESEL: '/api/diesel',
   EB_DG: '/api/ebdg/submit',
   SITE_ACTIVITY: '/api/daily-site',
+  FIRE: '/api/fire-pump',
 };
 
 const SHIFTS = ['MORNING', 'EVENING', 'NIGHT'];

@@ -65,6 +65,7 @@ const DEDICATED_VIEW: Record<string, string> = {
   SITE_ACTIVITY: 'dailyForm',
   HOUSEKEEPING: 'housekeeping',
   EB_DG: 'ebDg',
+  FIRE: 'firePump',
   DIESEL: 'diesel',
   WASHING: 'washing',
   ADHOC: 'washing',

@@ -29,6 +29,7 @@ import { attachmentRoutes } from './routes/attachments';
 import { extrasFor, iso, runAs, todayInIndia, type RouteDeps } from './routes/common';
 import { complianceRoutes } from './routes/compliance';
 import { dailySiteRoutes } from './routes/dailySite';
+import { firePumpRoutes } from './routes/firePump';
 import { dieselRoutes } from './routes/diesel';
 import { masterRoutes } from './routes/master';
 import { noticeboardRoutes } from './routes/noticeboard';
@@ -349,6 +350,7 @@ export function createRoutes(deps: RouteDeps): Router {
   router.use(masterRoutes(deps));
   router.use(dieselRoutes(deps));
   router.use(dailySiteRoutes(deps));
+  router.use(firePumpRoutes(deps));
   router.use(submissionRoutes(deps));
   router.use(attachmentRoutes(deps));
   router.use(complianceRoutes(deps));

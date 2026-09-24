@@ -64,9 +64,24 @@ describe('pendingWork', () => {
     ]);
   });
 
+  it('puts today’s failed fire pump check first, as critical, and only today’s', () => {
+    const fire = (date: string, status: string, warehouseId = 'ZHPL-DL-01') =>
+      ({ warehouseId, date, status, issues: 'Hydrant boxes OK, Hose reels OK' }) as never;
+    const work = pendingWork({
+      sites,
+      services: [],
+      records: { ...noRecords(), sheetRecords: { SHEET_FIRE: [fire(TODAY, 'CRITICAL'), fire(TODAY, 'OK', 'ZHPL-HR-03'), fire('2026-09-15', 'CRITICAL')] } },
+      dieselLogs: [{ warehouseId: 'GGN3', status: 'Pending Admin Approval', uniqueId: 'DSL-1' }],
+      today: TODAY,
+    });
+    expect(work).toMatchObject({ total: 2, critical: 1, diesel: 1 });
+    expect(work.items[0]).toMatchObject({ kind: 'critical', code: 'FIRE', siteCode: 'ZHPL-DL-01', label: 'Fire pump CRITICAL: Hydrant boxes OK, Hose reels OK' });
+    expect(pendingSummary(work)).toBe('1 critical check, 1 diesel request at 2 sites');
+  });
+
   it('says in one line what the number counts', () => {
-    expect(pendingSummary({ total: 0, services: 0, diesel: 0, sites: 0, items: [] })).toBe('Nothing pending today');
-    expect(pendingSummary({ total: 3, services: 2, diesel: 1, sites: 1, items: [] })).toBe('2 filings due, 1 diesel request at 1 site');
-    expect(pendingSummary({ total: 1, services: 1, diesel: 0, sites: 2, items: [] })).toBe('1 filing due at 2 sites');
+    expect(pendingSummary({ total: 0, services: 0, diesel: 0, critical: 0, sites: 0, items: [] })).toBe('Nothing pending today');
+    expect(pendingSummary({ total: 3, services: 2, diesel: 1, critical: 0, sites: 1, items: [] })).toBe('2 filings due, 1 diesel request at 1 site');
+    expect(pendingSummary({ total: 1, services: 1, diesel: 0, critical: 0, sites: 2, items: [] })).toBe('1 filing due at 2 sites');
   });
 });

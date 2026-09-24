@@ -40,6 +40,7 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   validation_only_for_delivery: 'Only Delivery Only requests are validated.',
   attachment_shape: 'A photo must be JPEG, PNG, WebP or PDF and at most 2 MB, or a Google Drive link.',
   daily_site_log_site_code_log_date_key: 'A report for this site and date has already been filed.',
+  fire_pump_log_site_code_log_date_key: 'The fire pump check for this site and date has already been filed.',
   one_filing_per_period: 'This service has already been filed for this site and period.',
   notice_audience: 'Say who this notice is for: everyone, one site, or one person.',
   notice_link_is_drive: 'Share the document as a Google Drive or Docs link.',

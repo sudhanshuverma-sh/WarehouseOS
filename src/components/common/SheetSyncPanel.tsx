@@ -32,7 +32,7 @@ export const SheetSyncPanel: React.FC<SheetSyncPanelProps> = ({ sheetId, service
   if (!caps.canConfigureIntegrations) return null;
 
   const linked = Boolean(sheetWebhookUrls[sheetId]);
-  const canSendAll = sheetId === 'SHEET_DIESEL';
+  const canSendAll = sheetId === 'SHEET_DIESEL' || sheetId === 'SHEET_EB_DG';
 
   const save = async () => {
     const check = validateSheetUrl(url);

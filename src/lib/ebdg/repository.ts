@@ -1,19 +1,18 @@
 /**
- * EB-DG persistence — behind an interface (MASTERDATA.md I8), so the app
- * moves from Google Sheets to Firestore later without touching the form or
- * calculate.ts. See ../../../MASTERDATA.md §0.3 and §11.
+ * EB-DG persistence — behind an interface (MASTERDATA.md I8), so the form and
+ * calculate.ts do not care where a row lives.
  *
- * LocalEbDgRepository is today's implementation: it stands in for the two
- * Google Sheets tabs using localStorage, exactly the way the rest of this
- * app's `sheetRecords` already does (see src/context/AppContext.tsx) — one
- * JSON array per tab, keyed by Record_ID. A Firestore- or Apps-Script-backed
- * implementation of EbDgRepository is a drop-in replacement; nothing that
- * calls this interface needs to change.
+ * ApiEbDgRepository is the real one: the ebdg_daily table through /api/ebdg,
+ * the same way Diesel saves to diesel_request. LocalEbDgRepository keeps the
+ * two tabs in localStorage for demo mode — one JSON array per tab, keyed by
+ * Record_ID. Neither writes to the Google Sheet: that copy is made by the
+ * browser after a successful save (submitEbDgEntry in AppContext), as it is
+ * for Diesel.
  */
 
 import { EbDgChannel, EbDgRow } from '../../types/ebdg';
 import { rowToOrderedValues } from './columns';
-import { SheetSyncingEbDgRepository } from './sheetWriter';
+import { api as defaultApi, ApiClient, ApiError, DataMode, qs } from '../api/client';
 
 export interface SubmitResult {
   success: boolean;
@@ -87,7 +86,7 @@ export function anyLaterRows(rows: EbDgRow[], siteCode: string, afterDate: strin
 }
 
 // ---------------------------------------------------------------------
-// LocalEbDgRepository — localStorage-backed, today's implementation.
+// LocalEbDgRepository — localStorage-backed, for demo mode.
 // ---------------------------------------------------------------------
 
 const STORAGE_KEY: Record<EbDgChannel, string> = {
@@ -164,10 +163,77 @@ export class LocalEbDgRepository implements EbDgRepository {
   }
 }
 
-/**
- * The app-wide instance: saves locally first (so carry-forward survives a
- * dropped warehouse link), then pushes to the EB_DG_B2B / EB_DG_B2C tab when
- * an Apps Script URL has been configured. Swapping in a Firestore-backed
- * inner repository later changes this line and nothing else.
- */
-export const ebDgRepository: EbDgRepository = new SheetSyncingEbDgRepository(new LocalEbDgRepository());
+// ---------------------------------------------------------------------
+// ApiEbDgRepository — the ebdg_daily table, through /api/ebdg.
+//
+// One table holds both channels (the site decides which tab its row is
+// copied to), so `channel` only matters for where the sheet copy goes.
+// Row level security already limits a POC to their own sites' rows.
+// ---------------------------------------------------------------------
+
+export class ApiEbDgRepository implements EbDgRepository {
+  constructor(private readonly client: ApiClient = defaultApi) {}
+
+  async getPreviousRow(siteCode: string, beforeDate: string, _channel?: EbDgChannel): Promise<EbDgRow | null> {
+    return this.client.get<EbDgRow | null>(`/ebdg/previous${qs({ site: siteCode, date: beforeDate })}`);
+  }
+
+  async getRowByDate(siteCode: string, date: string, _channel?: EbDgChannel): Promise<EbDgRow | null> {
+    return this.client.get<EbDgRow | null>(`/ebdg/row${qs({ site: siteCode, date })}`);
+  }
+
+  async hasLaterRows(siteCode: string, afterDate: string, _channel?: EbDgChannel): Promise<boolean> {
+    const res = await this.client.get<{ later: boolean }>(`/ebdg/later${qs({ site: siteCode, date: afterDate })}`);
+    return Boolean(res?.later);
+  }
+
+  async submit(
+    row: EbDgRow,
+    _channel: EbDgChannel,
+    extras?: Record<string, unknown>,
+    amend = false,
+  ): Promise<SubmitResult> {
+    // The same guard as the local save: a row that has drifted from the 109
+    // columns is refused here, before it reaches the database or the sheet.
+    rowToOrderedValues(row);
+    try {
+      await this.client.post('/ebdg/submit', {
+        ...row,
+        ...(extras && Object.keys(extras).length > 0 ? { extras } : {}),
+        amend,
+      });
+      return amend
+        ? { success: true, mode: 'updated', message: `Updated existing entry ${row.Record_ID}.` }
+        : { success: true, mode: 'created', message: `Saved ${row.Record_ID}.` };
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'DUPLICATE') {
+        const d = (err.details ?? {}) as { submittedBy?: string; submittedAt?: string };
+        return {
+          success: false,
+          message: `An entry for ${row.Site_Code} on ${row.Date} was already filed.`,
+          alreadyFiled: { by: d.submittedBy ?? '', at: d.submittedAt ?? '' },
+        };
+      }
+      return { success: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  async listBySite(siteCode: string, _channel: EbDgChannel, limit = 10): Promise<EbDgRow[]> {
+    return this.client.get<EbDgRow[]>(`/ebdg/rows${qs({ site: siteCode, limit })}`);
+  }
+}
+
+export const localEbDgRepository = new LocalEbDgRepository();
+export const apiEbDgRepository = new ApiEbDgRepository();
+
+/** The database when the app runs against the API; this device in demo mode. */
+export function ebDgRepositoryFor(mode: DataMode): EbDgRepository {
+  return mode === 'api' ? apiEbDgRepository : localEbDgRepository;
+}
+
+/** Every row this device holds, both tabs — the demo-mode "Send all to sheet". */
+export function loadAllLocalRows(): { row: EbDgRow; channel: EbDgChannel }[] {
+  return (Object.keys(STORAGE_KEY) as EbDgChannel[]).flatMap(channel =>
+    loadRows(channel).map(row => ({ row, channel }))
+  );
+}

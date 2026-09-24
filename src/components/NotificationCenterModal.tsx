@@ -32,6 +32,7 @@ const VIEW_FOR: Record<string, string> = {
   DIESEL: 'diesel',
   WASHING: 'washing',
   ADHOC: 'washing',
+  FIRE: 'firePump',
 };
 
 interface NotificationCenterModalProps {
@@ -73,15 +74,15 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     () =>
       work.items.map((item, i) => ({
         id: `${item.kind}-${item.siteCode}-${item.code}-${i}`,
-        type: item.kind === 'diesel' ? 'APPROVAL_NEEDED' : 'PENDING_TODAY',
-        urgency: item.kind === 'diesel' ? 'HIGH' : 'MEDIUM',
+        type: item.kind === 'critical' ? 'CRITICAL_DEVIATION' : item.kind === 'diesel' ? 'APPROVAL_NEEDED' : 'PENDING_TODAY',
+        urgency: item.kind === 'critical' || item.kind === 'diesel' ? 'HIGH' : 'MEDIUM',
         title: item.label,
         description: `${item.site} (${item.siteCode}), ${currentDate}`,
         targetView: VIEW_FOR[item.code] ?? 'pocFiling',
         serviceId: item.code,
         facility: item.site,
         facilityCode: item.siteCode,
-        actionText: item.kind === 'diesel' ? 'Open the diesel ledger' : 'Open the form',
+        actionText: item.kind === 'critical' ? 'Open the check' : item.kind === 'diesel' ? 'Open the diesel ledger' : 'Open the form',
       })),
     [work, currentDate],
   );

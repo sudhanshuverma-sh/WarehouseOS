@@ -6,6 +6,7 @@ import { POCFilingView } from './components/POCFilingView';
 import { DashboardOverview } from './components/DashboardOverview';
 import { DailySiteActivityForm } from './components/DailySiteActivityForm';
 import { HousekeepingForm } from './components/forms/HousekeepingForm';
+import { FirePumpHealthForm } from './components/forms/FirePumpHealthForm';
 import { EbDgDailyEntryForm } from './components/forms/EbDgDailyEntryForm';
 import { WashingAdhocForm } from './components/forms/WashingAdhocForm';
 import { OperationalSheetsHub } from './components/OperationalSheetsHub';
@@ -112,6 +113,8 @@ const MainContent: React.FC = () => {
       navigateTo('washing');
     } else if (sheetId === 'SHEET_DIESEL') {
       navigateTo('diesel');
+    } else if (sheetId === 'SHEET_FIRE') {
+      navigateTo('firePump');
     } else {
       navigateTo('database');
     }
@@ -227,6 +230,13 @@ const MainContent: React.FC = () => {
               <EbDgDailyEntryForm
                 onBack={handleGoBack}
                 onSuccess={() => navigateTo('database')}
+              />
+            )}
+
+            {currentView === 'firePump' && (
+              <FirePumpHealthForm
+                onBack={handleGoBack}
+                onSuccess={() => undefined}
               />
             )}
 

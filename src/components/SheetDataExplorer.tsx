@@ -30,6 +30,7 @@ import { controlRoomServices, controlRoomSites, siteMatches, type ControlRoomSit
 import { serviceCodeFor, sheetIdFor } from '../lib/services/serviceCodes';
 import { BUILT_IN_FORM_SERVICES, cadenceLabel } from '../lib/services/formBuilder';
 import { DIESEL_EXPORT } from '../lib/export/dieselExport';
+import { EBDG_SHEET_HEADER, sheetValue, type EbDgRecord } from '../lib/ebdg/sheetWriter';
 import type { ExportSpec } from '../lib/export/exporter';
 import { applyColumnFilters, clearAllFilters, countActiveFilters, type ColumnFilters } from '../lib/table/columnFilters';
 import {
@@ -58,8 +59,8 @@ import { ColumnsMenu, DragHandle, ExpandButton, TableFullscreen, useColumnLayout
  * The form list comes from Master Data (Service_Registry), narrowed to the
  * services this person holds; entries are narrowed to the sites they can
  * see. Pick a form, narrow by day, site, text or any column, open an entry
- * to read it in full, and export exactly what the table shows. Diesel keeps
- * its sheet's columns and its approve / reject decision.
+ * to read it in full, and export exactly what the table shows. Diesel and EB-DG
+ * keep their Google Sheet's columns; Diesel keeps its approve / reject decision.
  */
 
 interface SheetDataExplorerProps {
@@ -229,6 +230,9 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
   }, [openRow]);
 
   const isDiesel = service?.code === 'DIESEL';
+  const isEbDg = service?.code === 'EB_DG';
+  // Both show their Google Sheet's own columns, first column frozen.
+  const sheetShaped = isDiesel || isEbDg;
   const fields = useMemo(
     () => (service ? operationalSheets.find((s) => s.id === sheetIdFor(service.code))?.fieldsConfig ?? [] : []),
     [service, operationalSheets],
@@ -239,6 +243,10 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
     // Diesel shows its Google Sheet's own headers and values.
     if (isDiesel) {
       return DIESEL_EXPORT.columns.map((c) => ({ key: c.header, label: c.header, value: (r: RecordRow) => c.value(r as unknown as DieselLog) }));
+    }
+    // EB-DG too: the EB_DG_B2B / EB_DG_B2C header, the same cells the sheet copy writes.
+    if (isEbDg) {
+      return EBDG_SHEET_HEADER.map((h) => ({ key: h, label: h, value: (r: RecordRow) => sheetValue(h, r as unknown as EbDgRecord) }));
     }
     return columnsFor(raw, fields).map((c) =>
       c.key === 'site'
@@ -251,7 +259,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
           }
         : c,
     );
-  }, [isDiesel, raw, fields, siteByCode]);
+  }, [isDiesel, isEbDg, raw, fields, siteByCode]);
 
   // Each form remembers its own column order and which columns are hidden.
   const { layout, move, toggle, reset, dragProps, customised } = useColumnLayout(
@@ -356,10 +364,10 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
   const hasDecision = isDiesel && caps.canApprove;
 
   // Date and Site stay in view while the questions scroll sideways (Diesel: its first column).
-  const stickyCount = isDiesel ? 1 : 2;
+  const stickyCount = sheetShaped ? 1 : 2;
   const stickyCell = (index: number, head = false) => {
     if (index >= stickyCount) return '';
-    const place = index === 0 ? `left-0 ${isDiesel ? '' : 'w-28 min-w-28 max-w-28'}` : 'left-28';
+    const place = index === 0 ? `left-0 ${sheetShaped ? '' : 'w-28 min-w-28 max-w-28'}` : 'left-28';
     const edge = index === stickyCount - 1 ? 'shadow-[inset_-1px_0_0_var(--color-slate-200)]' : '';
     return `sticky ${place} ${edge} ${head ? 'z-20' : 'z-1'}`;
   };

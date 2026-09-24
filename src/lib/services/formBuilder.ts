@@ -23,7 +23,7 @@ const SERVICE_CODE = /^[A-Z][A-Z0-9_]*$/;
  * question added later is stored beside them and shown at the end of the
  * form, so every service can gain a column.
  */
-export const BUILT_IN_FORM_SERVICES: ReadonlySet<string> = new Set(['SITE_ACTIVITY', 'DIESEL', 'EB_DG', 'HOUSEKEEPING', 'WASHING', 'ADHOC']);
+export const BUILT_IN_FORM_SERVICES: ReadonlySet<string> = new Set(['SITE_ACTIVITY', 'DIESEL', 'EB_DG', 'HOUSEKEEPING', 'WASHING', 'ADHOC', 'FIRE']);
 
 /**
  * The two halves of one of those services' `fieldsConfig`.

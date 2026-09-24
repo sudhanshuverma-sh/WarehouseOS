@@ -8,13 +8,14 @@ import {
   EbDgChannel, EbDgInput, EbDgRow, EbDgSeedOpenings, Num, SiteDgConfig
 } from '../../types/ebdg';
 import { calculate, validate, ValidationIssue, addDays, isBlank } from '../../lib/ebdg/calculate';
-import { ebDgRepository } from '../../lib/ebdg/repository';
+import { ebDgRepositoryFor } from '../../lib/ebdg/repository';
 import { getSiteDgConfig } from '../../lib/ebdg/siteDgConfig';
 // The editable-field list, the blank-start rule, and the carried constants all
 // live in one place — pinned against the Column_Guide by columnContract.test.ts,
 // so the form cannot drift into offering a calculated column as an input box.
 import { createEmptyInput as emptyInput, prefillConstants, rowToInput } from '../../lib/ebdg/input';
-import { getEbDgWebhookUrl, setEbDgWebhookUrl, rowsToCsv } from '../../lib/ebdg/sheetWriter';
+import { rowsToCsv } from '../../lib/ebdg/sheetWriter';
+import { SheetSyncPanel } from '../common/SheetSyncPanel';
 import { capabilitiesFor } from '../../lib/permissions';
 import { Toggle } from '../common/Toggle';
 import { AlreadyFiled } from '../common/AlreadyFiled';
@@ -122,6 +123,9 @@ function DgBlock({
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
           <Fuel className="w-4 h-4 text-amber-600" /> DG {n}
+          {/* Every site is shown three DGs; most have two. Blank stays blank
+              in the sheet — an untouched DG books no diesel and no hours. */}
+          {n === 3 && <span className="text-[11px] font-medium text-slate-400">— leave blank if this site has no third DG</span>}
         </h2>
         {status && (
           // The only pulsing thing in the app, deliberately. A DG past its
@@ -228,7 +232,8 @@ function DgBlock({
 }
 
 export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, onSuccess }) => {
-  const { currentUser, warehouses, currentDate, notify } = useApp();
+  const { currentUser, warehouses, currentDate, notify, dataMode, submitEbDgEntry, sheetWebhookUrls } = useApp();
+  const ebDgRepository = useMemo(() => ebDgRepositoryFor(dataMode), [dataMode]);
 
   const caps = useMemo(() => capabilitiesFor(currentUser), [currentUser]);
   const activeWh = warehouses.find(w => w.id === currentUser.warehouseId) || warehouses[0];
@@ -244,13 +249,10 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
   const [prevRow, setPrevRow] = useState<EbDgRow | null>(null);
   const [existingRow, setExistingRow] = useState<EbDgRow | null>(null);
   const [isBackdated, setIsBackdated] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [overrideWarnings, setOverrideWarnings] = useState(false);
-  const [webhookUrl, setWebhookUrl] = useState<string>(() => getEbDgWebhookUrl());
-  const [urlDraft, setUrlDraft] = useState<string>(() => getEbDgWebhookUrl());
-  const [showSyncSetup, setShowSyncSetup] = useState(false);
 
   // Questions an admin added to this service after the screen was built.
   const extras = useExtraQuestions('EB_DG', siteCode);
@@ -261,15 +263,23 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
   // Load previous row, any existing entry for this date, draft, and the
   // back-dated-entry flag whenever site or date changes.
   useEffect(() => {
-    if (!siteCode || !date) return;
+    if (!siteCode || !date || dataMode === 'loading') return;
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [prev, existing, laterExists] = await Promise.all([
-        ebDgRepository.getPreviousRow(siteCode, date, channel),
-        ebDgRepository.getRowByDate(siteCode, date, channel),
-        ebDgRepository.hasLaterRows(siteCode, date, channel)
-      ]);
+      let prev: EbDgRow | null, existing: EbDgRow | null, laterExists: boolean;
+      try {
+        [prev, existing, laterExists] = await Promise.all([
+          ebDgRepository.getPreviousRow(siteCode, date, channel),
+          ebDgRepository.getRowByDate(siteCode, date, channel),
+          ebDgRepository.hasLaterRows(siteCode, date, channel)
+        ]);
+      } catch (err) {
+        // Without yesterday's closing every opening would read as a first-ever
+        // entry, so the form stays locked (loading) rather than guessing.
+        if (!cancelled) notify('error', 'Could not load previous readings', err instanceof Error ? err.message : String(err));
+        return;
+      }
       if (cancelled) return;
       setPrevRow(prev);
       setExistingRow(existing);
@@ -293,7 +303,7 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [siteCode, date, channel]);
+  }, [siteCode, date, channel, ebDgRepository, dataMode]);
 
   // Autosave a local draft — warehouse connectivity is unreliable.
   useEffect(() => {
@@ -310,7 +320,7 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
   // A day someone has already filed needs Amend pressed first, so the
   // replacement is deliberate rather than a side effect of opening the form.
   const canSubmit =
-    errors.length === 0 && (warnings.length === 0 || overrideWarnings) && !isSubmitting && (!existingRow || amending);
+    errors.length === 0 && (warnings.length === 0 || overrideWarnings) && !isSubmitting && !loading && (!existingRow || amending);
 
   /**
    * Downloads this site's rows in the destination tab's exact column order,
@@ -348,7 +358,7 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
 
     setIsSubmitting(true);
     const row = calculate(input, prevRow, config, meta, seed);
-    const result = await ebDgRepository.submit(row, channel, extraAnswers, amending);
+    const result = await submitEbDgEntry(row, channel, extraAnswers, amending);
     setIsSubmitting(false);
     if (!result.success) {
       // A day that is already filed is not an error, it is a decision the
@@ -449,20 +459,16 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
         )}
 
         {/* Where the row goes. Admin-only: a site POC files readings, they never
-            point the app at a different spreadsheet. Entries always save on this
-            device first, so a dropped warehouse link never costs a reading —
-            this panel only configures the onward push. */}
+            point the app at a different spreadsheet. The link is the same one
+            Diesel uses — saved once, used by every POC's browser. */}
         {caps.canConfigureIntegrations && (
         <div className="pt-3 border-t border-slate-100 space-y-2">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
-              <Link2 className="w-3.5 h-3.5" /> Sheet sync → {channel}
+              <Link2 className="w-3.5 h-3.5" /> Google Sheet → {channel}
             </span>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setShowSyncSetup(v => !v)}
-                className="text-[11px] font-bold text-slate-600 hover:text-slate-900 underline cursor-pointer">
-                {webhookUrl ? 'Change URL' : 'Set up'}
-              </button>
+              <SheetSyncPanel sheetId="SHEET_EB_DG" serviceLabel="EB-DG" caps={caps} />
               <button type="button" onClick={handleExportCsv}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer">
                 <Download className="w-3.5 h-3.5" /> Export CSV
@@ -470,28 +476,11 @@ export const EbDgDailyEntryForm: React.FC<EbDgDailyEntryFormProps> = ({ onBack, 
             </div>
           </div>
 
-          <div className={`text-[11px] ${webhookUrl ? 'text-emerald-700' : 'text-amber-700'}`}>
-            {webhookUrl
-              ? 'Connected — each save is pushed to the tab, matched on Record_ID.'
-              : 'Not connected. Entries save on this device; use Export CSV to load them into the tab, or deploy scripts/EbDg_Code.gs and paste its /exec URL here.'}
+          <div className={`text-[11px] ${sheetWebhookUrls['SHEET_EB_DG'] ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {sheetWebhookUrls['SHEET_EB_DG']
+              ? 'Connected — each save is copied to the tab, matched on Record_ID.'
+              : 'Not connected. Entries still save; deploy scripts/EbDg_Code.gs in the EB-DG sheet and paste its /exec URL under Link sheet.'}
           </div>
-
-          {showSyncSetup && (
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="url"
-                value={urlDraft}
-                onChange={e => setUrlDraft(e.target.value)}
-                placeholder="https://script.google.com/…/exec"
-                className="flex-1 min-w-[240px] px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono"
-              />
-              <button type="button"
-                onClick={() => { setEbDgWebhookUrl(urlDraft); setWebhookUrl(urlDraft.trim()); setShowSyncSetup(false); notify('success', 'Sheet sync updated', urlDraft.trim() ? `Saves now push to ${channel}.` : 'Sheet sync turned off.'); }}
-                className="px-3 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg cursor-pointer">
-                Save URL
-              </button>
-            </div>
-          )}
         </div>
         )}
 

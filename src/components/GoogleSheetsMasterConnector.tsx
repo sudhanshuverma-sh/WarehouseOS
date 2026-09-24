@@ -100,7 +100,8 @@ export const GoogleSheetsMasterConnector: React.FC<{ onBack?: () => void }> = ({
     masterDataAppsScriptUrl,
     pocMasterRows,
     siteMasterRows,
-    serviceRegistryRows,
+    // What the sheet holds — not the always-offered services the app adds.
+    masterServiceRegistryRows: serviceRegistryRows,
     masterAuditRows,
     dropdownLists,
     lastMasterDataSyncAt,

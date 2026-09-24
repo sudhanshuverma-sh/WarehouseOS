@@ -78,7 +78,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
         urgency: item.kind === 'critical' || item.kind === 'diesel' ? 'HIGH' : 'MEDIUM',
         title: item.label,
         description: `${item.site} (${item.siteCode}), ${currentDate}`,
-        targetView: VIEW_FOR[item.code] ?? 'pocFiling',
+        targetView: VIEW_FOR[item.code] ?? (item.kind === 'critical' ? 'database' : 'pocFiling'),
         serviceId: item.code,
         facility: item.site,
         facilityCode: item.siteCode,

@@ -134,6 +134,33 @@ export function validateSite(
   return errors;
 }
 
+/**
+ * On an edit, only the problems with fields that changed.
+ *
+ * A row read from Google carries values the sheet formatted its own way — a
+ * time as 18:00:00, a number with a unit. Refusing to switch a service off
+ * because of a window nobody touched is what made deactivation look broken,
+ * so an edit is judged on what it changes. A new row is still checked whole.
+ */
+export function changedOnly(errors: FieldError[], before: Record<string, unknown> | undefined, after: Record<string, unknown>): FieldError[] {
+  if (!before) return errors;
+  return errors.filter((e) => !(e.field in after) || text(before[e.field]) !== text(after[e.field]));
+}
+
+/** A time as the sheet may send it (18:00:00, 6:00 PM, 9:5) → 18:00; anything else unchanged. */
+export function normaliseTime(value: unknown): string {
+  const v = text(value);
+  const m = /^(\d{1,2}):(\d{1,2})(?::\d{1,2})?\s*(am|pm)?$/i.exec(v);
+  if (!m) return v;
+  let h = Number(m[1]);
+  const min = Number(m[2]);
+  const ampm = m[3]?.toLowerCase();
+  if (ampm === 'pm' && h < 12) h += 12;
+  if (ampm === 'am' && h === 12) h = 0;
+  if (h > 23 || min > 59) return v;
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+}
+
 export function validateService(
   row: Partial<ServiceRegistry>,
   existing: Pick<ServiceRegistry, 'Service_Code'>[],

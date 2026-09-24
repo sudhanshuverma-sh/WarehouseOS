@@ -63,9 +63,35 @@ export interface User {
   phone?: string;
 }
 
-/** `evidence` holds an attachment id: an uploaded photo or a Google Drive link. */
+/**
+ * `evidence` holds an attachment id: an uploaded photo or a Google Drive link.
+ * `section` is a heading that groups the questions under it; it has no answer.
+ */
 export type FieldType =
-  | 'text' | 'number' | 'percentage' | 'boolean' | 'select' | 'temperature' | 'textarea' | 'time' | 'date' | 'evidence';
+  | 'text' | 'number' | 'percentage' | 'boolean' | 'select' | 'temperature' | 'textarea' | 'time' | 'date' | 'evidence'
+  | 'section';
+
+/** Ask a question only when an earlier Yes/No or dropdown answer is one of `equals`. */
+export interface FieldCondition {
+  /** Key of an earlier question. */
+  field: string;
+  equals: string[];
+}
+
+/**
+ * What an answer opens: e.g. a Yes/No question where "No" asks why, and for
+ * a photo. Stored beside the answer as `<key>__comment` and `<key>__photo`.
+ */
+export interface FieldFollowUp {
+  /** The answers that open it, e.g. ['No']. */
+  when: string[];
+  comment: 'required' | 'optional' | 'off';
+  photo: 'required' | 'optional' | 'off';
+  /** These answers are an issue: the entry is marked CRITICAL and the admins are alerted. */
+  issue: boolean;
+  /** The question shown above the comment box, e.g. "What is wrong?". */
+  prompt?: string;
+}
 
 export interface FieldDefinition {
   key: string;
@@ -88,6 +114,10 @@ export interface FieldDefinition {
    * flag is shown as a question at the end of such a screen.
    */
   isExtra?: boolean;
+  /** Ask this question only when an earlier answer matches. */
+  showIf?: FieldCondition;
+  /** What some answers of a Yes/No or dropdown question open (comment, photo, issue). */
+  followUp?: FieldFollowUp;
   warningThreshold?: {
     min?: number;
     max?: number;

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -13,6 +13,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Power,
   Search,
   Shield,
   Snowflake,
@@ -110,12 +111,16 @@ export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ onSe
     sheetRecords,
     activeSheetId,
     setActiveSheetId,
+    setServiceActive,
+    notify,
   } = useApp();
 
   const caps = useMemo(() => capabilitiesFor(currentUser), [currentUser]);
   const [query, setQuery] = useState('');
   const [cadence, setCadence] = useState<CadenceFilter>('ALL');
   const [filling, setFilling] = useState<ControlRoomService | null>(null);
+  /** The service a Super Admin is about to switch off or on, awaiting their answer. */
+  const [toggling, setToggling] = useState<{ code: string; name: string; active: boolean } | null>(null);
 
   const fromMasterData = serviceRegistryRows.length > 0;
   const services = useMemo(() => controlRoomServices(serviceRegistryRows, operationalSheets), [serviceRegistryRows, operationalSheets]);
@@ -141,6 +146,19 @@ export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ onSe
 
   const q = query.trim().toLowerCase();
   const visible = services.filter((s) => (cadence === 'ALL' || s.cadence === cadence) && (!q || `${s.name} ${s.code}`.toLowerCase().includes(q)));
+
+  /** Switch a service on or off in Service_Registry — the same save as Master Data's Active field. */
+  const confirmToggle = async () => {
+    if (!toggling) return;
+    const res = await setServiceActive(toggling.code, toggling.active);
+    if (res.success) {
+      notify('success', toggling.active ? `${toggling.name} is switched on` : `${toggling.name} is switched off`, res.message);
+      setToggling(null);
+    } else {
+      notify('error', 'Not changed', res.message);
+    }
+    return res;
+  };
 
   const fill = (s: ControlRoomService) => {
     setActiveSheetId(sheetIdFor(s.code));
@@ -307,6 +325,17 @@ export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ onSe
                       {ownScreen ? (questions > 0 ? 'Edit extras' : 'Add questions') : noQuestions ? 'Add questions' : 'Edit form'}
                     </button>
                   )}
+                  {caps.isSuperAdmin && fromMasterData && (
+                    <button
+                      type="button"
+                      onClick={() => setToggling({ code: s.code, name: s.name, active: false })}
+                      title="Switch this service off for every site"
+                      aria-label={`Deactivate ${s.name}`}
+                      className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-(--color-missing) hover:bg-(--color-missing-tint) transition cursor-pointer"
+                    >
+                      <Power className="w-3.5 h-3.5" /> Deactivate
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => fill(s)}
@@ -343,12 +372,112 @@ export const OperationalSheetsHub: React.FC<OperationalSheetsHubProps> = ({ onSe
       )}
 
       {caps.isSuperAdmin && switchedOff.length > 0 && (
-        <p className="mt-6 text-xs text-slate-500">
-          Switched off in Master Data: {switchedOff.map((r) => r.Service_Name || r.Service_Code).join(', ')}.
-        </p>
+        <section className="mt-6 rounded-(--r-card) border border-slate-200 bg-white p-4">
+          <h2 className="text-xs font-semibold text-slate-700">
+            Switched off <span className="font-normal text-slate-500">— hidden from every site. Shown as Active = No in Master Data → Service_Registry.</span>
+          </h2>
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {switchedOff.map((r) => (
+              <li key={r.Service_Code} className="inline-flex items-center gap-2 pl-3 pr-1 h-9 rounded-lg border border-slate-200 bg-slate-50">
+                <span className="text-xs text-slate-700">{r.Service_Name || r.Service_Code}</span>
+                <button
+                  type="button"
+                  onClick={() => setToggling({ code: r.Service_Code, name: r.Service_Name || r.Service_Code, active: true })}
+                  className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-semibold text-(--color-ink) bg-white border border-slate-200 hover:bg-slate-100 cursor-pointer"
+                >
+                  <Power className="w-3.5 h-3.5" /> Reactivate
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {filling && <FillDialog service={filling} fields={fieldsOf(filling.code)} onClose={() => setFilling(null)} />}
+      {toggling && <ToggleServiceDialog {...toggling} onCancel={() => setToggling(null)} onConfirm={confirmToggle} />}
+    </div>
+  );
+};
+
+/** Asks before a service is switched off (or back on) for every site. */
+const ToggleServiceDialog: React.FC<{
+  code: string;
+  name: string;
+  active: boolean;
+  onCancel: () => void;
+  onConfirm: () => Promise<unknown>;
+}> = ({ code, name, active, onCancel, onConfirm }) => {
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !busy && onCancel();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy, onCancel]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => !busy && onCancel()}>
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="toggle-service-title"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-(--r-card) shadow-xl p-5 space-y-4"
+      >
+        <div className="flex items-start gap-3">
+          <span
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+              active ? 'bg-(--color-filed-tint) text-(--color-filed)' : 'bg-(--color-missing-tint) text-(--color-missing)'
+            }`}
+          >
+            <Power className="w-5 h-5" />
+          </span>
+          <div>
+            <h2 id="toggle-service-title" className="text-base font-semibold text-slate-900">
+              {active ? `Reactivate ${name}?` : `Deactivate ${name}?`}
+            </h2>
+            <p className="text-[11px] font-mono text-slate-500">{code}</p>
+          </div>
+        </div>
+        {active ? (
+          <p className="text-sm text-slate-600">
+            It comes back on the Filing Desk, in the sidebar, in Records and on the Control Room for every site that runs it, and is
+            due again from its next period.
+          </p>
+        ) : (
+          <ul className="text-sm text-slate-600 space-y-1.5 list-disc pl-5">
+            <li>It disappears from the Filing Desk, the sidebar, Records’ list of forms, the Control Room and alerts, for every site.</li>
+            <li>Entries already filed are kept.</li>
+            <li>You can switch it back on here, or in Master Data → Service_Registry.</li>
+          </ul>
+        )}
+        <p className="text-[11px] text-slate-500">This sets Active = {active ? 'Yes' : 'No'} for {code} in Master Data → Service_Registry.</p>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="h-10 px-4 rounded-xl text-sm font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            autoFocus
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              await onConfirm();
+              setBusy(false);
+            }}
+            className={`inline-flex items-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-60 ${
+              active ? 'bg-(--color-ink) hover:bg-(--color-ink-soft)' : 'bg-(--color-missing) hover:brightness-95'
+            }`}
+          >
+            {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+            {active ? 'Reactivate' : 'Deactivate'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

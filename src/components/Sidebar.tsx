@@ -141,6 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
         held: currentUser.serviceCodes,
         atSite: siteServices,
         isAccessible: isServiceAccessible,
+        loaded: serviceRegistryRows.length > 0,
       }).map(group => ({
         ...group,
         // The badge and the highlight belong to this surface, not the tree.

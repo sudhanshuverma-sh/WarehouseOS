@@ -153,6 +153,11 @@ export interface NavScope {
   atSite: 'ALL' | string[];
   /** The older per-sheet check, used before the registry has loaded. */
   isAccessible: (sheetId: string) => boolean;
+  /**
+   * Whether Service_Registry has loaded. When it has, an empty `registered`
+   * means every service is switched off, not "not loaded yet".
+   */
+  loaded?: boolean;
 }
 
 /**
@@ -163,12 +168,13 @@ export interface NavScope {
  */
 export function scopeNav(groups: NavGroup[], scope: NavScope): NavGroup[] {
   const { registered, held, atSite, isAccessible } = scope;
+  const loaded = scope.loaded ?? registered.size > 0;
   return groups
     .map(group => ({
       ...group,
       items: group.items.filter(item => {
         if (!item.codes) return true;
-        if (registered.size === 0) return item.sheetId ? isAccessible(item.sheetId) : true;
+        if (!loaded) return item.sheetId ? isAccessible(item.sheetId) : true;
         return item.codes.some(
           code =>
             registered.has(code) &&

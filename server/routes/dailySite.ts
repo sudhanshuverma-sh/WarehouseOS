@@ -238,7 +238,7 @@ export function dailySiteRoutes(deps: RouteDeps): Router {
             score.deviationsCount,
             // Questions added to this service later. Kept apart from
             // `readings` so they can never move the health score.
-            await extrasFor(c, 'SITE_ACTIVITY', b.extras),
+            await extrasFor(c, 'SITE_ACTIVITY', b.extras, siteCode),
           ],
         );
         const logId = String(rows[0].log_id);

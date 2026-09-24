@@ -159,7 +159,7 @@ export function firePumpRoutes(deps: RouteDeps): Router {
           pressure,
           score.overall,
           score.issues.length,
-          await extrasFor(c, SERVICE, b.extras),
+          await extrasFor(c, SERVICE, b.extras, siteCode),
         ];
 
         const { rows } = existing

@@ -9,8 +9,9 @@
  *
  * This counts the same way for everyone: the services still pending for
  * their period at the sites in view, plus the diesel requests waiting on
- * somebody, plus today's safety checks that came back CRITICAL (a failed
- * fire pump check). Pass the sites already narrowed to what the person may see.
+ * somebody, plus today's entries that came back CRITICAL (a failed fire pump
+ * check, or an issue answer on any built form). Pass the sites already
+ * narrowed to what the person may see.
  */
 
 import {
@@ -19,6 +20,7 @@ import {
   type ControlRoomService,
   type ControlRoomSite,
 } from '../controlRoom/siteServiceStatus';
+import { serviceCodeFor } from '../services/serviceCodes';
 
 export interface PendingItem {
   kind: 'service' | 'diesel' | 'critical';
@@ -52,12 +54,17 @@ export interface DieselWaiting {
   uniqueId?: string;
 }
 
-/** A flattened fire pump check (see src/lib/firePump/records.ts). */
+/**
+ * An entry row that may carry an issue status: a fire pump check
+ * (src/lib/firePump/records.ts) says `status`, a built form with issue
+ * answers says `overall_status` (src/lib/services/formLogic.ts).
+ */
 interface CriticalRow {
   warehouseId?: string;
   site?: string;
   date?: string;
   status?: string;
+  overall_status?: string;
   issues?: string;
 }
 
@@ -115,20 +122,25 @@ export function pendingWork(input: {
     }
   }
 
-  // A failed fire check is the most urgent thing on the list, so it goes first.
+  // A fault found today is the most urgent thing on the list, so it goes first.
   const criticalItems: PendingItem[] = [];
-  for (const row of (records.sheetRecords.SHEET_FIRE ?? []) as CriticalRow[]) {
-    if (row.date !== today || String(row.status).toUpperCase() !== 'CRITICAL') continue;
-    const site = known.get(String(row.warehouseId ?? row.site ?? '').toLowerCase());
-    if (!site) continue;
-    withWork.add(site.id);
-    criticalItems.push({
-      kind: 'critical',
-      code: 'FIRE',
-      label: `Fire pump CRITICAL: ${row.issues || 'a check failed'}`,
-      site: site.name,
-      siteCode: site.id,
-    });
+  for (const [sheetId, rows] of Object.entries(records.sheetRecords)) {
+    const code = serviceCodeFor(sheetId);
+    const name = code === 'FIRE' ? 'Fire pump' : services.find((s) => s.code === code)?.name ?? code;
+    for (const row of (rows ?? []) as CriticalRow[]) {
+      const status = String(row.overall_status ?? row.status ?? '').toUpperCase();
+      if (row.date !== today || status !== 'CRITICAL') continue;
+      const site = known.get(String(row.warehouseId ?? row.site ?? '').toLowerCase());
+      if (!site) continue;
+      withWork.add(site.id);
+      criticalItems.push({
+        kind: 'critical',
+        code,
+        label: `${name} CRITICAL: ${row.issues || 'an issue was reported'}`,
+        site: site.name,
+        siteCode: site.id,
+      });
+    }
   }
 
   return {

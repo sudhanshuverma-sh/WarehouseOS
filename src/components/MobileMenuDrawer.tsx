@@ -73,6 +73,7 @@ export const MobileMenuDrawer: React.FC<MobileMenuDrawerProps> = ({
         held: currentUser.serviceCodes,
         atSite,
         isAccessible: isServiceAccessible,
+        loaded: serviceRegistryRows.length > 0,
       }),
     [currentUser.role, currentUser.serviceCodes, registered, atSite, isServiceAccessible],
   );

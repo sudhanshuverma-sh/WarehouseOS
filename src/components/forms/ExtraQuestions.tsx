@@ -46,7 +46,7 @@ export function useExtraQuestions(serviceCode: string, siteCode?: string): Extra
 
   const collect = () => {
     if (fields.length === 0) return {};
-    const entry = collectEntry(fields, values, evidence);
+    const entry = collectEntry(fields, values, evidence, { status: false });
     setErrors(entry.errors);
     return Object.keys(entry.errors).length > 0 ? null : entry.data;
   };

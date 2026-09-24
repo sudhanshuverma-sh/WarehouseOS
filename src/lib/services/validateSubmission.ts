@@ -10,6 +10,7 @@
 
 import type { FieldDefinition } from '../../types';
 import type { FieldError } from '../masterData/validate';
+import { followUpErrors, isShown, keyMap } from './formLogic';
 
 /** Google Drive / Docs share links — the only links accepted as evidence. */
 export const DRIVE_LINK = /^https:\/\/(drive|docs)\.google\.com\//;
@@ -35,8 +36,11 @@ export function validateSubmissionData(
 ): FieldError[] {
   const errors: FieldError[] = [];
   const fail = (f: FieldDefinition, message: string) => errors.push({ field: f.key, message });
+  const byKey = keyMap(fields);
 
   for (const f of fields) {
+    // A heading has no answer; a question that was not asked has none either.
+    if (f.type === 'section' || !isShown(f, data, byKey)) continue;
     const v = data[f.key];
 
     if (isBlank(v)) {
@@ -84,5 +88,7 @@ export function validateSubmissionData(
     }
   }
 
+  // An answer that opens a follow-up needs what the follow-up requires.
+  errors.push(...followUpErrors(fields, data));
   return errors;
 }

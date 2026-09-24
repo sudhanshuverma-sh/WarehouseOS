@@ -11,7 +11,12 @@ import {
   ChevronDown,
   Clock,
   Copy,
+  Download,
+  FileCode2,
+  GitBranch,
+  GripVertical,
   Hash,
+  Heading,
   Link2,
   List,
   Loader2,
@@ -22,6 +27,7 @@ import {
   Thermometer,
   Trash2,
   Type,
+  Upload,
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -40,17 +46,22 @@ import {
   extraFields,
   cleanForSave,
   columnsToFields,
+  copyField,
+  dropRefs,
   fieldKeyFrom,
   fieldTypeLabel,
   isNumericType,
   parseList,
   problemCount,
+  renameRefs,
   serviceCodeFrom,
   validateDraft,
   withType,
   type DraftProblems,
 } from '../../lib/services/formBuilder';
 import type { EvidenceValue } from '../common/EvidenceInput';
+import { answersOf, canBranchOn } from '../../lib/services/formLogic';
+import { exportFormJson, importForm, type ImportResult } from '../../lib/services/formImport';
 import { ServiceFieldList } from './ServiceFieldList';
 
 /**
@@ -61,6 +72,11 @@ import { ServiceFieldList } from './ServiceFieldList';
  * live preview rendered by the same component the POC desk uses. Publishing
  * creates the Service_Registry row and its questions (service_form); editing
  * keeps each saved question's internal name, so past entries stay linked.
+ *
+ * Beyond one box per question: section headings, questions asked only after
+ * a certain answer (show-if), answers that open a follow-up comment or photo
+ * and count as an issue, drag to reorder, and a form pasted in as HTML or
+ * JSON — for instance one an AI assistant wrote — or exported as JSON.
  */
 
 interface FormBuilderProps {
@@ -80,6 +96,7 @@ const TYPE_ICON: Record<FieldType, React.ElementType> = {
   date: Calendar,
   time: Clock,
   evidence: Link2,
+  section: Heading,
 };
 
 const INPUT =
@@ -129,6 +146,8 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
   const [tryEvidence, setTryEvidence] = useState<Record<string, EvidenceValue | null>>({});
   const [columnText, setColumnText] = useState('');
   const [previewMode, setPreviewMode] = useState<'form' | 'sheet'>('form');
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
 
   const labelInputs = useRef(new Map<number, HTMLInputElement>());
   const focusNext = useRef<number | null>(null);
@@ -167,15 +186,23 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
 
   const updateField = (i: number, patch: Partial<FieldDefinition>) => {
     setDirty(true);
-    setFields((prev) =>
-      prev.map((f, j) => {
-        if (j !== i) return f;
-        let next = patch.type && patch.type !== f.type ? withType(f, patch.type) : { ...f, ...patch };
-        // New questions take their saved name from the wording; saved ones keep theirs.
-        if (patch.label !== undefined && !savedKeys.has(f.key)) next = { ...next, key: fieldKeyFrom(patch.label, taken(prev, i)) };
-        return next;
-      }),
-    );
+    setFields((prev) => {
+      const before = prev[i];
+      let next = patch.type && patch.type !== before.type ? withType(before, patch.type) : { ...before, ...patch };
+      // New questions take their saved name from the wording; saved ones keep theirs.
+      if (patch.label !== undefined && !savedKeys.has(before.key)) next = { ...next, key: fieldKeyFrom(patch.label, taken(prev, i)) };
+      let list = prev.map((f, j) => (j === i ? next : f));
+      // A show-if pointing at this question keeps pointing at it.
+      list = renameRefs(list, before.key, next.key);
+      // Its answers changed (type or options): a show-if on it may no longer match anything.
+      if (patch.type || patch.options) {
+        const offered = answersOf(next);
+        list = list.map((f) =>
+          f.showIf?.field === next.key ? { ...f, showIf: { ...f.showIf, equals: f.showIf.equals.filter((e) => offered.includes(e)) } } : f,
+        );
+      }
+      return list;
+    });
   };
 
   const addField = (type: FieldType) => {
@@ -203,8 +230,7 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
     setFields((prev) => {
       const source = prev[i];
       const label = source.label ? `${source.label} (copy)` : '';
-      const copy = { ...source, label, key: fieldKeyFrom(label, taken(prev)), options: source.options && [...source.options] };
-      if (!copy.options) delete copy.options;
+      const copy = { ...copyField(source), label, key: fieldKeyFrom(label, taken(prev)) };
       return [...prev.slice(0, i + 1), copy, ...prev.slice(i + 1)];
     });
     setOpen(i + 1);
@@ -213,19 +239,38 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
 
   const remove = (i: number) => {
     setDirty(true);
-    setFields((prev) => prev.filter((_, j) => j !== i));
+    setFields((prev) => dropRefs(prev.filter((_, j) => j !== i), prev[i].key));
+    setOpen(null);
+  };
+
+  /** Drag a question onto another's place. */
+  const dropAt = (to: number) => {
+    const from = dragFrom;
+    setDragFrom(null);
+    setDragOver(null);
+    if (from === null || from === to) return;
+    setDirty(true);
+    setFields((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
     setOpen(null);
   };
 
   const replaceQuestions = (list: FieldDefinition[]) => {
     if (fields.length && dirty && !window.confirm('Replace the questions you have now?')) return false;
     const keys: string[] = [...savedKeys];
-    const next = list.map((f) => {
+    const renamed = new Map<string, string>();
+    let next = list.map((f) => {
       // Reuse a saved name only when it is free; never collide with one.
       const key = savedKeys.has(f.key) || keys.includes(f.key) ? fieldKeyFrom(f.label, keys) : f.key;
       keys.push(key);
-      return { ...f, key, options: f.options && [...f.options] };
+      if (key !== f.key) renamed.set(f.key, key);
+      return { ...copyField(f), key };
     });
+    for (const [from, to] of renamed) next = renameRefs(next, from, to);
     setFields(next);
     setOpen(null);
     setDirty(true);
@@ -252,6 +297,41 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
     setFields((prev) => [...prev, ...made]);
     setColumnText('');
     setOpen(null);
+  };
+
+  /** Questions read from pasted HTML or JSON: replace the form's, or go on the end. */
+  const useImported = (result: ImportResult, how: 'replace' | 'append') => {
+    if (!result.fields.length) return false;
+    if (how === 'replace') {
+      if (!replaceQuestions(result.fields)) return false;
+    } else {
+      const keys = taken(fields);
+      const renamed = new Map<string, string>();
+      let added = result.fields.map((f) => {
+        const key = keys.includes(f.key) ? fieldKeyFrom(f.label, keys) : f.key;
+        keys.push(key);
+        if (key !== f.key) renamed.set(f.key, key);
+        return { ...copyField(f), key };
+      });
+      for (const [from, to] of renamed) added = renameRefs(added, from, to);
+      setDirty(true);
+      setFields((prev) => [...prev, ...added]);
+      setOpen(null);
+    }
+    if (!name.trim() && result.title && mode === 'create') onName(result.title.replace(/\s*[—–-]\s*daily check$/i, '').trim());
+    return true;
+  };
+
+  /** The questions as JSON, to keep or to paste into another form. */
+  const downloadJson = () => {
+    const blob = new Blob([exportFormJson(name.trim() || 'Form', cleanForSave(fields))], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${(serviceCode || 'form').toLowerCase()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
   };
 
   const cancel = () => {
@@ -308,7 +388,8 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
       <Notice title="This form could not be found" body="It may still be loading, or it was switched off in Master Data." onBack={onClose} />
     );
   }
-  const previewFields = fields.map((f) => ({ ...f, label: f.label.trim() || 'Untitled question' }));
+  const previewFields = fields.map((f) => ({ ...f, label: f.label.trim() || (f.type === 'section' ? 'Untitled section' : 'Untitled question') }));
+  const sheetColumns = previewFields.filter((f) => f.type !== 'section');
   const dateLabel = new Date(`${currentDate}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
   // ------------------------------------------------------------------ render
@@ -526,6 +607,8 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
                 </span>
               </div>
             </div>
+
+            <ImportPanel onUse={useImported} hasQuestions={fields.length > 0} />
           </section>
 
           {/* What the screen already asks — so nobody adds it twice. */}
@@ -553,10 +636,22 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
 
           {/* Questions */}
           <section className="bg-white border border-slate-200 rounded-(--r-card) p-5 shadow-xs">
-            <h2 className="text-sm font-semibold text-slate-900">
-              {builtIn ? 'Extra questions' : 'Questions'}{' '}
-              <span className="ml-1 font-mono text-xs text-slate-500">{fields.length}</span>
-            </h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-900">
+                {builtIn ? 'Extra questions' : 'Questions'}{' '}
+                <span className="ml-1 font-mono text-xs text-slate-500">{fields.filter((f) => f.type !== 'section').length}</span>
+              </h2>
+              {fields.length > 0 && (
+                <button
+                  type="button"
+                  onClick={downloadJson}
+                  className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 cursor-pointer"
+                  title="Download the questions as JSON, to keep or to paste into another form"
+                >
+                  <Download className="w-3.5 h-3.5" /> Export JSON
+                </button>
+              )}
+            </div>
             {builtIn && (
               <p className="mt-1 text-xs text-slate-500">
                 Only what you add here is asked at the end of {editing?.title}, on top of what it already collects. It shows in
@@ -581,11 +676,40 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
                   return (
                     <li
                       key={`${f.key}-${i}`}
+                      onDragOver={(e) => {
+                        if (dragFrom === null) return;
+                        e.preventDefault();
+                        setDragOver(i);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        dropAt(i);
+                      }}
                       className={`rounded-xl border transition ${
+                        dragOver === i && dragFrom !== i ? 'border-teal-500 ring-2 ring-teal-100' : ''
+                      } ${dragFrom === i ? 'opacity-50' : ''} ${
+                        f.type === 'section' ? 'bg-slate-50' : ''
+                      } ${
                         problem ? 'border-(--color-missing)' : expanded ? 'border-slate-400 shadow-sm' : 'border-slate-200 hover:border-slate-300'
                       }`}
                     >
                       <div className="flex items-center gap-1 p-2">
+                        <span
+                          draggable
+                          onDragStart={(e) => {
+                            setDragFrom(i);
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('text/plain', String(i));
+                          }}
+                          onDragEnd={() => {
+                            setDragFrom(null);
+                            setDragOver(null);
+                          }}
+                          title="Drag to reorder"
+                          className="hidden sm:flex w-5 h-8 items-center justify-center text-slate-400 hover:text-slate-700 cursor-grab active:cursor-grabbing"
+                        >
+                          <GripVertical className="w-4 h-4" />
+                        </span>
                         <button
                           type="button"
                           onClick={() => setOpen(expanded ? null : i)}
@@ -596,12 +720,32 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
                             <Icon className="w-4 h-4" />
                           </span>
                           <span className="min-w-0">
-                            <span className={`block text-sm truncate ${f.label.trim() ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
-                              {i + 1}. {f.label.trim() || 'Untitled question'}
+                            <span
+                              className={`block text-sm truncate ${
+                                f.type === 'section'
+                                  ? 'font-bold uppercase tracking-wide text-[12px] text-teal-800'
+                                  : f.label.trim()
+                                    ? 'font-medium text-slate-900'
+                                    : 'text-slate-500'
+                              }`}
+                            >
+                              {f.type === 'section' ? f.label.trim() || 'Untitled section' : `${i + 1}. ${f.label.trim() || 'Untitled question'}`}
                             </span>
-                            <span className="block text-[11px] text-slate-500">
+                            <span className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
                               {fieldTypeLabel(f.type)}
                               {f.required ? ', required' : ''}
+                              {f.showIf && (
+                                <span className="px-1.5 py-px rounded bg-indigo-50 text-indigo-700 font-semibold">
+                                  only if {fields.find((x) => x.key === f.showIf?.field)?.label || f.showIf.field} = {f.showIf.equals.join(' / ')}
+                                </span>
+                              )}
+                              {f.followUp && (
+                                <span className={`px-1.5 py-px rounded font-semibold ${f.followUp.issue ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}>
+                                  {f.followUp.when.join(' / ')} → {[f.followUp.comment !== 'off' && 'comment', f.followUp.photo !== 'off' && 'photo', f.followUp.issue && 'issue']
+                                    .filter(Boolean)
+                                    .join(', ')}
+                                </span>
+                              )}
                             </span>
                           </span>
                         </button>
@@ -624,7 +768,7 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
                       {expanded && (
                         <div className="animate-settle border-t border-slate-100 p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div className="sm:col-span-2">
-                            <label htmlFor={`fb-q-${i}`} className={LABEL}>Question</label>
+                            <label htmlFor={`fb-q-${i}`} className={LABEL}>{f.type === 'section' ? 'Section heading' : 'Question'}</label>
                             <input
                               id={`fb-q-${i}`}
                               ref={(el) => {
@@ -633,7 +777,7 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
                               }}
                               value={f.label}
                               onChange={(e) => updateField(i, { label: e.target.value })}
-                              placeholder="e.g. Battery voltage"
+                              placeholder={f.type === 'section' ? 'e.g. Pump room' : 'e.g. Battery voltage'}
                               className={INPUT}
                             />
                           </div>
@@ -649,10 +793,12 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
                             </select>
                           </div>
 
-                          <div className="flex items-end gap-5 pb-1.5">
-                            <Switch label="Required" checked={f.required} onChange={(v) => updateField(i, { required: v })} />
-                            <Switch label="Critical" checked={f.isCritical === true} onChange={(v) => updateField(i, { isCritical: v || undefined })} />
-                          </div>
+                          {f.type !== 'section' && (
+                            <div className="flex items-end gap-5 pb-1.5">
+                              <Switch label="Required" checked={f.required} onChange={(v) => updateField(i, { required: v })} />
+                              <Switch label="Critical" checked={f.isCritical === true} onChange={(v) => updateField(i, { isCritical: v || undefined })} />
+                            </div>
+                          )}
 
                           <div className="sm:col-span-2">
                             <label htmlFor={`fb-h-${i}`} className={LABEL}>Help text (optional)</label>
@@ -665,7 +811,7 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
                             />
                           </div>
 
-                          {f.type !== 'evidence' && (
+                          {f.type !== 'evidence' && f.type !== 'section' && (
                             <div className="sm:col-span-2">
                               <label htmlFor={`fb-d-${i}`} className={LABEL}>Starts with (optional)</label>
                               {f.type === 'select' ? (
@@ -735,6 +881,16 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
                             <OptionsEditor index={i} options={f.options ?? []} onChange={(options) => updateField(i, { options })} />
                           )}
 
+                          {canBranchOn(f) && (
+                            <FollowUpEditor field={f} onChange={(followUp) => updateField(i, { followUp })} />
+                          )}
+
+                          <ShowIfEditor
+                            field={f}
+                            earlier={fields.slice(0, i).filter((x) => canBranchOn(x) && x.label.trim())}
+                            onChange={(showIf) => updateField(i, { showIf })}
+                          />
+
                           <p className="sm:col-span-2 text-[11px] text-slate-500">
                             Saved as <code className="font-mono text-slate-700">{f.key}</code>
                             {isSaved ? '. Kept as it is so past entries stay linked.' : '.'}
@@ -801,7 +957,7 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
             <div className="p-4 border-b border-slate-100">
               <p className="text-base font-semibold text-slate-900 truncate">{name.trim() || 'Untitled form'}</p>
               <p className="text-xs text-slate-500">
-                {previewMode === 'form' ? `Their site, ${dateLabel}` : `${previewFields.length + 3} columns in Records and in exports`}
+                {previewMode === 'form' ? `Their site, ${dateLabel}` : `${sheetColumns.length + 3} columns in Records and in exports`}
               </p>
             </div>
 
@@ -836,7 +992,7 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
                 <table className="w-full text-[11px]">
                   <thead className="sticky top-0 bg-slate-50">
                     <tr>
-                      {['Date', 'Site', ...previewFields.map((f) => f.label), 'Filed by'].map((head, i) => (
+                      {['Date', 'Site', ...sheetColumns.map((f) => f.label), 'Filed by'].map((head, i) => (
                         <th
                           key={`${head}-${i}`}
                           className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap border-b border-slate-200"
@@ -850,7 +1006,7 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({ editSheetId, onClose, 
                     <tr className="text-slate-700">
                       <td className="px-3 py-2 whitespace-nowrap">{currentDate}</td>
                       <td className="px-3 py-2 whitespace-nowrap">Their site</td>
-                      {previewFields.map((f) => (
+                      {sheetColumns.map((f) => (
                         <td key={f.key} className="px-3 py-2 whitespace-nowrap text-slate-500">
                           {sampleValue(f, currentDate)}
                         </td>
@@ -893,6 +1049,8 @@ function sampleValue(field: FieldDefinition, today: string): string {
       return '09:30';
     case 'evidence':
       return 'Drive link';
+    case 'section':
+      return '';
     case 'textarea':
       return 'Any remarks';
     default:
@@ -1009,6 +1167,293 @@ const OptionsEditor: React.FC<{ index: number; options: string[]; onChange: (opt
         </div>
       )}
       <p className="mt-1 text-[11px] text-slate-500">Press Enter to add the next option.</p>
+    </div>
+  );
+};
+
+/** Picks answers of a fixed-answer question, as toggle chips. */
+const AnswerChips: React.FC<{ answers: string[]; picked: string[]; onChange: (picked: string[]) => void; tone?: 'rose' | 'indigo' }> = ({
+  answers,
+  picked,
+  onChange,
+  tone = 'indigo',
+}) => (
+  <div className="flex flex-wrap gap-1.5">
+    {answers.map((a) => {
+      const on = picked.includes(a);
+      return (
+        <button
+          key={a}
+          type="button"
+          aria-pressed={on}
+          onClick={() => onChange(on ? picked.filter((x) => x !== a) : [...picked, a])}
+          className={`h-8 px-3 rounded-lg border text-xs font-semibold transition active:scale-[0.97] cursor-pointer ${
+            on
+              ? tone === 'rose'
+                ? 'bg-rose-50 border-rose-400 text-rose-700'
+                : 'bg-indigo-50 border-indigo-400 text-indigo-700'
+              : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+          }`}
+        >
+          {a}
+        </button>
+      );
+    })}
+  </div>
+);
+
+const LEVEL_LABEL = { off: 'Off', optional: 'Optional', required: 'Required' } as const;
+
+const Levels: React.FC<{ label: string; value: 'off' | 'optional' | 'required'; onChange: (v: 'off' | 'optional' | 'required') => void }> = ({
+  label,
+  value,
+  onChange,
+}) => (
+  <div>
+    <span className={LABEL}>{label}</span>
+    <div className="inline-flex p-0.5 bg-slate-100 rounded-lg" role="radiogroup" aria-label={label}>
+      {(['off', 'optional', 'required'] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          role="radio"
+          aria-checked={value === v}
+          onClick={() => onChange(v)}
+          className={`h-7 px-2.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+            value === v ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          {LEVEL_LABEL[v]}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
+/**
+ * What an answer opens: e.g. "No" asks why, takes a photo, and is reported
+ * as an issue. Only Yes/No and dropdown questions have fixed answers to hang
+ * it on.
+ */
+const FollowUpEditor: React.FC<{ field: FieldDefinition; onChange: (fu: FieldDefinition['followUp']) => void }> = ({ field, onChange }) => {
+  const fu = field.followUp;
+  const answers = answersOf(field);
+  const on = Boolean(fu);
+  const set = (patch: Partial<NonNullable<FieldDefinition['followUp']>>) =>
+    onChange({ when: [], comment: 'required', photo: 'optional', issue: true, ...fu, ...patch });
+
+  return (
+    <div className="sm:col-span-2 rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2 text-xs font-semibold text-slate-800">
+          <AlertCircle className="w-3.5 h-3.5 text-amber-600" /> Follow-up on an answer
+        </span>
+        <Switch
+          label={on ? 'On' : 'Off'}
+          checked={on}
+          onChange={(v) =>
+            onChange(
+              v
+                ? { when: field.type === 'boolean' ? ['No'] : answers.slice(-1), comment: 'required', photo: 'optional', issue: true }
+                : undefined,
+            )
+          }
+        />
+      </div>
+      {!on ? (
+        <p className="text-[11px] text-slate-500">
+          e.g. when the answer is <strong>No</strong>, ask why and for a photo, and report it as an issue.
+        </p>
+      ) : (
+        <>
+          <div>
+            <span className={LABEL}>When the answer is</span>
+            <AnswerChips answers={answers} picked={fu!.when} onChange={(when) => set({ when })} tone="rose" />
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <Levels label="Ask for a comment" value={fu!.comment} onChange={(comment) => set({ comment })} />
+            <Levels label="Ask for a photo" value={fu!.photo} onChange={(photo) => set({ photo })} />
+          </div>
+          {fu!.comment !== 'off' && (
+            <div>
+              <label className={LABEL}>What the comment box asks (optional)</label>
+              <input
+                value={fu!.prompt ?? ''}
+                onChange={(e) => set({ prompt: e.target.value || undefined })}
+                placeholder="Why? Say what is wrong — which unit, where."
+                className={INPUT}
+              />
+            </div>
+          )}
+          <Switch label="Report it as an issue (entry marked CRITICAL, admins alerted)" checked={fu!.issue} onChange={(issue) => set({ issue })} />
+        </>
+      )}
+    </div>
+  );
+};
+
+/** Ask this question only when an earlier Yes/No or dropdown answer matches. */
+const ShowIfEditor: React.FC<{
+  field: FieldDefinition;
+  earlier: FieldDefinition[];
+  onChange: (showIf: FieldDefinition['showIf']) => void;
+}> = ({ field, earlier, onChange }) => {
+  const cond = field.showIf;
+  const parent = earlier.find((x) => x.key === cond?.field);
+  if (earlier.length === 0 && !cond) return null;
+  return (
+    <div className="sm:col-span-2 rounded-xl border border-indigo-200 bg-indigo-50/40 p-3 space-y-3">
+      <span className="flex items-center gap-2 text-xs font-semibold text-slate-800">
+        <GitBranch className="w-3.5 h-3.5 text-indigo-600" /> {field.type === 'section' ? 'Show this section' : 'Ask this question'}
+      </span>
+      <select
+        value={cond?.field ?? ''}
+        onChange={(e) => {
+          const next = earlier.find((x) => x.key === e.target.value);
+          onChange(next ? { field: next.key, equals: answersOf(next).slice(0, 1) } : undefined);
+        }}
+        className={INPUT}
+        aria-label="Depends on"
+      >
+        <option value="">Always</option>
+        {earlier.map((x) => (
+          <option key={x.key} value={x.key}>
+            Only when “{x.label}” is…
+          </option>
+        ))}
+      </select>
+      {cond && parent && (
+        <AnswerChips answers={answersOf(parent)} picked={cond.equals} onChange={(equals) => onChange({ field: cond.field, equals })} />
+      )}
+      {cond && !parent && <p className="text-[11px] text-(--color-missing)">The question this depended on is gone or now comes later.</p>}
+    </div>
+  );
+};
+
+/**
+ * Paste (or open) a form from elsewhere — an HTML page or JSON an AI
+ * assistant wrote, an exported form — and see what it becomes before using it.
+ */
+const ImportPanel: React.FC<{ onUse: (result: ImportResult, how: 'replace' | 'append') => boolean; hasQuestions: boolean }> = ({
+  onUse,
+  hasQuestions,
+}) => {
+  const [text, setText] = useState('');
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const read = (value: string) => {
+    const parse = typeof DOMParser !== 'undefined' ? (html: string) => new DOMParser().parseFromString(html, 'text/html') : undefined;
+    setResult(importForm(value, parse));
+  };
+  const onFile = async (file: File | undefined) => {
+    if (!file) return;
+    const content = await file.text();
+    setText(content);
+    read(content);
+  };
+  const use = (how: 'replace' | 'append') => {
+    if (result && onUse(result, how)) {
+      setText('');
+      setResult(null);
+    }
+  };
+
+  const questions = result?.fields.filter((f) => f.type !== 'section') ?? [];
+  const sections = result?.fields.filter((f) => f.type === 'section').length ?? 0;
+  const followUps = questions.filter((f) => f.followUp).length;
+  const branches = result?.fields.filter((f) => f.showIf).length ?? 0;
+
+  return (
+    <div className="mt-4 pt-4 border-t border-slate-100">
+      <label htmlFor="fb-import" className={`${LABEL} flex items-center gap-1.5`}>
+        <FileCode2 className="w-3.5 h-3.5 text-slate-500" /> Or paste a form as HTML or JSON
+      </label>
+      <textarea
+        id="fb-import"
+        rows={4}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          setResult(null);
+        }}
+        placeholder={'Paste the HTML page or JSON an AI assistant made for you, e.g.\n{ "title": "UPS check", "questions": [ { "label": "Any alarms?", "type": "yes/no" } ] }'}
+        className={`${INPUT} h-auto py-2 font-mono text-[11px]`}
+      />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => read(text)}
+          disabled={!text.trim()}
+          className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-(--color-ink) hover:bg-(--color-ink-soft) disabled:opacity-40 disabled:cursor-default active:scale-[0.98] transition cursor-pointer"
+        >
+          Read the form
+        </button>
+        <button
+          type="button"
+          onClick={() => fileInput.current?.click()}
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 cursor-pointer"
+        >
+          <Upload className="w-3.5 h-3.5" /> Open a file
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".html,.htm,.json,.txt,text/html,application/json"
+          className="hidden"
+          onChange={(e) => {
+            void onFile(e.target.files?.[0]);
+            e.target.value = '';
+          }}
+        />
+        <span className="text-[11px] text-slate-500">Nothing in it is run — the questions are only read.</span>
+      </div>
+
+      {result && (
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+          {questions.length === 0 ? (
+            <p className="text-xs text-(--color-missing)">{result.notes[0] ?? 'No questions were found.'}</p>
+          ) : (
+            <>
+              <p className="text-xs text-slate-800">
+                Found <strong>{questions.length}</strong> {questions.length === 1 ? 'question' : 'questions'}
+                {result.title ? <> in “{result.title}”</> : null}
+                {sections ? <>, {sections} {sections === 1 ? 'section' : 'sections'}</> : null}
+                {followUps ? <>, {followUps} with a follow-up</> : null}
+                {branches ? <>, {branches} shown only after an answer</> : null}.
+              </p>
+              <ol className="max-h-40 overflow-y-auto text-[11px] text-slate-600 space-y-0.5">
+                {result.fields.map((f, n) => (
+                  <li key={`${f.key}-${n}`} className={f.type === 'section' ? 'pt-1 font-bold uppercase tracking-wide text-teal-800' : 'pl-2'}>
+                    {f.type === 'section' ? f.label : `${f.label} — ${fieldTypeLabel(f.type)}${f.required ? ', required' : ''}`}
+                  </li>
+                ))}
+              </ol>
+              {result.notes.map((n) => (
+                <p key={n} className="text-[11px] text-amber-700">{n}</p>
+              ))}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => use('replace')}
+                  className="h-8 px-3 rounded-lg text-xs font-semibold text-white bg-(--color-ink) hover:bg-(--color-ink-soft) active:scale-[0.98] transition cursor-pointer"
+                >
+                  {hasQuestions ? 'Replace my questions' : 'Use these questions'}
+                </button>
+                {hasQuestions && (
+                  <button
+                    type="button"
+                    onClick={() => use('append')}
+                    className="h-8 px-3 rounded-lg text-xs font-semibold text-slate-700 border border-slate-300 bg-white hover:bg-slate-50 cursor-pointer"
+                  >
+                    Add them to the end
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };

@@ -303,6 +303,71 @@ describe('generic services', () => {
     expect(db.calls).toHaveLength(0);
   });
 
+  // A built form with a section, a show-if and a follow-up that is an issue.
+  const checkForm = [
+    { key: 'room', label: 'Room', type: 'section', required: false },
+    {
+      key: 'doorOk',
+      label: 'Door OK?',
+      type: 'boolean',
+      required: true,
+      followUp: { when: ['No'], comment: 'required', photo: 'optional', issue: true },
+    },
+    { key: 'hasSprinkler', label: 'Sprinkler?', type: 'boolean', required: true },
+    { key: 'charged', label: 'Line charged?', type: 'boolean', required: true, showIf: { field: 'hasSprinkler', equals: ['Yes'] } },
+  ];
+  const checkService = (text: string) =>
+    text.includes('from service_registry s') ? { rows: [{ needs_approval: false, is_active: true, fields: checkForm }] } : undefined;
+
+  it('saves a form’s sections, show-if and follow-ups', async () => {
+    const { db, call } = await api((text, values) =>
+      text.includes('insert into service_form') ? { rows: [{ fields: JSON.parse(String(values[1])), last_updated_at: null }] } : undefined,
+    );
+    const res = await call('PUT', '/services/FIRE_CHECK/form', {
+      fields: [...checkForm, { key: 'later', label: 'Later', type: 'text', required: false, showIf: { field: 'nowhere', equals: ['Yes'] } }],
+    });
+    expect(res.status).toBe(200);
+    const saved = JSON.parse(String(db.sql('insert into service_form')[0].values[1]));
+    expect(saved[0]).toMatchObject({ type: 'section', required: false });
+    expect(saved[1].followUp).toEqual(checkForm[1].followUp);
+    expect(saved[3].showIf).toEqual({ field: 'hasSprinkler', equals: ['Yes'] });
+    expect(saved[4].showIf).toBeUndefined(); // a rule on a question that does not exist is dropped
+  });
+
+  it('refuses a "No" without the comment its follow-up requires', async () => {
+    const { db, call } = await api(checkService);
+    const res = await call('POST', '/services/FIRE_CHECK/submissions', {
+      siteCode: 'ZHPL-HR-03',
+      date: '2026-09-25',
+      data: { doorOk: 'No', hasSprinkler: 'No' },
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.details).toEqual([{ field: 'doorOk__comment', message: 'Door OK?: say why.' }]);
+    expect(db.sql('insert into service_submission')).toHaveLength(0);
+  });
+
+  it('files the entry as asked: stale answers dropped, the status worked out by the server', async () => {
+    const { db, call } = await api((text, values) =>
+      checkService(text) ??
+      (text.includes('insert into service_submission')
+        ? { rows: [{ submission_id: 9, service_code: values[0], site_code: values[1], entry_date: values[2], status: values[4], data: JSON.parse(String(values[5])) }] }
+        : undefined),
+    );
+    const res = await call('POST', '/services/FIRE_CHECK/submissions', {
+      siteCode: 'ZHPL-HR-03',
+      date: '2026-09-25',
+      data: { doorOk: 'No', doorOk__comment: 'Hinge broken', hasSprinkler: 'No', charged: 'No', overall_status: 'OK' },
+    });
+    expect(res.status).toBe(201);
+    expect(JSON.parse(String(db.sql('insert into service_submission')[0].values[5]))).toEqual({
+      doorOk: 'No',
+      doorOk__comment: 'Hinge broken',
+      hasSprinkler: 'No',
+      overall_status: 'CRITICAL',
+      issues: 'Door OK?',
+    });
+  });
+
   it('refuses a malformed form definition', async () => {
     const { call } = await api(() => undefined);
     const res = await call('PUT', '/services/HOUSEKEEPING/form', { fields: [{ key: 'a', label: 'A', type: 'select' }] });
@@ -312,6 +377,30 @@ describe('generic services', () => {
 });
 
 describe('master data', () => {
+  it('switches a service off (Active = No), as the Master Data editor and Operational Sheets both send it', async () => {
+    const stored = {
+      service_code: 'HOUSEKEEPING',
+      service_name: 'Housekeeping',
+      cadence: 'DAILY',
+      submission_window: '18:00',
+      needs_approval: false,
+      needs_delivery_validation: false,
+      requires_evidence: true,
+      is_active: true,
+    };
+    const { db, call } = await api((text, values) => {
+      if (text.includes('is_super_admin()')) return { rows: [{ ok: true }] };
+      if (text.includes('select * from service_registry where')) return { rows: [stored] };
+      if (text.includes('select service_code as "Service_Code"')) return { rows: [{ Service_Code: 'HOUSEKEEPING' }] };
+      if (text.includes('update service_registry')) return { rows: [{ ...stored, is_active: values.includes(false) ? false : stored.is_active }] };
+      return undefined;
+    });
+    const res = await call('PATCH', '/master/services/HOUSEKEEPING', { Active: 'No' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ Service_Code: 'HOUSEKEEPING', Active: 'No' });
+    expect(db.sql('update service_registry')[0].values).toContain(false);
+  });
+
   it('refuses anyone who is not a Super Admin', async () => {
     const { db, call } = await api((text) => (text.includes('is_super_admin()') ? { rows: [{ ok: false }] } : undefined));
     const res = await call('POST', '/master/sites', { Site_Code: 'ZHPL-DL-05' });

@@ -300,7 +300,7 @@ export function createRoutes(deps: RouteDeps): Router {
             });
           }
         }
-        const extras = await extrasFor(c, 'EB_DG', body.extras);
+        const extras = await extrasFor(c, 'EB_DG', body.extras, String(body.Site_Code ?? ''));
         const plan = buildUpsert(row, extras);
         const { rows } = await c.query(plan.text, plan.values);
         return rows[0];

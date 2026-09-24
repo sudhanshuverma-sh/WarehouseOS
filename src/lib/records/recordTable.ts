@@ -10,6 +10,7 @@
 
 import type { FieldDefinition } from '../../types';
 import { indiaDay } from '../controlRoom/siteServiceStatus';
+import { commentKey, hasIssueRules, ISSUES_KEY, photoKey, STATUS_KEY } from '../services/formLogic';
 
 export type RecordRow = Record<string, unknown>;
 
@@ -22,6 +23,20 @@ export interface RecordColumn {
 const filled = (v: unknown) => v !== undefined && v !== null && v !== '';
 
 export const siteOf = (r: RecordRow): string => String(r.site ?? r.warehouseId ?? r.Site_Code ?? '');
+
+/**
+ * A follow-up photo as a table cell: an uploaded one opens from the API; one
+ * taken in demo mode lives only in that browser, so the cell just says so.
+ */
+export function photoCell(v: unknown): unknown {
+  if (typeof v !== 'string' || !v) return v;
+  if (v.startsWith('data:')) return 'Attached';
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return `${origin}/api/attachments/${v}`;
+  }
+  return v;
+}
 
 export function dayOf(r: RecordRow): string {
   const d = r.date ?? r.Date;
@@ -76,10 +91,30 @@ export function columnsFor(rows: RecordRow[], fields: FieldDefinition[] = []): R
   if (any('shift')) columns.push({ key: 'shift', label: 'Shift', value: (r) => r.shift });
 
   const taken = new Set(HANDLED);
+  // A form with issue answers says up front whether the entry found one.
+  if (hasIssueRules(fields)) {
+    columns.push({ key: STATUS_KEY, label: 'Overall status', value: (r) => r[STATUS_KEY] });
+    columns.push({ key: ISSUES_KEY, label: 'Issues', value: (r) => r[ISSUES_KEY] || (r[STATUS_KEY] ? 'None' : '') });
+    taken.add(STATUS_KEY);
+    taken.add(ISSUES_KEY);
+  }
   for (const f of fields) {
     if (taken.has(f.key)) continue;
     taken.add(f.key);
+    if (f.type === 'section') continue; // a heading, not an answer
     columns.push({ key: f.key, label: withUnit(f.label, f.unit), value: (r) => r[f.key] });
+    // The comment and photo an answer opened sit right after it.
+    const fu = f.followUp;
+    if (fu && fu.comment !== 'off') {
+      const k = commentKey(f.key);
+      taken.add(k);
+      columns.push({ key: k, label: `${f.label} — comment`, value: (r) => r[k] });
+    }
+    if (fu && fu.photo !== 'off') {
+      const k = photoKey(f.key);
+      taken.add(k);
+      columns.push({ key: k, label: `${f.label} — photo`, value: (r) => photoCell(r[k]) });
+    }
   }
   // Values saved under names the form no longer lists still show.
   for (const r of rows) {

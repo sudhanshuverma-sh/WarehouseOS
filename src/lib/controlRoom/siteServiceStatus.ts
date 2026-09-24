@@ -170,7 +170,9 @@ export const appWarehouseIdFor = (site: ControlRoomSite, warehouses: Warehouse[]
 /** Active Service_Registry services, in registry order; built-in services when none are loaded. */
 export function controlRoomServices(registry: ServiceRegistry[], sheets: { id: string; title: string }[]): ControlRoomService[] {
   const active = registry.filter((s) => s.Active === 'Yes' && s.Service_Code);
-  if (active.length) {
+  // Master Data loaded: it decides, even when every service is switched off.
+  // Only a registry that has not loaded falls back to the built-in list.
+  if (registry.some((s) => s.Service_Code)) {
     return active.map((s) => ({
       code: s.Service_Code,
       name: s.Service_Name || s.Service_Code,

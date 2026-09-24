@@ -65,6 +65,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           held: currentUser.serviceCodes,
           atSite,
           isAccessible: isServiceAccessible,
+          loaded: serviceRegistryRows.length > 0,
         }),
       ),
     [currentUser.role, currentUser.serviceCodes, registered, atSite, isServiceAccessible],

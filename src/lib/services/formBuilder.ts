@@ -10,6 +10,7 @@
 
 import type { FieldDefinition, FieldType } from '../../types';
 import type { Cadence } from '../../types/masterData';
+import { canBranchOn, cleanCondition, cleanFollowUp, cleanLogic } from './formLogic';
 
 export const FIELD_KEY = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const SERVICE_CODE = /^[A-Z][A-Z0-9_]*$/;
@@ -54,6 +55,7 @@ export const FIELD_TYPES: readonly FieldTypeInfo[] = [
   { type: 'date', label: 'Date', hint: 'A calendar date' },
   { type: 'time', label: 'Time', hint: '24-hour time' },
   { type: 'evidence', label: 'Attach link', hint: 'A Google Drive link to a photo or file' },
+  { type: 'section', label: 'Section heading', hint: 'Groups the questions below it' },
 ];
 
 export const fieldTypeLabel = (type: FieldType) => FIELD_TYPES.find((t) => t.type === type)?.label ?? type;
@@ -144,6 +146,13 @@ export function withType(field: FieldDefinition, type: FieldType): FieldDefiniti
   if (type === 'percentage' && !next.unit) next.unit = '%';
   if (type === 'temperature' && !next.unit) next.unit = '°C';
   if (type !== field.type) delete next.defaultValue;
+  // Only a fixed-answer question can open a follow-up, and its answers changed.
+  if (!canBranchOn(next) || type !== field.type) delete next.followUp;
+  if (type === 'section') {
+    next.required = false;
+    delete next.isCritical;
+    delete next.defaultValue;
+  }
   return next;
 }
 
@@ -167,8 +176,13 @@ export interface DraftProblems {
 export const problemCount = (p: DraftProblems) =>
   [p.name, p.code, p.form].filter(Boolean).length + Object.keys(p.fields).length;
 
-function fieldProblem(f: FieldDefinition, seen: Set<string>, asked: Map<string, string>): string | undefined {
-  if (!f.label.trim()) return 'Write the question.';
+function fieldProblem(
+  f: FieldDefinition,
+  seen: Set<string>,
+  asked: Map<string, string>,
+  earlier: readonly FieldDefinition[],
+): string | undefined {
+  if (!f.label.trim()) return f.type === 'section' ? 'Write the heading.' : 'Write the question.';
   if (!FIELD_KEY.test(f.key)) return 'This question has an invalid saved name.';
   if (seen.has(f.key)) return 'Two questions share the same saved name.';
   const already = asked.get(f.key.toLowerCase()) ?? asked.get(f.label.trim().toLowerCase());
@@ -180,6 +194,12 @@ function fieldProblem(f: FieldDefinition, seen: Set<string>, asked: Map<string, 
   }
   if (isNumericType(f.type) && isFiniteNumber(f.min) && isFiniteNumber(f.max) && Number(f.min) > Number(f.max)) {
     return 'The minimum is larger than the maximum.';
+  }
+  if (f.showIf && !cleanCondition(f.showIf, earlier)) {
+    return 'Show-if must point at an earlier Yes/No or dropdown question, and pick at least one of its answers.';
+  }
+  if (f.followUp && !cleanFollowUp(f, f.followUp)) {
+    return 'Pick which answers open the follow-up, and what it asks for.';
   }
   return undefined;
 }
@@ -224,7 +244,7 @@ export function validateDraft(
   }
   const seen = new Set<string>();
   draft.fields.forEach((f, i) => {
-    const problem = fieldProblem(f, seen, alreadyAsked);
+    const problem = fieldProblem(f, seen, alreadyAsked, draft.fields.slice(0, i));
     seen.add(f.key);
     if (problem) problems.fields[i] = problem;
   });
@@ -237,8 +257,8 @@ export function validateDraft(
  * is what a service with its own screen asks at the end of that screen.
  */
 export function cleanForSave(fields: FieldDefinition[], markExtra = false): FieldDefinition[] {
-  return fields.map((f) => {
-    const out: FieldDefinition = { key: f.key, label: f.label.trim(), type: f.type, required: f.required === true };
+  return fields.map((f, i) => {
+    const out: FieldDefinition = { key: f.key, label: f.label.trim(), type: f.type, required: f.type !== 'section' && f.required === true };
     const help = f.helperText?.trim();
     if (help) out.helperText = help;
     if (isNumericType(f.type)) {
@@ -248,9 +268,11 @@ export function cleanForSave(fields: FieldDefinition[], markExtra = false): Fiel
       if (isFiniteNumber(f.max)) out.max = Number(f.max);
     }
     if (f.type === 'select') out.options = [...new Set((f.options ?? []).map((o) => o.trim()).filter(Boolean))];
-    if (f.defaultValue !== undefined && f.defaultValue !== '' && f.type !== 'evidence') out.defaultValue = f.defaultValue;
-    if (f.isCritical) out.isCritical = true;
+    if (f.defaultValue !== undefined && f.defaultValue !== '' && f.type !== 'evidence' && f.type !== 'section') out.defaultValue = f.defaultValue;
+    if (f.isCritical && f.type !== 'section') out.isCritical = true;
     if (markExtra || f.isExtra) out.isExtra = true;
+    // Show-if and follow-ups are checked against the (trimmed) questions before this one.
+    Object.assign(out, cleanLogic({ ...f, options: out.options ?? f.options }, fields.slice(0, i)));
     return out;
   });
 }
@@ -359,3 +381,30 @@ export const FORM_TEMPLATES: readonly FormTemplate[] = [
     ],
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Keeping show-if links whole while questions are renamed, removed or copied
+// ---------------------------------------------------------------------------
+
+/** A question's saved name changed: every show-if that pointed at it follows. */
+export function renameRefs(fields: FieldDefinition[], from: string, to: string): FieldDefinition[] {
+  if (from === to) return fields;
+  return fields.map((f) => (f.showIf?.field === from ? { ...f, showIf: { ...f.showIf, field: to } } : f));
+}
+
+/** A question was removed: questions that hung on it are simply always asked. */
+export function dropRefs(fields: FieldDefinition[], key: string): FieldDefinition[] {
+  return fields.map((f) => {
+    if (f.showIf?.field !== key) return f;
+    const { showIf: _gone, ...rest } = f;
+    return rest;
+  });
+}
+
+/** A question copied deeply, so editing the copy's options or rules never edits the original. */
+export const copyField = (f: FieldDefinition): FieldDefinition => ({
+  ...f,
+  ...(f.options ? { options: [...f.options] } : {}),
+  ...(f.showIf ? { showIf: { ...f.showIf, equals: [...f.showIf.equals] } } : {}),
+  ...(f.followUp ? { followUp: { ...f.followUp, when: [...f.followUp.when] } } : {}),
+});

@@ -61,6 +61,7 @@
  */
 
 import { ALL, PocMaster, SiteMaster, ServiceRegistry, MasterAudit, EffectiveAccess, Scoped } from '../types/masterData';
+import { normaliseTime } from './masterData/validate';
 
 let jsonpCounter = 0;
 
@@ -248,7 +249,8 @@ function mapServiceRow(r: Record<string, any>): ServiceRegistry {
     Needs_Delivery_Validation: yesNo(r['Needs_Delivery_Validation']),
     Requires_Evidence: yesNo(r['Requires_Evidence']),
     Cadence: s(r['Cadence']) as ServiceRegistry['Cadence'],
-    Submission_Window: s(r['Submission_Window']),
+    // The sheet sends a typed 18:00 back as 18:00:00; keep the app's HH:MM.
+    Submission_Window: normaliseTime(s(r['Submission_Window'])),
     SLA_Hours: s(r['SLA_Hours']) === '' ? '' : Number(r['SLA_Hours']),
     // 'AppScript_URL' is the current column name; 'Spreadsheet_ID' read as a fallback
     // for JSON pasted before the sheet column was renamed.

@@ -10,6 +10,7 @@ import { Router } from 'express';
 import { handle, HttpError } from '../http';
 import type { FieldDefinition, FieldType } from '../../src/types';
 import { validateSubmissionData } from '../../src/lib/services/validateSubmission';
+import { cleanLogic, photoKey, pruneEntry } from '../../src/lib/services/formLogic';
 import {
   iso,
   isPlainObject,
@@ -39,7 +40,7 @@ const DEDICATED: Record<string, string> = {
 const SHIFTS = ['MORNING', 'EVENING', 'NIGHT'];
 const REVIEW_STATUSES = ['Verified', 'Flagged', 'Approved', 'Rejected'];
 const FIELD_TYPES = [
-  'text', 'number', 'percentage', 'boolean', 'select', 'temperature', 'textarea', 'time', 'date', 'evidence',
+  'text', 'number', 'percentage', 'boolean', 'select', 'temperature', 'textarea', 'time', 'date', 'evidence', 'section',
 ] as const satisfies readonly FieldType[];
 const FIELD_KEY = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const SERVICE_CODE = /^[A-Z][A-Z0-9_]*$/;
@@ -73,6 +74,7 @@ export const toSubmission = (r: Row) => ({
 export function cleanFormFields(input: unknown): FieldDefinition[] {
   if (!Array.isArray(input)) throw new HttpError(400, 'fields must be a list.');
   const seen = new Set<string>();
+  const done: FieldDefinition[] = [];
 
   return input.map((f, i) => {
     const where = `Field ${i + 1}`;
@@ -90,11 +92,12 @@ export function cleanFormFields(input: unknown): FieldDefinition[] {
     if (f.type === 'select' && !options?.length) throw new HttpError(400, `${where}: a select field needs options.`);
     const numberOrUndefined = (v: unknown) => (v === undefined || v === null || v === '' ? undefined : Number(v));
 
-    return {
+    const isSection = f.type === 'section';
+    const out: FieldDefinition = {
       key,
       label,
       type: f.type as FieldType,
-      required: f.required === true,
+      required: !isSection && f.required === true,
       unit: optionalText(f.unit) ?? undefined,
       options,
       helperText: optionalText(f.helperText) ?? undefined,
@@ -107,6 +110,12 @@ export function cleanFormFields(input: unknown): FieldDefinition[] {
       // service's own columns start being asked for as if they were questions.
       isExtra: f.isExtra === true || undefined,
     };
+    // Show-if may only hang on an EARLIER fixed-answer question, and a
+    // follow-up only on answers the question offers; anything else is dropped
+    // rather than saved as a rule that can never be met.
+    Object.assign(out, cleanLogic({ ...out, showIf: f.showIf as never, followUp: f.followUp as never }, done));
+    done.push(out);
+    return out;
   });
 }
 
@@ -182,7 +191,6 @@ export function submissionRoutes(deps: RouteDeps): Router {
       const shift = optionalText(b.shift);
       if (shift && !SHIFTS.includes(shift)) throw new HttpError(400, `Shift must be ${SHIFTS.join(', ')}.`);
       if (!isPlainObject(b.data)) throw new HttpError(400, 'data must be an object of field values.');
-      const data = b.data;
 
       const saved = await run(req, async (c) => {
         const { rows: found } = await c.query(
@@ -196,11 +204,19 @@ export function submissionRoutes(deps: RouteDeps): Router {
         if (!service.is_active) throw new HttpError(400, `${code} is switched off in the Service Registry.`);
 
         const fields: FieldDefinition[] = service.fields ?? [];
+        // Answers to questions that were not asked, follow-ups the answer did
+        // not open, and a client-sent status are dropped; the status is
+        // worked out here from the answers.
+        const data = pruneEntry(fields, b.data as Record<string, unknown>);
         const errors = validateSubmissionData(fields, data);
         if (errors.length) throw new HttpError(400, errors[0].message, 'VALIDATION', errors);
 
         for (const f of fields) {
           if (f.type === 'evidence') await requireAttachment(c, data[f.key], code, siteCode, f.label);
+          // A follow-up photo is an uploaded attachment for this service and site.
+          if (f.followUp && data[photoKey(f.key)] !== undefined) {
+            await requireAttachment(c, data[photoKey(f.key)], code, siteCode, `The photo for "${f.label}"`);
+          }
         }
 
         const { rows } = await c.query(

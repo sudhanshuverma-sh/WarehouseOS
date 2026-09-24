@@ -40,11 +40,19 @@ import { buildDieselSheetBatch, buildDieselSheetPayload } from '../lib/sheetSync
 import { buildEbDgSheetBatch, buildSheetPayload as buildEbDgSheetPayload, type EbDgRecord } from '../lib/ebdg/sheetWriter';
 import { ebDgRepositoryFor, loadAllLocalRows, type SubmitResult as EbDgSubmitResult } from '../lib/ebdg/repository';
 import { sheetForChannel } from '../lib/ebdg/columns';
-import { refreshBuiltInSheets, withBuiltInServices } from '../lib/services/builtInServices';
+import { ALWAYS_OFFERED, refreshBuiltInSheets, withBuiltInServices } from '../lib/services/builtInServices';
+import {
+  applyPendingEdits,
+  changedFields,
+  NO_PENDING_EDITS,
+  recordPendingEdit,
+  type MasterTab,
+  type PendingEdits,
+} from '../lib/masterData/pendingEdits';
 import { firePumpRecord, type FirePumpLog, type FirePumpSubmission, type FirePumpSubmitResult } from '../lib/firePump/records';
 import { scoreFirePump, visibleChecks, type FirePumpAnswers, type FirePumpKey } from '../lib/firePump/checks';
 import type { EbDgChannel, EbDgRow } from '../types/ebdg';
-import { validateSite, validateService, type EditMode, type MasterWriteResult } from '../lib/masterData/validate';
+import { changedOnly, validateSite, validateService, type EditMode, type MasterWriteResult } from '../lib/masterData/validate';
 import {
   INITIAL_WAREHOUSES,
   INITIAL_USERS,
@@ -333,6 +341,11 @@ interface AppContextType {
   serviceRegistryRows: ServiceRegistry[];
   /** Exactly the rows the Master Data sheet holds — for the Master Data screen. */
   masterServiceRegistryRows: ServiceRegistry[];
+  /**
+   * Switches a service on or off in Service_Registry (Master Data) — the same
+   * save as editing its Active field there, so both screens always agree.
+   */
+  setServiceActive: (code: string, active: boolean) => Promise<MasterWriteResult>;
   masterAuditRows: MasterAudit[];
   dropdownLists: Record<string, string[]>;
   lastMasterDataSyncAt: string | null;
@@ -477,6 +490,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'serviceRegistryRows');
     return saved ? JSON.parse(saved) : [];
   });
+  // Master Data edits made here that the Google Sheet does not show yet —
+  // laid over every sync so a re-sync cannot quietly undo them.
+  const [masterPendingEdits, setMasterPendingEdits] = useState<PendingEdits>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'masterPendingEdits');
+      return saved ? { ...NO_PENDING_EDITS, ...JSON.parse(saved) } : NO_PENDING_EDITS;
+    } catch {
+      return NO_PENDING_EDITS;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_PREFIX + 'masterPendingEdits', JSON.stringify(masterPendingEdits));
+    } catch {
+      /* private mode: the edits still apply for this session */
+    }
+  }, [masterPendingEdits]);
+
+  /** Rows fresh from the sheet, with the edits it does not show yet laid over them. */
+  const withPendingEdits = <Row extends object>(tab: MasterTab, rows: Row[], keyField: keyof Row & string): Row[] => {
+    const { rows: merged, remaining } = applyPendingEdits(rows, masterPendingEdits[tab], keyField);
+    setMasterPendingEdits(prev => ({ ...prev, [tab]: remaining }));
+    return merged;
+  };
+
   const [masterAuditRows, setMasterAuditRows] = useState<MasterAudit[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'masterAuditRows');
     return saved ? JSON.parse(saved) : [];
@@ -555,8 +593,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Save whatever came back — a Site_Master failure shouldn't discard a POC_Master success.
       if (pocMaster.length || !errors.pocMaster) setPocMasterRows(pocMaster);
-      if (siteMaster.length || !errors.siteMaster) setSiteMasterRows(siteMaster);
-      if (serviceRegistry.length || !errors.serviceRegistry) setServiceRegistryRows(serviceRegistry);
+      if (siteMaster.length || !errors.siteMaster) setSiteMasterRows(withPendingEdits('Site_Master', siteMaster, 'Site_Code'));
+      if (serviceRegistry.length || !errors.serviceRegistry) {
+        setServiceRegistryRows(withPendingEdits('Service_Registry', serviceRegistry, 'Service_Code'));
+      }
       if (masterAudit.length) setMasterAuditRows(masterAudit);
       if (Object.keys(dropdowns).length) setDropdownLists(dropdowns);
 
@@ -601,8 +641,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const serviceDiff = diffRows(serviceRegistryRows, serviceRegistry, 'Service_Code');
 
       setPocMasterRows(pocMaster);
-      setSiteMasterRows(siteMaster);
-      setServiceRegistryRows(serviceRegistry);
+      setSiteMasterRows(withPendingEdits('Site_Master', siteMaster, 'Site_Code'));
+      setServiceRegistryRows(withPendingEdits('Service_Registry', serviceRegistry, 'Service_Code'));
       setMasterAuditRows(masterAudit);
       setDropdownLists(dropdowns);
       setLastMasterDataSyncAt(new Date().toISOString());
@@ -656,14 +696,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     tab: 'Site_Master' | 'Service_Registry';
     action: 'upsertSiteMaster' | 'upsertServiceRegistry';
     validate: () => ReturnType<typeof validateSite>;
+    rows: Row[];
     setRows: React.Dispatch<React.SetStateAction<Row[]>>;
+    originalKey?: string;
   }): Promise<MasterWriteResult> => {
-    const errors = opts.validate();
+    const key = String(opts.row[opts.keyField] ?? '').trim();
+    const lookup = String(opts.originalKey ?? key);
+    const before =
+      opts.mode === 'edit'
+        ? (opts.rows.find(r => String(r[opts.keyField]) === lookup) as unknown as Record<string, unknown> | undefined)
+        : undefined;
+    // An edit is judged on what it changes: a value the sheet formatted its
+    // own way, in a field nobody touched, must not block switching a service off.
+    const errors = changedOnly(opts.validate(), before, opts.row as Record<string, unknown>);
     if (errors.length) {
       return { success: false, message: errors[0].message, errors };
     }
 
-    const key = String(opts.row[opts.keyField] ?? '').trim();
     const stamped = {
       ...opts.row,
       [opts.keyField]: key,
@@ -678,23 +727,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : prev.map(r => (String(r[opts.keyField]) === key ? { ...r, ...stamped } : r))
       );
 
-    if (!masterDataAppsScriptUrl) {
-      return {
-        success: false,
-        message: 'Set the Master Data Apps Script URL first (Sync field above) — writes go through it.',
-      };
+    // With the API, the database is Master Data: save there and show what it kept.
+    if (dataMode === 'api') {
+      const path = opts.tab === 'Service_Registry' ? '/master/services' : '/master/sites';
+      try {
+        const saved =
+          opts.mode === 'create'
+            ? await api.post<Row>(path, stamped)
+            : await api.patch<Row>(`${path}/${encodeURIComponent(lookup)}`, stamped);
+        opts.setRows(prev =>
+          opts.mode === 'create' ? [...prev, saved] : prev.map(r => (String(r[opts.keyField]) === lookup ? saved : r))
+        );
+        return { success: true, message: `${key} saved.` };
+      } catch (err) {
+        return { success: false, message: errorText(err) };
+      }
     }
 
-    submitViaHiddenForm(masterDataAppsScriptUrl, {
+    // Demo: the change applies here at once and is remembered until the
+    // Google Sheet shows it, so a re-sync cannot quietly put the old value back.
+    applyLocally();
+    const fields =
+      opts.mode === 'create'
+        ? changedFields(undefined, stamped as unknown as Record<string, unknown>)
+        : changedFields(before, stamped as unknown as Record<string, unknown>);
+    setMasterPendingEdits(prev => recordPendingEdit(prev, opts.tab, key, fields, opts.mode === 'create'));
+
+    if (!masterDataAppsScriptUrl) {
+      return {
+        success: true,
+        message: `${key} saved in this app. To write it to the Google Sheet too, link the Master Data Apps Script URL in the Sync field above.`,
+      };
+    }
+    const sent = submitViaHiddenForm(masterDataAppsScriptUrl, {
       action: opts.action,
       mode: opts.mode,
       row: stamped,
       actorEmail: currentUser.email,
     });
-    applyLocally();
     return {
       success: true,
-      message: `${key} sent to the sheet. Re-sync in a few seconds to confirm it landed.`,
+      message: sent
+        ? `${key} saved, and sent to the Master Data sheet. Re-sync in a few seconds to confirm it landed.`
+        : `${key} saved in this app, but the browser blocked the pop-up that writes to the sheet. Allow pop-ups for this site, then save again to update the sheet.`,
     };
   };
 
@@ -702,15 +777,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveMasterRow<SiteMaster>({
       row, mode, keyField: 'Site_Code', tab: 'Site_Master', action: 'upsertSiteMaster',
       validate: () => validateSite(row, siteMasterRows, mode, originalKey),
+      rows: siteMasterRows,
       setRows: setSiteMasterRows,
+      originalKey,
     });
 
   const saveServiceRegistryRow = (row: Partial<ServiceRegistry>, mode: EditMode, originalKey?: string) =>
     saveMasterRow<ServiceRegistry>({
       row, mode, keyField: 'Service_Code', tab: 'Service_Registry', action: 'upsertServiceRegistry',
       validate: () => validateService(row, serviceRegistryRows, mode, originalKey),
+      rows: serviceRegistryRows,
       setRows: setServiceRegistryRows,
+      originalKey,
     });
+
+  const setServiceActive: AppContextType['setServiceActive'] = async (code, active) => {
+    // An empty registry means Master Data has not loaded, and every screen is
+    // showing the built-in list; a single row now would hide all the others.
+    if (serviceRegistryRows.length === 0) {
+      return { success: false, message: 'Load Master Data first (Master Data → Sync), then switch services on or off.' };
+    }
+    const existing = serviceRegistryRows.find(r => r.Service_Code === code);
+    // A service the app always offers (Fire Pump Healthiness) may have no row
+    // in the sheet yet; switching it off is what creates one.
+    const row = existing ?? ALWAYS_OFFERED.find(r => r.Service_Code === code);
+    if (!row) return { success: false, message: `${code} is not in the Service Registry.` };
+    return saveServiceRegistryRow({ ...row, Active: active ? 'Yes' : 'No' }, existing ? 'edit' : 'create', existing ? code : undefined);
+  };
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_PREFIX + 'users', JSON.stringify(users));
@@ -2046,7 +2139,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           'Sheet sync popup was blocked by the browser — this call must happen directly inside a user click ' +
           '(e.g. the Submit button), not after an await/setTimeout. Look for a "popup blocked" icon in the address bar.'
         );
-        return;
+        return false;
       }
 
       const form = document.createElement('form');
@@ -2075,8 +2168,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // Ignore — user may have already closed it themselves.
         }
       }, 6000);
+      return true;
     } catch (err) {
       console.error('Sheet sync (popup form) failed to submit:', err);
+      return false;
     }
   };
 
@@ -3792,6 +3887,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         siteMasterRows,
         serviceRegistryRows: serviceRegistryView,
         masterServiceRegistryRows: serviceRegistryRows,
+        setServiceActive,
         masterAuditRows,
         dropdownLists,
         lastMasterDataSyncAt,

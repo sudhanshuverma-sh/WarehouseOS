@@ -187,7 +187,7 @@ export function dieselRoutes(deps: RouteDeps): Router {
             qr,
             optionalText(b.notes),
             isDelivery ? 'Pending Validation' : null,
-            await extrasFor(c, 'DIESEL', b.extras),
+            await extrasFor(c, 'DIESEL', b.extras, siteCode),
           ],
         );
         await queueSheetCopy(c, 'DIESEL', { event: 'CREATED', record: toDieselLog(rows[0]) });

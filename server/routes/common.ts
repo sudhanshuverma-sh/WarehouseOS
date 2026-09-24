@@ -12,6 +12,7 @@ import { HttpError } from '../http';
 import type { IdentityResolver } from '../identity';
 import type { FieldDefinition } from '../../src/types';
 import { validateSubmissionData } from '../../src/lib/services/validateSubmission';
+import { commentKey, photoKey, pruneEntry } from '../../src/lib/services/formLogic';
 
 export interface RouteDeps {
   db: Pick<Db, 'withActor' | 'healthy'>;
@@ -140,7 +141,7 @@ export async function queueSheetCopy(
  * by inventing keys. What is kept is checked against the field definitions,
  * so an answer the form would refuse cannot arrive by another route.
  */
-export async function extrasFor(c: Queryable, serviceCode: string, raw: unknown): Promise<string> {
+export async function extrasFor(c: Queryable, serviceCode: string, raw: unknown, siteCode?: string): Promise<string> {
   if (raw === undefined || raw === null) return '{}';
   if (!isPlainObject(raw)) throw new HttpError(400, 'extras must be an object of field values.');
 
@@ -149,11 +150,24 @@ export async function extrasFor(c: Queryable, serviceCode: string, raw: unknown)
   const fields = saved.filter((f) => f.isExtra === true);
   if (fields.length === 0) return '{}';
 
-  const kept: Record<string, unknown> = {};
-  for (const f of fields) if (raw[f.key] !== undefined) kept[f.key] = raw[f.key];
+  // Each question's answer, and the comment and photo its answer may open.
+  const picked: Record<string, unknown> = {};
+  for (const f of fields) {
+    for (const k of [f.key, commentKey(f.key), photoKey(f.key)]) if (raw[k] !== undefined) picked[k] = raw[k];
+  }
+  // The screen keeps its own status; an extra question never sets it.
+  const kept = pruneEntry(fields, picked, { status: false });
 
   const errors = validateSubmissionData(fields, kept);
   if (errors.length) throw new HttpError(400, errors[0].message, 'VALIDATION', errors);
+  if (siteCode) {
+    for (const f of fields) {
+      if (f.type === 'evidence') await requireAttachment(c, kept[f.key], serviceCode, siteCode, f.label);
+      if (kept[photoKey(f.key)] !== undefined) {
+        await requireAttachment(c, kept[photoKey(f.key)], serviceCode, siteCode, `The photo for "${f.label}"`);
+      }
+    }
+  }
   return JSON.stringify(kept);
 }
 

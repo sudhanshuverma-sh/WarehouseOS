@@ -1872,6 +1872,8 @@ function jsonResponse(data) {
               ? await saveSiteMasterRow(row as any, mode, originalKey)
               : await saveServiceRegistryRow(row as any, mode, originalKey);
             if (res.success) notify('success', mode === 'create' ? 'Row added' : 'Row saved', res.message);
+            // The editor's footer line is easy to miss; a refused save says so out loud.
+            else notify('error', 'Not saved', res.message);
             return res;
           }}
         />

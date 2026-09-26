@@ -37,7 +37,8 @@ const MainContent: React.FC = () => {
     currentDate,
     dailySiteLogs,
     sheetRecords,
-    dieselLogs
+    dieselLogs,
+    dataMode
   } = useApp();
 
   const caps = useMemo(() => capabilitiesFor(currentUser), [currentUser]);
@@ -165,9 +166,9 @@ const MainContent: React.FC = () => {
         />
 
         {/* Dynamic Route Content */}
-        {/* pb-20 clears the mobile bottom bar; mb-safe clears the home
-            indicator underneath it, and is 0 everywhere else. */}
-        <main className="flex-1 p-3 sm:p-5 lg:p-7 max-w-7xl w-full mx-auto pb-20 md:pb-8 mb-safe">
+        {/* The footer below clears the mobile bottom bar, so the page only
+            needs a little room of its own at the bottom. */}
+        <main className="flex-1 p-3 sm:p-5 lg:p-7 max-w-7xl w-full mx-auto pb-4 sm:pb-5 lg:pb-6">
           <ErrorBoundary onReset={() => setCurrentView('dashboard')}>
             {currentView === 'pocFiling' && (
               <POCFilingView
@@ -299,10 +300,23 @@ const MainContent: React.FC = () => {
           </ErrorBoundary>
         </main>
 
-        {/* Minimal Footer */}
-        <footer className="py-4 px-6 text-xs text-[var(--text-muted)] flex flex-col sm:flex-row items-center justify-between gap-2 mt-auto mb-14 md:mb-0">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-[var(--text-secondary)]">WarehouseOS</span>
+        {/* Minimal footer: the product, who built it, and in demo mode a note
+            that nothing reaches the database. On a phone its bottom margin
+            clears the fixed bottom bar and the home indicator; wider, it sits
+            at the foot of the page. */}
+        <footer className="mt-auto mb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:mb-0 w-full max-w-7xl mx-auto px-3 sm:px-5 lg:px-7">
+          <div className="py-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-1.5 text-[11px] text-slate-500">
+            <span className="flex flex-wrap items-center justify-center gap-2">
+              <span>
+                <span className="font-semibold text-slate-700">WarehouseOS</span> · © {new Date().getFullYear()}
+              </span>
+              {dataMode === 'demo' && <DemoModeBanner />}
+            </span>
+            <span>
+              Built by <span className="font-semibold text-slate-700">Sudhanshu Verma</span>
+              <span className="mx-1.5 text-slate-300" aria-hidden>|</span>
+              Emp ID <span className="font-mono text-slate-700">Z56684</span>
+            </span>
           </div>
         </footer>
       </div>
@@ -340,12 +354,7 @@ const Gate: React.FC = () => {
   const { dataMode, accessProblem } = useApp();
   if (dataMode === 'loading') return <StartupScreen />;
   if (accessProblem) return <StartupScreen problem={accessProblem} />;
-  return (
-    <>
-      <MainContent />
-      {dataMode === 'demo' && <DemoModeBanner />}
-    </>
-  );
+  return <MainContent />;
 };
 
 export default function App() {

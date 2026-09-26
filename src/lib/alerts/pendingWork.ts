@@ -10,8 +10,11 @@
  * This counts the same way for everyone: the services still pending for
  * their period at the sites in view, plus the diesel requests waiting on
  * somebody, plus today's entries that came back CRITICAL (a failed fire pump
- * check, or an issue answer on any built form). Pass the sites already
- * narrowed to what the person may see.
+ * check, or an issue answer on any built form), plus EB-DG maintenance: a DG
+ * at or past its B-check, or a power factor that risks an EB penalty. Pass
+ * the sites and services already narrowed to what the person may see: that
+ * is what sends a maintenance alert to the site's POC and to the Service
+ * Admin who holds EB-DG, and to nobody else.
  */
 
 import {
@@ -21,9 +24,10 @@ import {
   type ControlRoomSite,
 } from '../controlRoom/siteServiceStatus';
 import { serviceCodeFor } from '../services/serviceCodes';
+import { maintenanceAlerts } from '../ebdg/maintenance';
 
 export interface PendingItem {
-  kind: 'service' | 'diesel' | 'critical';
+  kind: 'service' | 'diesel' | 'critical' | 'maintenance';
   /** Service code, or 'DIESEL'. */
   code: string;
   /** What is waiting, in words. */
@@ -31,6 +35,8 @@ export interface PendingItem {
   /** The site it belongs to. */
   site: string;
   siteCode: string;
+  /** How urgent a maintenance alert is: past due, or coming up. */
+  tone?: 'bad' | 'soon';
 }
 
 export interface PendingWork {
@@ -41,6 +47,8 @@ export interface PendingWork {
   diesel: number;
   /** Today's checks that found a fault (fire pump CRITICAL). */
   critical: number;
+  /** EB-DG B-checks due or overdue, and low power factors. */
+  maintenance: number;
   /** How many sites have anything outstanding. */
   sites: number;
   /** The first few, for a list. `total` is the real count. */
@@ -143,13 +151,25 @@ export function pendingWork(input: {
     }
   }
 
+  // EB-DG maintenance, only for people who hold EB-DG.
+  const maintenanceItems: PendingItem[] = [];
+  if (services.some((s) => s.code === 'EB_DG')) {
+    for (const alert of maintenanceAlerts(records.ebdgRows, today)) {
+      const site = known.get(alert.siteCode.toLowerCase());
+      if (!site) continue;
+      withWork.add(site.id);
+      maintenanceItems.push({ kind: 'maintenance', code: 'EB_DG', label: alert.label, site: site.name, siteCode: site.id, tone: alert.tone });
+    }
+  }
+
   return {
-    total: servicesDue + dieselDue + criticalItems.length,
+    total: servicesDue + dieselDue + criticalItems.length + maintenanceItems.length,
     services: servicesDue,
     diesel: dieselDue,
     critical: criticalItems.length,
+    maintenance: maintenanceItems.length,
     sites: withWork.size,
-    items: [...criticalItems, ...items].slice(0, MAX_ITEMS),
+    items: [...criticalItems, ...maintenanceItems.filter((m) => m.tone === 'bad'), ...items, ...maintenanceItems.filter((m) => m.tone !== 'bad')].slice(0, MAX_ITEMS),
   };
 }
 
@@ -159,6 +179,7 @@ export function pendingSummary(work: PendingWork): string {
   const parts: string[] = [];
   if (work.services) parts.push(`${work.services} ${work.services === 1 ? 'filing' : 'filings'} due`);
   if (work.critical) parts.push(`${work.critical} critical ${work.critical === 1 ? 'check' : 'checks'}`);
+  if (work.maintenance) parts.push(`${work.maintenance} DG ${work.maintenance === 1 ? 'alert' : 'alerts'}`);
   if (work.diesel) parts.push(`${work.diesel} diesel ${work.diesel === 1 ? 'request' : 'requests'}`);
   const where = work.sites === 1 ? '1 site' : `${work.sites} sites`;
   return `${parts.join(', ')} at ${where}`;

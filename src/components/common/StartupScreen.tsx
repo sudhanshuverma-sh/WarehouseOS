@@ -64,13 +64,17 @@ export const StartupScreen: React.FC<{ problem?: ApiError | null }> = ({ problem
 
 /**
  * A standing reminder, in development only, that nothing typed here reaches
- * the database. Production builds never enter demo mode, so never show it.
+ * the database. It sits in the footer as a small chip, so it never covers
+ * anything or needs room kept for it. Production builds never enter demo
+ * mode, so never show it.
  */
 export const DemoModeBanner: React.FC = () => (
-  <div
+  <span
     role="note"
-    className="fixed z-40 right-3 bottom-20 md:bottom-4 max-w-[calc(100vw-1.5rem)] px-3 py-1.5 rounded-full bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-semibold shadow-sm"
+    title="Run npm run api:dev to use Postgres."
+    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-semibold"
   >
-    Demo mode — saved in this browser only, not the database. Run <code>npm run api:dev</code> to use Postgres.
-  </div>
+    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden />
+    Demo mode: saved in this browser only
+  </span>
 );

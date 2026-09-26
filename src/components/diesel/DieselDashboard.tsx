@@ -1,206 +1,241 @@
-import React, { useMemo, useState } from 'react';
-import { ArrowRight, Fuel, Inbox, Printer } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { ArrowRight, CalendarDays, Download, FileDown, Fuel, Inbox, Loader2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import {
+  channelOf,
   computeDieselDashboard,
+  DATE_PRESETS,
   dieselFilterOptions,
   EMPTY_DIESEL_FILTERS,
   filterDieselLogs,
   formatDay,
-  formatLitresShort,
-  percent,
+  indiaDay,
+  statusOf,
+  vendorOf,
+  warehouseOf,
   type DieselDashboardFilters,
 } from '../../lib/diesel/dashboard';
-import { CHART_COLORS, HorizontalBars, MiniDonut, MonthlyTrendChart, WeeklySpendChart, ZoneDonut } from './DieselCharts';
-import { DieselFilterBar } from './DieselFilterBar';
+import { downloadPdf, pdfFileName } from '../../lib/export/pdf';
+import type { DieselLog } from '../../types';
 import {
-  Card,
-  FuelCard,
-  Insights,
-  KpiCard,
-  MonthComparison,
+  KpiRow,
+  MonthCompare,
+  MonthlyTrend,
+  NEU,
+  OrderFuelType,
   QuickStats,
   RateList,
-  SectionTitle,
-  TopWarehouseBars,
+  SectionHead,
+  TopWarehouses,
+  VendorShare,
   WarehouseTable,
-} from './DieselPanels';
+  WeeklyTrend,
+  ZoneBreakdown,
+} from './DieselNeu';
+import { DieselNeuFilterBar } from './DieselNeuFilterBar';
 
 /**
- * Diesel Procurement dashboard — the Admin → service view for Diesel.
+ * Diesel Procurement dashboard: the Admin Service Hub view for Diesel, in the
+ * neumorphic look (soft grey-blue surface, raised cards, pressed-in wells,
+ * one orange accent).
  *
  * Every figure is computed from the diesel requests the signed-in admin can
  * see (lib/diesel/dashboard.ts); nothing here is sample data. Filters narrow
  * the requests first, then the whole dashboard is recomputed from them.
  */
 export const DieselDashboard: React.FC<{ onOpenLedger?: () => void }> = ({ onOpenLedger }) => {
-  const { dieselLogs } = useApp();
+  const { dieselLogs, notify, currentDate } = useApp();
   const [filters, setFilters] = useState<DieselDashboardFilters>(EMPTY_DIESEL_FILTERS);
+  const [busy, setBusy] = useState(false);
+  const page = useRef<HTMLDivElement>(null);
 
   const options = useMemo(() => dieselFilterOptions(dieselLogs), [dieselLogs]);
   const filtered = useMemo(() => filterDieselLogs(dieselLogs, filters), [dieselLogs, filters]);
   const d = useMemo(() => computeDieselDashboard(filtered), [filtered]);
   const { kpi } = d;
 
-  const generated = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const generated = new Date().toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const range = kpi.firstDay ? `${formatDay(kpi.firstDay)} to ${formatDay(kpi.lastDay)}` : 'No dates';
+  const presetLabel = filters.month || (filters.preset ? DATE_PRESETS.find((p) => p.value === filters.preset)?.label : '') || 'All dates';
+  const subtitle = `Generated ${generated}, ${kpi.records.toLocaleString('en-IN')} records${kpi.duplicatesRemoved ? ` (${kpi.duplicatesRemoved} duplicates removed)` : ''}`;
+
+  const pdf = async () => {
+    if (!page.current || busy) return;
+    setBusy(true);
+    try {
+      await downloadPdf(page.current, { title: 'Diesel Procurement Dashboard', subtitle: `${range}, ${kpi.records.toLocaleString('en-IN')} records`, fileName: pdfFileName('Diesel Procurement Dashboard', currentDate) });
+      notify('success', 'PDF downloaded', 'The Diesel Procurement dashboard is in your downloads.');
+    } catch (e) {
+      console.error('PDF export failed', e);
+      notify('error', 'Could not make the PDF', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const header = (
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-          <Fuel className="w-5 h-5 text-(--color-late)" /> Diesel Procurement Dashboard
-        </h2>
-        <p className="text-xs text-slate-500 mt-0.5">Generated {generated} · from diesel requests filed in WarehouseOS</p>
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex items-center gap-4 min-w-0">
+        <div className="w-[54px] h-[54px] rounded-[18px] flex items-center justify-center shrink-0 neu-raised" style={{ background: NEU.accent }}>
+          <Fuel className="w-6 h-6 text-white" strokeWidth={1.9} />
+        </div>
+        <div className="flex flex-col gap-1 min-w-0">
+          <h1 className="m-0 text-2xl sm:text-[30px] leading-tight font-semibold" style={{ color: NEU.ink }}>
+            Diesel Procurement Dashboard
+          </h1>
+          <span className="text-sm truncate" style={{ color: NEU.muted }}>
+            {subtitle}
+          </span>
+        </div>
       </div>
-      <div className="flex flex-wrap gap-2 print:hidden">
+      <div className="flex flex-wrap gap-3.5 print:hidden" data-pdf-ignore>
+        <span className="neu-raised flex items-center gap-2 h-[46px] px-5 rounded-2xl text-sm font-semibold" style={{ color: NEU.ink }}>
+          <CalendarDays className="w-[18px] h-[18px]" strokeWidth={1.9} />
+          {presetLabel}
+        </span>
         <button
           type="button"
-          onClick={() => window.print()}
-          className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+          onClick={pdf}
+          disabled={busy}
+          className="neu-press neu-raised flex items-center gap-2 h-[46px] px-5 rounded-2xl border-0 text-sm font-semibold cursor-pointer disabled:cursor-wait"
+          style={{ color: NEU.ink }}
         >
-          <Printer className="w-3.5 h-3.5" /> Print / Save PDF
+          {busy ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <FileDown className="w-[18px] h-[18px]" strokeWidth={1.9} />}
+          {busy ? 'Preparing PDF' : 'PDF'}
+        </button>
+        <button
+          type="button"
+          onClick={() => exportCsv(filtered, pdfFileName('diesel-requests', currentDate))}
+          disabled={!filtered.length}
+          className="neu-press neu-raised flex items-center gap-2 h-[46px] px-5 rounded-2xl border-0 text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
+          style={{ background: NEU.accent }}
+        >
+          <Download className="w-[18px] h-[18px]" strokeWidth={1.9} /> Export CSV
         </button>
         {onOpenLedger && (
           <button
             type="button"
             onClick={onOpenLedger}
-            className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 cursor-pointer"
+            className="neu-press neu-raised flex items-center gap-2 h-[46px] px-5 rounded-2xl border-0 text-sm font-semibold cursor-pointer"
+            style={{ color: NEU.ink }}
           >
-            Open diesel ledger <ArrowRight className="w-3.5 h-3.5" />
+            Ledger <ArrowRight className="w-4 h-4" />
           </button>
         )}
       </div>
     </div>
   );
 
-  if (dieselLogs.length === 0) {
-    return (
-      <div className="space-y-4">
-        {header}
-        <Card>
-          <div className="flex flex-col items-center text-center py-12 gap-2">
-            <Inbox className="w-8 h-8 text-slate-300" />
-            <p className="text-sm font-semibold text-slate-700">No diesel requests yet</p>
-            <p className="text-xs text-slate-500 max-w-sm">
-              The dashboard fills in as POCs file diesel requests in the app. Every figure here comes from those requests.
-            </p>
-          </div>
-        </Card>
-      </div>
-    );
-  }
+  const empty = (title: string, body: string, action?: React.ReactNode) => (
+    <div className="neu-card flex flex-col items-center text-center py-14 px-6 gap-2">
+      <span className="neu-inset w-14 h-14 rounded-2xl flex items-center justify-center">
+        <Inbox className="w-6 h-6" style={{ color: NEU.muted }} />
+      </span>
+      <p className="mt-2 text-base font-semibold" style={{ color: NEU.ink }}>
+        {title}
+      </p>
+      <p className="text-sm max-w-sm" style={{ color: NEU.muted }}>
+        {body}
+      </p>
+      {action}
+    </div>
+  );
 
   return (
-    <div className="space-y-4">
+    <div ref={page} className="neu-root rounded-[32px] px-4 py-6 sm:px-8 sm:py-9 flex flex-col gap-6">
       {header}
-      <DieselFilterBar filters={filters} options={options} onChange={setFilters} />
 
-      {filtered.length === 0 ? (
-        <Card>
-          <div className="flex flex-col items-center text-center py-12 gap-2">
-            <Inbox className="w-8 h-8 text-slate-300" />
-            <p className="text-sm font-semibold text-slate-700">No requests match these filters</p>
-            <button type="button" onClick={() => setFilters(EMPTY_DIESEL_FILTERS)} className="text-xs font-semibold text-(--color-filed) underline cursor-pointer">
-              Clear all filters
-            </button>
-          </div>
-        </Card>
+      {dieselLogs.length === 0 ? (
+        empty('No diesel requests yet', 'The dashboard fills in as POCs file diesel requests in the app. Every figure here comes from those requests.')
       ) : (
         <>
-          {/* 1. Key performance metrics */}
-          <SectionTitle
-            aside={
-              <>
-                {kpi.firstDay && `Showing: ${formatDay(kpi.firstDay)} → ${formatDay(kpi.lastDay)} · `}
-                {kpi.records.toLocaleString('en-IN')} records
-                {kpi.duplicatesRemoved > 0 && ` (${kpi.duplicatesRemoved} duplicate${kpi.duplicatesRemoved > 1 ? 's' : ''} removed)`}
-              </>
-            }
-          >
-            Key performance metrics
-          </SectionTitle>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <KpiCard label={filters.entity ? `${filters.entity} spend` : 'Total spend'} value={kpi.totalSpend} sub={`${formatLitresShort(kpi.totalQty)} total`} accent="#cf7841" />
-            <KpiCard label="B2B spend" value={kpi.b2bSpend} sub={`${percent(kpi.b2bSpend, kpi.totalSpend)}% of total · ${formatLitresShort(kpi.b2bQty)}`} accent="#3f79b5" />
-            <KpiCard label="B2C spend" value={kpi.b2cSpend} sub={`${percent(kpi.b2cSpend, kpi.totalSpend)}% of total · ${formatLitresShort(kpi.b2cQty)}`} accent="#4f9377" />
-          </div>
+          <DieselNeuFilterBar filters={filters} options={options} onChange={setFilters} />
 
-          {/* 2. Fuel breakdown */}
-          <SectionTitle aside="Diesel vs DEF">Fuel breakdown</SectionTitle>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <FuelCard label="DIESEL" {...d.fuel.diesel} accent="#cf7841" />
-            <FuelCard label="DEF" {...d.fuel.def} accent="#8a6fcc" />
-          </div>
+          {filtered.length === 0 ? (
+            empty(
+              'No requests match these filters',
+              'Try a wider period or clear a filter.',
+              <button
+                type="button"
+                onClick={() => setFilters(EMPTY_DIESEL_FILTERS)}
+                className="neu-press mt-3 h-11 px-5 rounded-2xl border-0 text-sm font-semibold text-white cursor-pointer"
+                style={{ background: NEU.accent }}
+              >
+                Clear all filters
+              </button>,
+            )
+          ) : (
+            <>
+              <SectionHead aside={`Showing ${range}`}>Key performance metrics &amp; fuel breakdown</SectionHead>
+              <KpiRow d={d} entity={filters.entity} />
 
-          {/* 3. Spend analysis */}
-          <SectionTitle>Spend analysis</SectionTitle>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <MonthlyTrendChart months={d.monthly} />
-            <ZoneDonut zones={d.zones} />
-          </div>
-          <WeeklySpendChart weeks={d.weekly} />
-
-          {/* 4. Warehouse performance */}
-          <SectionTitle>Warehouse performance</SectionTitle>
-          <div className="grid grid-cols-1 lg:grid-cols-[2.2fr_1fr] gap-3">
-            <TopWarehouseBars data={d.topWarehouses} />
-            <QuickStats kpi={kpi} />
-          </div>
-
-          {/* 5. Vendor intelligence */}
-          <SectionTitle>Vendor intelligence</SectionTitle>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <HorizontalBars title="Vendor transaction share" rows={d.vendorsByCount} valueKey="count" />
-            <Card>
-              <div className="space-y-5">
-                <MiniDonut
-                  title="Order type"
-                  data={[
-                    { name: 'Delivery Only', value: d.orderType.delivery },
-                    { name: 'Payment Only', value: d.orderType.payment },
-                  ]}
-                  colors={['#3f79b5', '#cf7841']}
-                />
-                <MiniDonut
-                  title="Fuel type"
-                  data={[
-                    { name: 'Diesel', value: d.fuelType.diesel },
-                    { name: 'DEF', value: d.fuelType.def },
-                  ]}
-                  colors={['#cf7841', '#8a6fcc']}
-                />
+              <SectionHead>Spend analysis</SectionHead>
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6">
+                <MonthlyTrend months={d.monthly} />
+                <ZoneBreakdown zones={d.zones} />
               </div>
-            </Card>
-            <RateList rows={d.vendorRates} />
-          </div>
-          <Insights items={d.insights} />
+              <WeeklyTrend weeks={d.weekly} />
 
-          {/* 6. Warehouse analytics */}
-          <SectionTitle>Warehouse analytics</SectionTitle>
-          <div className="grid grid-cols-1 lg:grid-cols-[2.2fr_1fr] gap-3">
-            <Card title="Top warehouses by spend">
-              <WarehouseTable rows={d.warehouses} limit={20} />
-            </Card>
-            <HorizontalBars title="Vendor spend share" rows={d.vendorsBySpend} valueKey="spend" />
-          </div>
+              <SectionHead>Warehouse performance</SectionHead>
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-6">
+                <TopWarehouses rows={d.warehouses} />
+                <QuickStats kpi={kpi} />
+              </div>
 
-          {/* 7. Month comparison */}
-          <SectionTitle>Month comparison</SectionTitle>
-          <MonthComparison months={d.monthly} />
+              <SectionHead>Vendor intelligence</SectionHead>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.25fr)] gap-6">
+                <VendorShare byCount={d.vendorsByCount} bySpend={d.vendorsBySpend} />
+                <OrderFuelType d={d} />
+                <div className="md:col-span-2 xl:col-span-1 grid">
+                  <RateList rows={d.vendorRates} />
+                </div>
+              </div>
 
-          {/* 8. Every warehouse */}
-          <Card
-            title="All warehouses — complete list"
-            actions={<span className="text-[11px] text-slate-500 font-mono">{d.warehouses.length} warehouses total</span>}
-          >
-            <WarehouseTable rows={d.warehouses} maxHeight="28rem" />
-          </Card>
+              <SectionHead aside={`${d.warehouses.length} warehouses total`}>Warehouse analytics</SectionHead>
+              <WarehouseTable rows={d.warehouses} />
 
-          <p className="text-[10px] text-slate-400 text-center" style={{ color: CHART_COLORS[8] + '99' }}>
-            Status counts the admin decision (Approved / Rejected / Pending). Delivered litres follow the POC’s validation.
-          </p>
+              <SectionHead>Month comparison</SectionHead>
+              <MonthCompare months={d.monthly} />
+
+              <p className="text-xs text-center" style={{ color: NEU.muted }}>
+                Status counts the admin decision (Approved, Rejected, Pending). Delivered litres follow the POC's validation.
+              </p>
+            </>
+          )}
         </>
       )}
     </div>
   );
 };
+
+/** The requests in view as a CSV, one row each. */
+function exportCsv(rows: DieselLog[], fileName: string) {
+  const cols: [string, (l: DieselLog) => string | number][] = [
+    ['Unique ID', (l) => l.uniqueId],
+    ['Date', (l) => indiaDay(l.timestamp)],
+    ['Warehouse', (l) => warehouseOf(l)],
+    ['Cost center', (l) => l.costCenter ?? ''],
+    ['Zone', (l) => l.zone ?? ''],
+    ['B2B / B2C', (l) => channelOf(l)],
+    ['Vendor', (l) => vendorOf(l)],
+    ['Fuel', (l) => l.fuel],
+    ['Type', (l) => l.type],
+    ['Quantity (L)', (l) => l.quantity ?? ''],
+    ['Delivered (L)', (l) => l.deliveredQuantityLitres ?? ''],
+    ['Rate per litre', (l) => l.ratePerLitre ?? ''],
+    ['Amount', (l) => l.finalAmount ?? ''],
+    ['Status', (l) => statusOf(l)],
+    ['Requested by', (l) => l.submittedByName ?? ''],
+  ];
+  const esc = (v: string | number) => {
+    const t = String(v ?? '');
+    return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const csv = [cols.map(([h]) => esc(h)).join(','), ...rows.map((l) => cols.map(([, get]) => esc(get(l))).join(','))].join('\n');
+  const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${fileName}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

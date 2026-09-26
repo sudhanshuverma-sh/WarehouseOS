@@ -32,6 +32,7 @@ import { BUILT_IN_FORM_SERVICES, cadenceLabel } from '../lib/services/formBuilde
 import { DIESEL_EXPORT } from '../lib/export/dieselExport';
 import { EBDG_SHEET_HEADER, sheetValue, type EbDgRecord } from '../lib/ebdg/sheetWriter';
 import type { ExportSpec } from '../lib/export/exporter';
+import { formatRange, recordPeriodRange, type RecordPeriod } from '../lib/analytics/period';
 import { applyColumnFilters, clearAllFilters, countActiveFilters, type ColumnFilters } from '../lib/table/columnFilters';
 import {
   columnsFor,
@@ -203,8 +204,12 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
     setActiveSheetId(sheetIdFor(next));
   };
 
-  const [period, setPeriod] = useState<'ALL' | 'DAY'>('ALL');
+  const [period, setPeriod] = useState<RecordPeriod>('ALL');
   const [day, setDay] = useState(currentDate);
+  // The custom range starts as this month, so picking Custom shows something at once.
+  const [from, setFrom] = useState(`${currentDate.slice(0, 7)}-01`);
+  const [to, setTo] = useState(currentDate);
+  const range = useMemo(() => recordPeriodRange(period, { day, from, to }, currentDate), [period, day, from, to, currentDate]);
   const [siteFilter, setSiteFilter] = useState('ALL');
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
@@ -283,11 +288,14 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
     const q = query.trim().toLowerCase();
     const site = siteFilter === 'ALL' ? null : mySites.find((s) => s.id === siteFilter);
     return viewRows.filter((v) => {
-      if (period === 'DAY' && dayOf(v.__row) !== day) return false;
+      if (range) {
+        const d = dayOf(v.__row);
+        if (!d || d < range.from || d > range.to) return false;
+      }
       if (site && !siteMatches(site, siteOf(v.__row))) return false;
       return !q || JSON.stringify(v).toLowerCase().includes(q);
     });
-  }, [viewRows, period, day, siteFilter, mySites, query]);
+  }, [viewRows, range, siteFilter, mySites, query]);
 
   const filtered = useMemo(() => {
     const list = applyColumnFilters(scoped, columnFilters);
@@ -302,7 +310,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
   }, [scoped, columnFilters, sort]);
 
   const activeColumnFilters = countActiveFilters(columnFilters);
-  const narrowed = period === 'DAY' || siteFilter !== 'ALL' || query.trim() !== '' || activeColumnFilters > 0;
+  const narrowed = period !== 'ALL' || siteFilter !== 'ALL' || query.trim() !== '' || activeColumnFilters > 0;
 
   const clearAll = () => {
     setPeriod('ALL');
@@ -461,6 +469,9 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
                     [
                       ['ALL', 'All time'],
                       ['DAY', 'One day'],
+                      ['THIS_MONTH', 'This month'],
+                      ['PREV_MONTH', 'Prev month'],
+                      ['CUSTOM', 'Custom'],
                     ] as const
                   ).map(([value, label]) => (
                     <button
@@ -468,7 +479,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
                       type="button"
                       aria-pressed={period === value}
                       onClick={() => setPeriod(value)}
-                      className={`h-8 px-3 rounded-md text-xs font-semibold transition cursor-pointer ${
+                      className={`h-8 px-3 rounded-md text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
                         period === value ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
@@ -479,9 +490,16 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
                 {period === 'DAY' && (
                   <input type="date" value={day} max={currentDate} onChange={(e) => setDay(e.target.value)} aria-label="Day" className={CONTROL} />
                 )}
+                {period === 'CUSTOM' && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <input type="date" value={from} max={currentDate} onChange={(e) => setFrom(e.target.value)} aria-label="From" title="From" className={CONTROL} />
+                    <span className="text-xs text-slate-500">to</span>
+                    <input type="date" value={to} max={currentDate} onChange={(e) => setTo(e.target.value)} aria-label="To" title="To" className={CONTROL} />
+                  </span>
+                )}
 
                 {mySites.length > 1 ? (
-                  <select value={siteFilter} onChange={(e) => setSiteFilter(e.target.value)} aria-label="Site" className={`${CONTROL} max-w-56`}>
+                  <select value={siteFilter} onChange={(e) => setSiteFilter(e.target.value)} aria-label="Site" className={`${CONTROL} w-44 shrink-0`}>
                     <option value="ALL">All sites ({mySites.length})</option>
                     {mySites.map((s) => (
                       <option key={s.id} value={s.id}>
@@ -495,7 +513,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
                   </span>
                 ) : null}
 
-                <div className="relative flex-1 min-w-44">
+                <div className="relative flex-1 min-w-40">
                   <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     value={query}
@@ -517,8 +535,13 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
                 </div>
 
                 {narrowed && (
-                  <button type="button" onClick={clearAll} className="h-9 px-2 text-xs font-semibold text-slate-600 hover:text-slate-900 underline underline-offset-2 cursor-pointer">
-                    Clear filters
+                  <button
+                    type="button"
+                    onClick={clearAll}
+                    title="Clear filters"
+                    className="inline-flex items-center gap-1 h-9 px-2.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 whitespace-nowrap cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" /> Clear
                   </button>
                 )}
                 <ExportPanel rows={filtered} spec={exportSpec} caps={caps} totalCount={viewRows.length} />
@@ -531,6 +554,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
                   <span>
                     <strong className="font-mono text-slate-900">{filtered.length}</strong>
                     {narrowed && <span className="font-mono"> of {viewRows.length}</span>} {filtered.length === 1 ? 'entry' : 'entries'}
+                    {range && <span className="text-slate-400">, {formatRange(range)}</span>}
                     {activeColumnFilters > 0 && `, ${activeColumnFilters} column ${activeColumnFilters === 1 ? 'filter' : 'filters'}`}
                   </span>
                   <span className="flex items-center gap-2">
@@ -601,7 +625,7 @@ export const SheetDataExplorer: React.FC<SheetDataExplorerProps> = ({ onBack, on
                         </tr>
                       </thead>
                       <tbody
-                        key={`${service.code}-${period}-${day}-${siteFilter}-${activeColumnFilters}`}
+                        key={`${service.code}-${period}-${range?.from ?? ''}-${range?.to ?? ''}-${siteFilter}-${activeColumnFilters}`}
                         className="divide-y divide-slate-100 animate-settle"
                       >
                         {filtered.length === 0 && (

@@ -23,6 +23,7 @@
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/outfit": "^5.3.0",
     "@fontsource/space-grotesk": "^5.3.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/pg": "^8.23.1",
@@ -30,6 +31,8 @@
     "canvas-confetti": "^1.9.4",
     "esbuild": "^0.25.0",
     "express": "^4.21.2",
+    "html-to-image": "^1.11.13",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "pg": "^8.23.0",

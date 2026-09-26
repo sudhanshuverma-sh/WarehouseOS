@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -48,6 +48,10 @@ import { ExportPanel } from './common/ExportPanel';
 import { Reveal } from './common/Reveal';
 import { ColumnsMenu, DragHandle, ExpandButton, TableFullscreen, useColumnLayout, visibleColumns } from './common/TableTools';
 import { DieselDashboard } from './diesel/DieselDashboard';
+import { EbDgDashboard } from './ebdg/EbDgDashboard';
+import { DailyReportDashboard } from './dailyReport/DailyReportDashboard';
+import { FirePumpDashboard } from './firePump/FirePumpDashboard';
+import { PdfButton } from './common/PdfButton';
 import { LogCalendar, longDay, shortDay } from './adminHub/LogCalendar';
 
 /**
@@ -301,6 +305,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab, o
         </button>
         {openService.code === 'DIESEL' ? (
           <DieselDashboard onOpenLedger={onNavigateTab ? () => onNavigateTab('diesel') : undefined} />
+        ) : openService.code === 'EB_DG' ? (
+          <EbDgDashboard onOpenForm={onNavigateTab ? () => onNavigateTab('dgPower') : undefined} />
+        ) : openService.code === 'SITE_ACTIVITY' ? (
+          <DailyReportDashboard sites={sites} onOpenForm={onNavigateTab ? () => onNavigateTab('dailyForm') : undefined} />
+        ) : openService.code === 'FIRE' ? (
+          <FirePumpDashboard sites={sites} onOpenForm={onNavigateTab ? () => onNavigateTab('firePump') : undefined} />
         ) : (
           <ServiceSitesView
             service={openService}
@@ -557,6 +567,7 @@ const ServiceSitesView: React.FC<{
   const pendingWord = onRequest ? 'Not filed' : 'Pending';
 
   const [expanded, setExpanded] = useState(false);
+  const page = useRef<HTMLDivElement>(null);
   const siteColumns = useMemo(
     () => [
       {
@@ -641,7 +652,7 @@ const ServiceSitesView: React.FC<{
   };
 
   return (
-    <div className="space-y-4">
+    <div ref={page} className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-900">{service.name}</h1>
@@ -654,7 +665,10 @@ const ServiceSitesView: React.FC<{
             )}
           </p>
         </div>
-        <ChannelTabs value={tab} counts={channelCounts(offered)} onChange={setTab} />
+        <div className="flex flex-wrap items-center gap-2">
+          <ChannelTabs value={tab} counts={channelCounts(offered)} onChange={setTab} />
+          <PdfButton target={page} title={service.name} subtitle={`${CADENCE_LABEL[service.cadence]}, ${longDay(day)}`} />
+        </div>
       </div>
 
       <div key={`${day}-${tab}`} className="grid grid-cols-1 sm:grid-cols-3 gap-3">

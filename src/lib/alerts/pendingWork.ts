@@ -53,6 +53,8 @@ export interface PendingWork {
   sites: number;
   /** The first few, for a list. `total` is the real count. */
   items: PendingItem[];
+  /** Every open issue, uncapped: critical checks, EB-DG maintenance, diesel waiting. */
+  issues: PendingItem[];
 }
 
 export interface DieselWaiting {
@@ -111,6 +113,7 @@ export function pendingWork(input: {
   for (const site of sites) for (const alias of [site.id, ...site.aliases]) known.set(alias.toLowerCase(), site);
 
   let dieselDue = 0;
+  const dieselItems: PendingItem[] = [];
   for (const log of dieselLogs) {
     const site = known.get(String(log.warehouseId ?? '').toLowerCase());
     if (!site) continue;
@@ -119,15 +122,9 @@ export function pendingWork(input: {
     if (!waiting) continue;
     dieselDue++;
     withWork.add(site.id);
-    if (items.length < MAX_ITEMS) {
-      items.push({
-        kind: 'diesel',
-        code: 'DIESEL',
-        label: `Diesel ${log.uniqueId ?? 'request'} ${waiting}`,
-        site: site.name,
-        siteCode: site.id,
-      });
-    }
+    const item: PendingItem = { kind: 'diesel', code: 'DIESEL', label: `Diesel ${log.uniqueId ?? 'request'} ${waiting}`, site: site.name, siteCode: site.id };
+    dieselItems.push(item);
+    if (items.length < MAX_ITEMS) items.push(item);
   }
 
   // A fault found today is the most urgent thing on the list, so it goes first.
@@ -170,6 +167,7 @@ export function pendingWork(input: {
     maintenance: maintenanceItems.length,
     sites: withWork.size,
     items: [...criticalItems, ...maintenanceItems.filter((m) => m.tone === 'bad'), ...items, ...maintenanceItems.filter((m) => m.tone !== 'bad')].slice(0, MAX_ITEMS),
+    issues: [...criticalItems, ...maintenanceItems.filter((m) => m.tone === 'bad'), ...dieselItems, ...maintenanceItems.filter((m) => m.tone !== 'bad')],
   };
 }
 

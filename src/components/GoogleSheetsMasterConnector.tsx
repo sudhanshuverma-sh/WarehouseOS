@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   FileSpreadsheet,
@@ -26,6 +26,7 @@ import {
   Sliders
 } from 'lucide-react';
 import { PageHeader } from './common/PageHeader';
+import { controlRoomSites, sitePocs } from '../lib/controlRoom/siteServiceStatus';
 import { ExpandButton, TableFullscreen } from './common/TableTools';
 import { Warehouse, User } from '../types';
 import { Plus as PlusIcon } from 'lucide-react';
@@ -34,6 +35,16 @@ import { MasterDataTable } from './masterData/MasterDataTable';
 import { MasterRowEditor } from './masterData/MasterRowEditor';
 import { SITE_FIELDS, SERVICE_FIELDS, EMPTY_SITE, EMPTY_SERVICE } from './masterData/fieldConfigs';
 import { suggestNextSiteCode, STATE_CODES, type EditMode } from '../lib/masterData/validate';
+import {
+  describePocPlan,
+  planPocAssignment,
+  pocFormErrors,
+  rowsForPerson,
+  spansAllSites,
+  unionServices,
+  type PocForm,
+} from '../lib/masterData/pocAssign';
+import type { PocMaster } from '../types/masterData';
 
 // Master Data browser — the three real tabs from MASTERDATA.md, in their
 // documented column order (§2/§3/§4), each keyed by its real primary key.
@@ -105,9 +116,10 @@ export const GoogleSheetsMasterConnector: React.FC<{ onBack?: () => void }> = ({
     masterAuditRows,
     dropdownLists,
     lastMasterDataSyncAt,
+    dataMode,
     syncMasterData,
     importMasterDataFromJson,
-    assignPocMasterRow,
+    assignPocSites,
     saveSiteMasterRow,
     saveServiceRegistryRow
   } = useApp();
@@ -166,37 +178,101 @@ export const GoogleSheetsMasterConnector: React.FC<{ onBack?: () => void }> = ({
     return out;
   };
 
-  // Assign / Edit POC — the one in-app place POC_Master allocation happens.
-  // Writes through assignPocMasterRow (upsert-by-Access_ID via the Apps
-  // Script bridge) — blank Access_ID means "create new row".
-  const emptyPocForm = {
-    Access_ID: '', POC_Email: '', POC_Name: '', WH_Code: '', Role: 'SITE_POC',
-    Site_Code: '', Service_Codes: 'ALL', Contact_Number: '', Is_Primary: 'Yes', Active: 'Yes',
-    Access_Start_Date: '', Access_End_Date: '', Description: '', Reporting_Manager_Email: ''
+  // Assign / Edit POC: one person, one or more sites. POC_Master holds a row
+  // per site, so saving plans new rows, updated rows and ended access
+  // (lib/masterData/pocAssign) and assignPocSites writes them.
+  const emptyPocForm: PocForm = {
+    POC_Email: '', POC_Name: '', Role: 'SITE_POC', Service_Codes: 'ALL', Contact_Number: '', Is_Primary: 'Yes',
+    Active: 'Yes', Access_Start_Date: '', Access_End_Date: '', Description: '', Reporting_Manager_Email: ''
   };
   const [showAssignPocModal, setShowAssignPocModal] = useState(false);
-  const [assignPocForm, setAssignPocForm] = useState(emptyPocForm);
+  const [assignPocForm, setAssignPocForm] = useState<PocForm>(emptyPocForm);
+  const [pocSites, setPocSites] = useState<string[]>([]);
+  /** The person being edited; their email is who they are, so it stays fixed. */
+  const [editingPocEmail, setEditingPocEmail] = useState<string | null>(null);
+  const [pocSiteQuery, setPocSiteQuery] = useState('');
   const [assignPocResult, setAssignPocResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  const openAssignPocModal = (existing?: typeof emptyPocForm) => {
-    setAssignPocForm(existing ? { ...existing } : { ...emptyPocForm });
+  const openAssignPocModal = (existing?: Partial<PocMaster>) => {
     setAssignPocResult(null);
+    setPocSiteQuery('');
+    if (!existing?.POC_Email) {
+      setEditingPocEmail(null);
+      setAssignPocForm({ ...emptyPocForm });
+      setPocSites([]);
+      setShowAssignPocModal(true);
+      return;
+    }
+    // Opening one row opens the person: every site they hold is ticked.
+    const theirs = rowsForPerson(pocMasterRows, existing.POC_Email);
+    const active = theirs.filter(r => r.Active === 'Yes');
+    const shown = active.length ? active : theirs.length ? theirs : [existing as PocMaster];
+    const text = (v: unknown) => String(v ?? '');
+    setEditingPocEmail(existing.POC_Email);
+    setAssignPocForm({
+      POC_Email: text(existing.POC_Email),
+      POC_Name: text(existing.POC_Name),
+      Role: (existing.Role ?? 'SITE_POC') as PocForm['Role'],
+      Service_Codes: unionServices(shown) || 'ALL',
+      Contact_Number: text(existing.Contact_Number),
+      Is_Primary: (existing.Is_Primary ?? 'Yes') as PocForm['Is_Primary'],
+      Active: active.length ? 'Yes' : ((existing.Active ?? 'Yes') as PocForm['Active']),
+      Access_Start_Date: text(existing.Access_Start_Date),
+      Access_End_Date: text(existing.Access_End_Date),
+      Description: text(existing.Description),
+      Reporting_Manager_Email: text(existing.Reporting_Manager_Email),
+    });
+    setPocSites([...new Set(shown.map(r => text(r.Site_Code)).filter(Boolean))]);
     setShowAssignPocModal(true);
   };
 
-  const handleAssignPocSubmit = async () => {
-    if (!assignPocForm.POC_Email.trim() || !assignPocForm.POC_Name.trim() || !assignPocForm.Site_Code.trim()) {
-      setAssignPocResult({ success: false, message: 'POC_Email, POC_Name and Site_Code are required.' });
-      return;
+  const whCodeFor = (code: string) => siteMasterRows.find(s => s.Site_Code === code)?.WH_Code ?? '';
+  const pocSitesLocked = spansAllSites(assignPocForm.Role);
+  /** What saving would do, shown before it happens. */
+  const pocPlan = useMemo(() => {
+    if (!showAssignPocModal || pocFormErrors(assignPocForm, pocSites).length) return null;
+    return planPocAssignment(pocMasterRows, assignPocForm, pocSites, whCodeFor);
+    // whCodeFor reads siteMasterRows, listed below.
+  }, [showAssignPocModal, assignPocForm, pocSites, pocMasterRows, siteMasterRows]);
+  const pocWrites = pocPlan ? pocPlan.creates.length + pocPlan.updates.length + pocPlan.deactivations.length : 0;
+
+  /** This person's existing row at each site, for the id beside it. */
+  const pocRowBySite = useMemo(() => {
+    const map = new Map<string, PocMaster>();
+    if (!editingPocEmail) return map;
+    for (const r of rowsForPerson(pocMasterRows, editingPocEmail)) {
+      const had = map.get(r.Site_Code);
+      if (!had || (r.Active === 'Yes' && had.Active !== 'Yes')) map.set(r.Site_Code, r);
     }
+    return map;
+  }, [editingPocEmail, pocMasterRows]);
+
+  const pocSiteChoices = useMemo(() => {
+    const q = pocSiteQuery.trim().toLowerCase();
+    return siteMasterRows
+      .slice()
+      .sort((a, b) => a.Facility_Name.localeCompare(b.Facility_Name))
+      .filter(s => !q || `${s.Facility_Name} ${s.Site_Code} ${s.WH_Code} ${s.City}`.toLowerCase().includes(q));
+  }, [siteMasterRows, pocSiteQuery]);
+
+  const togglePocSite = (code: string) =>
+    setPocSites(prev => {
+      const without = prev.filter(c => c !== 'ALL');
+      return without.includes(code) ? without.filter(c => c !== code) : [...without, code];
+    });
+
+  const handleAssignPocSubmit = async () => {
     setIsAssigningPoc(true);
     try {
-      const res = await assignPocMasterRow(assignPocForm as any);
+      // Nothing may await before this: on the sheet path it opens the pop-up
+      // that writes to the sheet, which the browser only allows inside a click.
+      const res = await assignPocSites(assignPocForm, pocSitesLocked ? ['ALL'] : pocSites);
       setAssignPocResult(res);
-      notify(res.success ? 'success' : 'error', res.success ? 'POC Allocation Saved' : 'Allocation Failed', res.message);
+      notify(res.success ? 'success' : 'error', res.success ? 'POC saved' : 'Not saved', res.message);
       if (res.success) {
         setShowAssignPocModal(false);
         setAssignPocForm(emptyPocForm);
+        setPocSites([]);
       }
     } finally {
       setIsAssigningPoc(false);
@@ -594,7 +670,8 @@ function buildMasterDataSnapshot() {
 }
 
 // POST — action 'upsertPocMaster': create/update one POC_Master row by
-// Access_ID (blank = create, auto-assigns the next AC-#### id). Only fields
+// Access_ID (blank = create, auto-assigns the next AC-#### id);
+// 'upsertPocMasterRows' does the same for several rows at once. Only fields
 // present in the submitted row are written, looked up by header name
 // (MASTERDATA.md I5, never by column index). Every create/update logs one
 // Master_Audit row per field changed (I3).
@@ -617,6 +694,14 @@ function doPost(e) {
 
     if (payload.action === 'upsertPocMaster') {
       return upsertPocMaster(ss, payload.row || {}, actor);
+    }
+    // One person across several sites: one row per site, all in one POST
+    // (the app can open one pop-up per click, so it cannot send several).
+    if (payload.action === 'upsertPocMasterRows') {
+      var pocRows = payload.rows || [];
+      var results = [];
+      for (var pi = 0; pi < pocRows.length; pi++) results.push(upsertPocRow(ss, pocRows[pi] || {}, actor));
+      return jsonResponse({ status: 'success', results: results });
     }
     if (payload.action === 'upsertSiteMaster') {
       return jsonResponse(upsertByKey(ss, 'Site_Master', 'Site_Code', payload.row || {}, payload.mode, actor));
@@ -703,7 +788,15 @@ function upsertByKey(ss, tabName, keyColumn, row, mode, actorEmail) {
 }
 
 function upsertPocMaster(ss, row, actorEmail) {
+  return jsonResponse(upsertPocRow(ss, row, actorEmail));
+}
+
+// Create or update one POC_Master row by Access_ID (blank = create with the
+// next AC-#### id). Returns a plain result so a batch can collect them.
+function upsertPocRow(ss, row, actorEmail) {
   var sheet = ss.getSheetByName('POC_Master');
+  if (!sheet) return { status: 'error', message: 'Tab not found: POC_Master' };
+  if (!row.Access_ID && !row.POC_Email) return { status: 'error', message: 'POC_Email is required.' };
   var values = sheet.getDataRange().getValues();
   var headers = values[0];
 
@@ -742,23 +835,25 @@ function upsertPocMaster(ss, row, actorEmail) {
     }
     sheet.appendRow(newRow);
     logMasterAudit(ss, 'CREATE', 'POC_Master', row.Access_ID, 'ALL', '', JSON.stringify(row), actorEmail);
-    return jsonResponse({ status: 'success', message: 'Created POC_Master row ' + row.Access_ID, accessId: row.Access_ID });
+    return { status: 'success', message: 'Created POC_Master row ' + row.Access_ID, accessId: row.Access_ID };
   }
 
   var existing = values[targetRow - 1];
   for (var key in row) {
-    if (key === 'Access_ID' || colIndex[key] === undefined) continue;
+    if (key === 'Access_ID' || key === 'Last_Updated_By' || key === 'Last_Updated_At' || colIndex[key] === undefined) continue;
     var oldVal = existing[colIndex[key]];
     var newVal = row[key];
     if (String(oldVal) !== String(newVal)) {
       sheet.getRange(targetRow, colIndex[key] + 1).setValue(newVal);
-      logMasterAudit(ss, 'UPDATE', 'POC_Master', row.Access_ID, key, oldVal, newVal, actorEmail);
+      // Ending a site's access is audited as such, never as a plain edit.
+      var auditAction = key === 'Active' ? (newVal === 'Yes' ? 'REACTIVATE' : 'DEACTIVATE') : 'UPDATE';
+      logMasterAudit(ss, auditAction, 'POC_Master', row.Access_ID, key, oldVal, newVal, actorEmail);
     }
   }
   if (colIndex['Last_Updated_By'] !== undefined) sheet.getRange(targetRow, colIndex['Last_Updated_By'] + 1).setValue(actorEmail);
   if (colIndex['Last_Updated_At'] !== undefined) sheet.getRange(targetRow, colIndex['Last_Updated_At'] + 1).setValue(nowIso);
 
-  return jsonResponse({ status: 'success', message: 'Updated POC_Master row ' + row.Access_ID, accessId: row.Access_ID });
+  return { status: 'success', message: 'Updated POC_Master row ' + row.Access_ID, accessId: row.Access_ID };
 }
 
 // Master_Audit — app-written only; never let a broken audit log block the
@@ -1046,7 +1141,16 @@ function jsonResponse(data) {
     return matchesSearch && matchesZone;
   });
 
-  const sitePocUsersCount = users.filter(u => u.role === 'SITE_POC').length;
+  const masterHealth = useMemo(() => {
+    const sites = controlRoomSites(siteMasterRows, warehouses);
+    return {
+      sites: sites.length,
+      fromMaster: siteMasterRows.some(r => r.Active === 'Yes'),
+      pocs: pocMasterRows.filter(p => p.Active === 'Yes' && p.Role === 'SITE_POC').length,
+      services: serviceRegistryRows.filter(r => r.Active === 'Yes').length,
+      noPoc: sites.filter(site => sitePocs(site, pocMasterRows).length === 0).length
+    };
+  }, [siteMasterRows, pocMasterRows, serviceRegistryRows, warehouses]);
   const adminUsers = users.filter(u => u.role === 'SERVICE_ADMIN' || u.role === 'SUPER_ADMIN');
 
   const masterServicesList = [
@@ -1113,45 +1217,74 @@ function jsonResponse(data) {
         }
       />
 
-      {/* Hero Stats Card */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-2xl p-6 shadow-sm border border-slate-800">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-center">
-          <div className="md:col-span-2 space-y-2">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold font-mono">
-              <Sparkles className="w-3.5 h-3.5" />
-              LIVE TWO-WAY SYNC READY
-            </div>
-            <h2 className="text-xl md:text-2xl font-bold tracking-tight text-white">
-              Dynamic Warehouse &amp; POC Synchronization
-            </h2>
-            <p className="text-xs md:text-sm text-slate-300 leading-relaxed">
-              When a new warehouse is added to your Google Sheet in the future, the app automatically detects it, creates its facility profile, and generates its Site POC login credentials.
+      {/* What every screen reads its sites, POCs and services from, and how
+          complete it is. Counted from the Master Data sheets themselves. */}
+      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-center">
+          <div className="lg:col-span-2 space-y-2 min-w-0">
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
+                dataMode === 'api' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${dataMode === 'api' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              {dataMode === 'api' ? 'Live from Google Sheet' : dataMode === 'demo' ? 'Demo data, this browser only' : 'Loading'}
+            </span>
+            <h2 className="text-lg font-bold tracking-tight text-slate-900">Sites, POCs and services</h2>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Every screen reads its sites, POCs and services from these sheets. Add a site or POC in the Google Sheet,
+              press Sync, and it appears across the app.
+            </p>
+            <p className="text-[11px] text-slate-500">
+              {lastMasterDataSyncAt
+                ? `Last synced ${new Date(lastMasterDataSyncAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+                : 'Not synced yet'}
             </p>
           </div>
 
-          <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 flex items-center gap-3">
-            <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20">
-              <Building2 className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="text-2xl font-extrabold text-white">{warehouses.length}</div>
-              <div className="text-xs text-slate-400 font-medium">Warehouses Synced</div>
-              <div className="text-[10px] text-emerald-400 font-medium">All States Mapped</div>
-            </div>
-          </div>
-
-          <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 flex items-center gap-3">
-            <div className="p-3 bg-sky-500/10 text-sky-400 rounded-lg border border-sky-500/20">
-              <Users className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="text-2xl font-extrabold text-white">{sitePocUsersCount}</div>
-              <div className="text-xs text-slate-400 font-medium">Site POC Accounts</div>
-              <div className="text-[10px] text-sky-400 font-medium">Auto-Linked to Sites</div>
-            </div>
+          <div className="lg:col-span-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              {
+                icon: Building2,
+                value: masterHealth.sites,
+                label: 'Active sites',
+                sub: masterHealth.fromMaster ? `${siteMasterRows.length} rows in Site_Master` : 'App warehouse list; sync Site_Master',
+                tone: 'text-teal-700 bg-teal-50'
+              },
+              {
+                icon: Users,
+                value: masterHealth.pocs,
+                label: 'Site POCs',
+                sub: `${pocMasterRows.length} rows in POC_Master`,
+                tone: 'text-sky-700 bg-sky-50'
+              },
+              {
+                icon: Layers,
+                value: masterHealth.services,
+                label: 'Active services',
+                sub: `${serviceRegistryRows.length} rows in Service_Registry`,
+                tone: 'text-indigo-700 bg-indigo-50'
+              },
+              {
+                icon: AlertCircle,
+                value: masterHealth.noPoc,
+                label: 'Sites without a POC',
+                sub: masterHealth.noPoc ? 'Assign in POC_Master' : 'Every site has a POC',
+                tone: masterHealth.noPoc ? 'text-amber-700 bg-amber-50' : 'text-emerald-700 bg-emerald-50'
+              }
+            ].map(t => (
+              <div key={t.label} className="border border-slate-200 rounded-xl p-3.5 min-w-0">
+                <span className={`inline-grid place-items-center w-8 h-8 rounded-lg ${t.tone}`}>
+                  <t.icon className="w-4 h-4" />
+                </span>
+                <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-slate-900">{t.value}</div>
+                <div className="text-xs font-semibold text-slate-700">{t.label}</div>
+                <div className="mt-0.5 text-[10px] text-slate-500 leading-snug">{t.sub}</div>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Navigation Tabs */}
       <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-4 pt-3 shadow-xs gap-1 overflow-x-auto">
@@ -1356,22 +1489,6 @@ function jsonResponse(data) {
                 <p className="text-xs leading-relaxed">{masterDataSyncResult.message}</p>
               </div>
             )}
-          </div>
-
-          {/* Row counts — the honest signal that this actually read the real sheet */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-              <div className="text-2xl font-extrabold text-slate-900">{pocMasterRows.length}</div>
-              <div className="text-xs font-bold text-slate-500 mt-0.5">POC_Master rows</div>
-            </div>
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-              <div className="text-2xl font-extrabold text-slate-900">{siteMasterRows.length}</div>
-              <div className="text-xs font-bold text-slate-500 mt-0.5">Site_Master rows</div>
-            </div>
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-              <div className="text-2xl font-extrabold text-slate-900">{serviceRegistryRows.length}</div>
-              <div className="text-xs font-bold text-slate-500 mt-0.5">Service_Registry rows</div>
-            </div>
           </div>
 
           {/* Data browser — all five real tabs as sub-tabs. Four are rows-of-records
@@ -1847,10 +1964,6 @@ function jsonResponse(data) {
         </div>
       )}
 
-      {/* Assign / Edit POC Modal — writes a POC_Master row via assignPocMasterRow
-          (upsert by Access_ID through the Apps Script bridge). This is the one
-          in-app place POC/site allocation happens; re-sync or re-paste to see
-          the write reflected in the tables above. */}
       {editor && (
         <MasterRowEditor
           open
@@ -1886,96 +1999,97 @@ function jsonResponse(data) {
               <div>
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <Users className="w-5 h-5 text-teal-600" />
-                  {assignPocForm.Access_ID ? `Edit POC — ${assignPocForm.Access_ID}` : 'Assign New POC'}
+                  {editingPocEmail ? `Edit POC · ${assignPocForm.POC_Name || editingPocEmail}` : 'Assign a POC'}
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Writes to POC_Master via the Apps Script bridge. Leave Access_ID blank to create a new row —
-                  the sheet assigns the ID.
+                  Pick every site this person looks after. Each site is one POC_Master row, and new rows get their Access ID when saved.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAssignPocModal(false)}
+                aria-label="Close"
                 className="text-slate-400 hover:text-slate-600 text-sm font-bold shrink-0"
               >
                 ✕
               </button>
             </div>
 
-            {!masterDataAppsScriptUrl && (
+            {dataMode !== 'api' && !masterDataAppsScriptUrl && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-900 flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                <span>No Apps Script Web App URL is set yet — set one above (Sync field) before this can write to the sheet.</span>
+                <span>No Apps Script URL is linked, so this saves in the app only. Link one in the Sync field above to write it to the Google Sheet too.</span>
               </div>
             )}
 
-            {/* Role decides scope, per MASTERDATA.md §6 — picking it auto-adjusts
-                Site_Code / Service_Codes below so the row can't drift from the
-                access-control model (SITE_POC = one site; WAREHOUSE_ADMIN = one
-                site, all services; SERVICE_ADMIN = all sites, one service;
-                SUPER_ADMIN = everything). */}
+            {/* Role decides scope, per MASTERDATA.md §6: a Site POC or Warehouse
+                Admin holds one row per site they cover; a Service or Super
+                Admin holds one row for every site. */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Role — decides scope</label>
+              <label htmlFor="poc-role" className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Role, which decides scope</label>
               <select
+                id="poc-role"
                 value={assignPocForm.Role}
                 onChange={(e) => {
-                  const nextRole = e.target.value;
-                  const siteLocked = nextRole === 'SERVICE_ADMIN' || nextRole === 'SUPER_ADMIN';
+                  const nextRole = e.target.value as PocForm['Role'];
                   const serviceLocked = nextRole === 'WAREHOUSE_ADMIN' || nextRole === 'SUPER_ADMIN';
                   setAssignPocForm(prev => ({
                     ...prev,
                     Role: nextRole,
-                    Site_Code: siteLocked ? 'ALL' : (prev.Site_Code === 'ALL' ? '' : prev.Site_Code),
                     Service_Codes: serviceLocked ? 'ALL' : (prev.Service_Codes === 'ALL' ? '' : prev.Service_Codes),
                     Is_Primary: nextRole === 'SITE_POC' ? 'Yes' : 'No'
                   }));
+                  if (!spansAllSites(nextRole)) setPocSites(prev => prev.filter(c => c !== 'ALL'));
                 }}
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-bold focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
               >
-                <option value="SITE_POC">SITE_POC — files data for one site</option>
-                <option value="WAREHOUSE_ADMIN">WAREHOUSE_ADMIN — everything at one site</option>
-                <option value="SERVICE_ADMIN">SERVICE_ADMIN — one service, every site</option>
-                <option value="SUPER_ADMIN">SUPER_ADMIN — everything, plus master data</option>
+                <option value="SITE_POC">SITE_POC: files data for the sites below</option>
+                <option value="WAREHOUSE_ADMIN">WAREHOUSE_ADMIN: everything at the sites below</option>
+                <option value="SERVICE_ADMIN">SERVICE_ADMIN: chosen services, every site</option>
+                <option value="SUPER_ADMIN">SUPER_ADMIN: everything, plus master data</option>
               </select>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[
-                { key: 'Access_ID', label: 'Access_ID (blank = new)' },
-                { key: 'POC_Email', label: 'POC_Email *' },
-                { key: 'POC_Name', label: 'POC_Name *' },
-                { key: 'WH_Code', label: 'WH_Code (display only)' },
-                { key: 'Contact_Number', label: 'Contact_Number' },
-                { key: 'Access_Start_Date', label: 'Access_Start_Date (YYYY-MM-DD)' },
-                { key: 'Access_End_Date', label: 'Access_End_Date (optional)' },
-                { key: 'Reporting_Manager_Email', label: 'Reporting_Manager_Email' }
-              ].map(f => (
+              {([
+                { key: 'POC_Email', label: 'POC email *', locked: !!editingPocEmail },
+                { key: 'POC_Name', label: 'POC name *' },
+                { key: 'Contact_Number', label: 'Contact number' },
+                { key: 'Reporting_Manager_Email', label: 'Reporting manager email' },
+                { key: 'Access_Start_Date', label: 'Access start (YYYY-MM-DD)' },
+                { key: 'Access_End_Date', label: 'Access end (optional)' },
+              ] as { key: keyof PocForm; label: string; locked?: boolean }[]).map(f => (
                 <div key={f.key} className="space-y-1">
-                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-600">{f.label}</label>
+                  <label htmlFor={`poc-${f.key}`} className="text-[11px] font-bold uppercase tracking-wider text-slate-600">{f.label}</label>
                   <input
+                    id={`poc-${f.key}`}
                     type="text"
-                    value={(assignPocForm as any)[f.key]}
+                    value={assignPocForm[f.key]}
+                    readOnly={f.locked}
                     onChange={(e) => setAssignPocForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 read-only:bg-slate-100 read-only:text-slate-500"
                   />
+                  {f.locked && <p className="text-[10px] text-slate-400">The email is who they are. To move access to another email, end these sites and assign the new one.</p>}
                 </div>
               ))}
 
               <div className="space-y-1">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Active</label>
+                <label htmlFor="poc-active" className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Active</label>
                 <select
+                  id="poc-active"
                   value={assignPocForm.Active}
-                  onChange={(e) => setAssignPocForm(prev => ({ ...prev, Active: e.target.value }))}
+                  onChange={(e) => setAssignPocForm(prev => ({ ...prev, Active: e.target.value as PocForm['Active'] }))}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                 >
                   <option value="Yes">Yes</option>
-                  <option value="No">No</option>
+                  <option value="No">No, end access at every site picked</option>
                 </select>
               </div>
 
-              <div className="space-y-1 sm:col-span-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Description</label>
+              <div className="space-y-1">
+                <label htmlFor="poc-desc" className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Description</label>
                 <input
+                  id="poc-desc"
                   type="text"
                   value={assignPocForm.Description}
                   onChange={(e) => setAssignPocForm(prev => ({ ...prev, Description: e.target.value }))}
@@ -1984,38 +2098,107 @@ function jsonResponse(data) {
               </div>
             </div>
 
-            {/* Site_Code — locked to ALL for SERVICE_ADMIN / SUPER_ADMIN */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
-                Site_Code {assignPocForm.Role === 'SERVICE_ADMIN' || assignPocForm.Role === 'SUPER_ADMIN' ? '(locked to ALL for this role)' : '*'}
-              </label>
-              <select
-                value={assignPocForm.Site_Code}
-                disabled={assignPocForm.Role === 'SERVICE_ADMIN' || assignPocForm.Role === 'SUPER_ADMIN'}
-                onChange={(e) => setAssignPocForm(prev => ({ ...prev, Site_Code: e.target.value }))}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 disabled:opacity-60"
-              >
-                <option value="">— Select a site —</option>
-                <option value="ALL">ALL (every site)</option>
-                {siteMasterRows
-                  .slice()
-                  .sort((a, b) => a.Facility_Name.localeCompare(b.Facility_Name))
-                  .map(s => (
-                    <option key={s.Site_Code} value={s.Site_Code}>
-                      {s.Facility_Name} ({s.Site_Code}){s.Active !== 'Yes' ? ' — inactive' : ''}
-                    </option>
-                  ))}
-              </select>
-              {siteMasterRows.length === 0 && (
-                <p className="text-[11px] text-slate-400">No Site_Master rows loaded yet — paste Master Data JSON first to pick from the real site list.</p>
+            {/* Sites: as many as this person looks after, one row each */}
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                  Sites {pocSitesLocked ? '(every site, for this role)' : '*'}
+                </span>
+                {!pocSitesLocked && (
+                  <span className="text-[11px] text-slate-500">
+                    {pocSites.includes('ALL') ? 'All sites' : `${pocSites.length} selected`}
+                  </span>
+                )}
+              </div>
+
+              {pocSitesLocked ? (
+                <div className="px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-500 font-mono">ALL</div>
+              ) : (
+                <>
+                  {pocSites.length > 0 && !pocSites.includes('ALL') && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {pocSites.map(code => {
+                        const s = siteMasterRows.find(x => x.Site_Code === code);
+                        return (
+                          <span key={code} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-teal-50 border border-teal-200 text-[11px] font-semibold text-teal-800">
+                            {s?.Facility_Name ?? code}
+                            <button
+                              type="button"
+                              onClick={() => togglePocSite(code)}
+                              aria-label={`Remove ${s?.Facility_Name ?? code}`}
+                              className="w-5 h-5 grid place-items-center rounded-full hover:bg-teal-100"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="border border-slate-300 rounded-lg overflow-hidden">
+                    <label className="relative block border-b border-slate-200">
+                      <span className="sr-only">Search sites</span>
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={pocSiteQuery}
+                        onChange={(e) => setPocSiteQuery(e.target.value)}
+                        placeholder="Search by site name, code or city"
+                        className="w-full pl-8 pr-3 py-2 text-xs bg-white focus:outline-none"
+                      />
+                    </label>
+                    <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+                      <label className="flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={pocSites.includes('ALL')}
+                          onChange={(e) => setPocSites(e.target.checked ? ['ALL'] : [])}
+                        />
+                        <span className="font-semibold text-slate-800">All sites</span>
+                        <span className="text-[11px] text-slate-500">(nationwide)</span>
+                      </label>
+                      {pocSiteChoices.map(s => {
+                        const had = pocRowBySite.get(s.Site_Code);
+                        return (
+                          <label key={s.Site_Code} className={`flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-50 cursor-pointer ${pocSites.includes('ALL') ? 'opacity-50' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={pocSites.includes(s.Site_Code)}
+                              disabled={pocSites.includes('ALL')}
+                              onChange={() => togglePocSite(s.Site_Code)}
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block font-semibold text-slate-800 truncate">{s.Facility_Name}</span>
+                              <span className="block text-[11px] text-slate-500 truncate">
+                                {[s.Site_Code, s.City].filter(Boolean).join(' · ')}
+                                {s.Active !== 'Yes' ? ' · site inactive' : ''}
+                              </span>
+                            </span>
+                            {had && (
+                              <span className={`shrink-0 font-mono text-[10px] ${had.Active === 'Yes' ? 'text-slate-500' : 'text-amber-600'}`}>
+                                {had.Access_ID}{had.Active === 'Yes' ? '' : ' · ended'}
+                              </span>
+                            )}
+                          </label>
+                        );
+                      })}
+                      {pocSiteChoices.length === 0 && (
+                        <p className="px-3 py-4 text-center text-[11px] text-slate-400">
+                          {siteMasterRows.length ? 'No site matches.' : 'No Site_Master rows loaded yet. Sync Master Data first to pick from the real site list.'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
             </div>
 
-            {/* Service_Codes — locked to ALL for WAREHOUSE_ADMIN / SUPER_ADMIN */}
+            {/* Service_Codes: locked to ALL for WAREHOUSE_ADMIN / SUPER_ADMIN */}
             <div className="space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
-                Service_Codes {assignPocForm.Role === 'WAREHOUSE_ADMIN' || assignPocForm.Role === 'SUPER_ADMIN' ? '(locked to ALL for this role)' : ''}
-              </label>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                Services {assignPocForm.Role === 'WAREHOUSE_ADMIN' || assignPocForm.Role === 'SUPER_ADMIN' ? '(all, for this role)' : ''}
+              </span>
               {assignPocForm.Role === 'WAREHOUSE_ADMIN' || assignPocForm.Role === 'SUPER_ADMIN' ? (
                 <div className="px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-500 font-mono">ALL</div>
               ) : (
@@ -2049,7 +2232,7 @@ function jsonResponse(data) {
                     );
                   })}
                   {serviceRegistryRows.length === 0 && (
-                    <p className="text-[11px] text-slate-400">No Service_Registry rows loaded yet — paste Master Data JSON first, or type a code directly isn't available in this picker.</p>
+                    <p className="text-[11px] text-slate-400">No Service_Registry rows loaded yet. Sync Master Data first.</p>
                   )}
                 </div>
               )}
@@ -2072,22 +2255,36 @@ function jsonResponse(data) {
               </div>
             )}
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowAssignPocModal(false)}
-                className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleAssignPocSubmit}
-                disabled={isAssigningPoc}
-                className="px-4 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-xs disabled:opacity-60"
-              >
-                {isAssigningPoc ? 'Saving…' : assignPocForm.Access_ID ? 'Save Changes' : 'Assign POC'}
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
+              <div className="min-w-0 text-xs">
+                {pocPlan ? (
+                  <p className="font-semibold text-slate-700">{describePocPlan(pocPlan)}</p>
+                ) : (
+                  <p className="text-slate-400">{pocFormErrors(assignPocForm, pocSitesLocked ? ['ALL'] : pocSites)[0]}</p>
+                )}
+                {pocWrites > 1 && dataMode !== 'api' && masterDataAppsScriptUrl && (
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Saving several sites at once needs the latest Master Data script. If yours is older, copy the script above and deploy a new version.
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowAssignPocModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAssignPocSubmit}
+                  disabled={isAssigningPoc || !pocPlan || pocWrites === 0}
+                  className="px-4 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-xs disabled:opacity-60"
+                >
+                  {isAssigningPoc ? 'Saving…' : editingPocEmail ? 'Save changes' : 'Assign POC'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

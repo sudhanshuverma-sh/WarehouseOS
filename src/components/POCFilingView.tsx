@@ -149,10 +149,12 @@ export const POCFilingView: React.FC<POCFilingViewProps> = ({ onNavigateToForm }
   const [pickedSite, setPickedSite] = useState<string>('');
   const site: ControlRoomSite | undefined = useMemo(() => {
     const byId = (id: string) => mySites.find((s) => siteMatches(s, id));
+    // The selected site before the first grant: a POC with two sites picks one
+    // on the welcome screen, and byId only ever finds one of their own.
     return (
       byId(pickedSite) ??
-      (caps.siteScope !== 'ALL' ? byId(caps.siteScope[0]) : undefined) ??
       (selectedWarehouseId !== 'ALL' ? byId(selectedWarehouseId) : undefined) ??
+      (caps.siteScope !== 'ALL' ? byId(caps.siteScope[0]) : undefined) ??
       mySites[0]
     );
   }, [mySites, pickedSite, caps.siteScope, selectedWarehouseId]);

@@ -73,13 +73,32 @@ describe('personasFromMaster()', () => {
     expect(personasFromMaster(rows, sites, warehouses).map(p => p.fullName)).toEqual(['Imran Qureshi']);
   });
 
-  it('shows one entry per person per site, not one per grant row', () => {
+  it('shows one entry per person, holding every site they cover', () => {
+    // As a real sign-in does: /api/me sends every site, so a POC with two
+    // warehouses is one person, asked which one they are filing for.
     const rows = [
       row({ Access_ID: 'AC-1', Service_Codes: 'DIESEL' }),
       row({ Access_ID: 'AC-2', Service_Codes: 'EB_DG' }),
-      row({ Access_ID: 'AC-3', Site_Code: 'ZHPL-MH-09' }),
+      row({ Access_ID: 'AC-3', Site_Code: 'ZHPL-MH-09', Service_Codes: 'FIRE' }),
     ];
-    expect(personasFromMaster(rows, [...sites, site('ZHPL-MH-09')], warehouses)).toHaveLength(2);
+    const people = personasFromMaster(rows, [...sites, site('ZHPL-MH-09')], warehouses);
+    expect(people).toHaveLength(1);
+    expect(people[0]).toMatchObject({
+      id: 'AC-1',
+      warehouseId: 'WH_BLR_B4',
+      siteCodes: ['ZHPL-KA-01', 'ZHPL-MH-09'],
+      serviceCodes: ['DIESEL', 'EB_DG', 'FIRE'],
+    });
+  });
+
+  it('gives a person every service when any of their sites has ALL', () => {
+    const rows = [row({ Access_ID: 'AC-1', Service_Codes: 'DIESEL' }), row({ Access_ID: 'AC-2', Site_Code: 'ZHPL-MH-09', Service_Codes: 'ALL' })];
+    expect(personasFromMaster(rows, [...sites, site('ZHPL-MH-09')], warehouses)[0].serviceCodes).toBe('ALL');
+  });
+
+  it('keeps the same email in two roles as two entries', () => {
+    const rows = [row({ Access_ID: 'AC-1' }), row({ Access_ID: 'AC-2', Role: 'SERVICE_ADMIN', Site_Code: 'ALL', Service_Codes: 'DIESEL' })];
+    expect(personasFromMaster(rows, sites, warehouses).map((p) => p.role)).toEqual(['SERVICE_ADMIN', 'SITE_POC']);
   });
 
   it('puts admins above site POCs, then sorts by name', () => {

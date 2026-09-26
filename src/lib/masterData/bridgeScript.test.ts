@@ -37,6 +37,18 @@ function loadUpsertByKey() {
   return { upsertByKey: fn as (...a: unknown[]) => Record<string, unknown>, audits };
 }
 
+function loadUpsertPocRow() {
+  const audits: Audit[] = [];
+  const logMasterAudit = (_ss: unknown, action: string, tab: string, key: string, field: string, oldValue: unknown, newValue: unknown) =>
+    audits.push({ action, tab, key, field, oldValue, newValue });
+  // The script sits in a template literal, so its regex reads \\d in the
+  // source; unescape it the way the template does before running it.
+  const source = extractFunction('upsertPocRow').replace(/\\\\/g, '\\');
+  // eslint-disable-next-line no-new-func
+  const fn = new Function('logMasterAudit', `${source}; return upsertPocRow;`)(logMasterAudit);
+  return { upsertPocRow: fn as (...a: unknown[]) => Record<string, unknown>, audits };
+}
+
 function fakeSpreadsheet(tab: string, grid: unknown[][]) {
   const data = grid.map((r) => [...r]);
   const sheet = {
@@ -156,5 +168,43 @@ describe('upsertByKey — edit', () => {
     const { upsertByKey } = loadUpsertByKey();
     const { ss } = fakeSpreadsheet('Service_Registry', [['Service_Code', 'Service_Name'], ['DIESEL', 'Diesel']]);
     expect(upsertByKey(ss, 'Service_Registry', 'Service_Code', { Service_Code: 'DIESEL' }, 'upsert', 'a').status).toBe('error');
+  });
+});
+
+describe('POC_Master: one person across several sites', () => {
+  const POC_HEADER = ['Access_ID', 'POC_Email', 'POC_Name', 'Site_Code', 'Active', 'Last_Updated_By', 'Last_Updated_At'];
+
+  it('routes the batch action, one POST for every row', () => {
+    expect(connector).toContain("payload.action === 'upsertPocMasterRows'");
+    expect(connector).toContain('upsertPocRow(ss, pocRows[pi] || {}, actor)');
+  });
+
+  it('creates rows with consecutive ids and ends access at another, audited as such', () => {
+    const { upsertPocRow, audits } = loadUpsertPocRow();
+    const { ss, data } = fakeSpreadsheet('POC_Master', [
+      POC_HEADER,
+      ['AC-0007', 'ravi@x.com', 'Ravi', 'ZHPL-DL-01', 'Yes', '', ''],
+    ]);
+
+    const results = [
+      { Access_ID: '', POC_Email: 'ravi@x.com', POC_Name: 'Ravi', Site_Code: 'ZHPL-DL-03', Active: 'Yes' },
+      { Access_ID: '', POC_Email: 'ravi@x.com', POC_Name: 'Ravi', Site_Code: 'ZHPL-DL-06', Active: 'Yes' },
+      { Access_ID: 'AC-0007', POC_Email: 'ravi@x.com', POC_Name: 'Ravi', Site_Code: 'ZHPL-DL-01', Active: 'No' },
+    ].map((row) => upsertPocRow(ss, row, 'admin@x.com'));
+
+    expect(results.map((r) => r.accessId)).toEqual(['AC-0008', 'AC-0009', 'AC-0007']);
+    expect(data.slice(1).map((r) => [r[0], r[3], r[4]])).toEqual([
+      ['AC-0007', 'ZHPL-DL-01', 'No'],
+      ['AC-0008', 'ZHPL-DL-03', 'Yes'],
+      ['AC-0009', 'ZHPL-DL-06', 'Yes'],
+    ]);
+    expect(audits.map((a) => a.action)).toEqual(['CREATE', 'CREATE', 'DEACTIVATE']);
+  });
+
+  it('refuses a new row with no email rather than appending a blank one', () => {
+    const { upsertPocRow } = loadUpsertPocRow();
+    const { ss, data } = fakeSpreadsheet('POC_Master', [POC_HEADER]);
+    expect(upsertPocRow(ss, { Site_Code: 'ZHPL-DL-03' }, 'a').status).toBe('error');
+    expect(data).toHaveLength(1);
   });
 });

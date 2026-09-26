@@ -4,9 +4,9 @@
  * The persona picker used to list six invented demo users while the board
  * beside it counted 120 Master Data sites, so the names on screen belonged to
  * nobody and their access matched no row. These are the real grants: one
- * entry per live POC_Master row, carrying the site and the service codes that
- * row actually holds, which is what servicesForUser reads to decide what the
- * person may file.
+ * entry per person, carrying every site their live POC_Master rows hold and
+ * the service codes across them, which is what servicesForUser reads to
+ * decide what the person may file.
  *
  * Master Data is the source. When none is loaded the caller keeps its demo
  * list, the same fallback controlRoomSites makes for sites.
@@ -38,17 +38,9 @@ export function personasFromMaster(
 ): User[] {
   const live = pocRows.filter((p) => p.Active === 'Yes' && p.POC_Name?.trim() && p.Access_ID);
 
-  const seen = new Set<string>();
-  const people: User[] = [];
+  const people = new Map<string, User>();
 
   for (const row of live) {
-    // One person may hold several rows. Two rows for the same person at the
-    // same site are one entry here: the picker answers "who am I acting as",
-    // not "which grant row".
-    const key = `${row.POC_Email?.toLowerCase() ?? row.Access_ID}|${row.Site_Code ?? ''}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-
     const role: UserRole = (ROLES as readonly string[]).includes(row.Role) ? (row.Role as UserRole) : 'SITE_POC';
     const scope = parseServiceCodes(row.Service_Codes);
 
@@ -56,16 +48,33 @@ export function personasFromMaster(
     // Carrying the literal made the sidebar label their site "ALL" and every
     // site filter compare against a warehouse id that does not exist.
     const nationwide = role === 'SUPER_ADMIN' || String(row.Site_Code ?? '').trim().toUpperCase() === 'ALL';
-    const site = nationwide ? undefined : sites.find((s) => siteMatches(s, row.Site_Code));
 
-    people.push({
+    // One person may hold several rows, one per site. Someone pinned to sites
+    // is one entry holding every one of them, as a real sign-in gives
+    // (/api/me sends every site): the picker answers "who am I acting as",
+    // and a POC with two warehouses is asked which one they are filing for.
+    const email = row.POC_Email?.trim().toLowerCase() || row.Access_ID;
+    const key = nationwide ? `${email}|${role}|ALL` : `${email}|${role}`;
+    const had = people.get(key);
+
+    if (had) {
+      if (!nationwide && !had.siteCodes?.includes(row.Site_Code)) had.siteCodes = [...(had.siteCodes ?? []), row.Site_Code];
+      if (had.serviceCodes !== 'ALL') {
+        had.serviceCodes = scope === 'ALL' ? 'ALL' : [...new Set([...(had.serviceCodes ?? []), ...scope])];
+      }
+      if (!had.phone && row.Contact_Number) had.phone = row.Contact_Number;
+      continue;
+    }
+
+    const site = nationwide ? undefined : sites.find((s) => siteMatches(s, row.Site_Code));
+    people.set(key, {
       id: row.Access_ID,
       email: row.POC_Email ?? '',
       fullName: row.POC_Name.trim(),
       role,
-      // The id the app's records and filters know this site by, so switching
-      // person moves the whole app to their site rather than to a code
-      // nothing has been filed against.
+      // The id the app's records and filters know their first site by, so
+      // switching person moves the whole app to their site rather than to a
+      // code nothing has been filed against.
       warehouseId: nationwide ? undefined : site ? appWarehouseIdFor(site, warehouses as Warehouse[]) : row.Site_Code,
       siteCodes: nationwide ? undefined : [row.Site_Code],
       serviceCodes: scope === 'ALL' ? 'ALL' : [...scope],
@@ -75,5 +84,5 @@ export function personasFromMaster(
     });
   }
 
-  return people.sort((a, b) => rank(a.role) - rank(b.role) || a.fullName.localeCompare(b.fullName));
+  return [...people.values()].sort((a, b) => rank(a.role) - rank(b.role) || a.fullName.localeCompare(b.fullName));
 }

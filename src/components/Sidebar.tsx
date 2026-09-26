@@ -95,11 +95,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
   const personas = usePersonas();
   const [personaQuery, setPersonaQuery] = useState('');
 
-  /** Their site, named the way Master Data names it. */
+  /** Their site, named the way Master Data names it; "+1" for each more they cover. */
   const siteLabelFor = (u: User) => {
     if (!u.warehouseId) return 'ALL SITES';
     const site = sites.find(s => siteMatches(s, u.warehouseId));
-    return site?.name ?? u.warehouseId;
+    const more = (u.siteCodes?.length ?? 1) - 1;
+    return `${site?.name ?? u.warehouseId}${more > 0 ? ` +${more}` : ''}`;
   };
 
   const shownPersonas = useMemo(() => {
@@ -181,7 +182,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
           <button
             onClick={() => onSelectView(currentUser.role === 'SUPER_ADMIN' ? 'dashboard' : 'pocFiling')}
             className="w-10 h-10 rounded-[0.9rem] bg-white grid place-items-center shrink-0 mb-5 transition-transform hover:scale-105"
-            title="WarehouseOS — home"
+            title="WarehouseOS home"
           >
             <Building2 className="w-5 h-5 text-[var(--color-ink)]" />
           </button>
@@ -217,13 +218,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView }) =
           </nav>
 
           <div className="flex flex-col items-center gap-1 pt-3 mt-2 border-t border-white/10 w-full px-3">
-            <button
-              onClick={resetToDefaultData}
-              className="rail-item shrink-0 cursor-pointer"
-              title="Reset benchmark data"
-            >
-              <RotateCcw className="w-[1.15rem] h-[1.15rem]" />
-            </button>
+            {/* Demo only, and asked first, as in the mobile menu: this throws
+                away every record on the device. Its round-arrow icon read as
+                "refresh", so one click wiped the data with no warning. */}
+            {dataMode === 'demo' && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!window.confirm('Reset demo data?\n\nThis replaces every record saved in this browser with the sample records. It cannot be undone.')) return;
+                  resetToDefaultData();
+                }}
+                className="rail-item shrink-0 cursor-pointer"
+                title="Reset demo data (replaces everything saved in this browser)"
+                aria-label="Reset demo data"
+              >
+                <RotateCcw className="w-[1.15rem] h-[1.15rem]" />
+              </button>
+            )}
             <img
               src={currentUser.avatar}
               alt={currentUser.fullName}

@@ -80,9 +80,9 @@ describe('pendingWork', () => {
   });
 
   it('says in one line what the number counts', () => {
-    expect(pendingSummary({ total: 0, services: 0, diesel: 0, critical: 0, maintenance: 0, sites: 0, items: [] })).toBe('Nothing pending today');
-    expect(pendingSummary({ total: 3, services: 2, diesel: 1, critical: 0, maintenance: 0, sites: 1, items: [] })).toBe('2 filings due, 1 diesel request at 1 site');
-    expect(pendingSummary({ total: 1, services: 1, diesel: 0, critical: 0, maintenance: 0, sites: 2, items: [] })).toBe('1 filing due at 2 sites');
+    expect(pendingSummary({ total: 0, services: 0, diesel: 0, critical: 0, maintenance: 0, sites: 0, items: [], issues: [] })).toBe('Nothing pending today');
+    expect(pendingSummary({ total: 3, services: 2, diesel: 1, critical: 0, maintenance: 0, sites: 1, items: [], issues: [] })).toBe('2 filings due, 1 diesel request at 1 site');
+    expect(pendingSummary({ total: 1, services: 1, diesel: 0, critical: 0, maintenance: 0, sites: 2, items: [], issues: [] })).toBe('1 filing due at 2 sites');
   });
 
   it('raises EB-DG maintenance for whoever holds EB-DG at the site, worst first', () => {

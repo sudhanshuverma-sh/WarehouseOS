@@ -23,6 +23,7 @@ import {
   Megaphone,
   PlusCircle,
   Smartphone,
+  Table2,
   Users,
   Zap,
   type LucideIcon,
@@ -60,8 +61,8 @@ const SCREENS = {
   controlRoom: { id: 'dashboard', label: 'Control Room', subLabel: 'Every site, every service, today', icon: LayoutDashboard },
   serviceHub: { id: 'adminDashboard', label: 'Admin Service Hub', subLabel: 'Each service across sites', icon: Award },
   sheets: { id: 'sheets', label: 'Operational Sheets', subLabel: 'Forms POCs fill', icon: Layers },
-  records: { id: 'database', label: 'Records', subLabel: 'Every entry filed', icon: Database },
-  recordsOwn: { id: 'database', label: 'Records', subLabel: 'Everything filed at your site', icon: Database },
+  records: { id: 'database', label: 'Records', subLabel: 'Every entry filed', icon: Table2 },
+  recordsOwn: { id: 'database', label: 'Records', subLabel: 'Everything filed at your site', icon: Table2 },
   newForm: { id: 'createForm', label: 'New Form', subLabel: 'Build a form to file', icon: PlusCircle },
   masterData: { id: 'masterData', label: 'Master Data', subLabel: 'POC, Site and Service', icon: Database, highlight: true },
   // No `codes`: this is not a service, so Master Data scoping must never

@@ -224,7 +224,7 @@ export function periodFor(cadence: Cadence, today: string): [string, string] {
 // ---------------------------------------------------------------------------
 
 /** service code → site key → days a record was filed. */
-type RecordIndex = Map<string, Map<string, string[]>>;
+export type RecordIndex = Map<string, Map<string, string[]>>;
 
 const DEDICATED = new Set(['SITE_ACTIVITY', 'DIESEL', 'EB_DG', 'CHECKLIST']);
 
@@ -285,7 +285,8 @@ export function indexRecords(records: ControlRoomRecords): RecordIndex {
   return index;
 }
 
-function countFor(index: RecordIndex, code: string, site: ControlRoomSite, [from, to]: [string, string]): number {
+/** How many records of a service a site filed between two days, inclusive. */
+export function countFor(index: RecordIndex, code: string, site: ControlRoomSite, [from, to]: [string, string]): number {
   const bySite = index.get(code);
   if (!bySite) return 0;
   const keys = new Set(site.aliases.length ? site.aliases : [site.id, site.whCode].filter(Boolean));

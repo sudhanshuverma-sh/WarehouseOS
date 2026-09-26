@@ -1,26 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { 
-  Building2, 
-  AlertTriangle, 
-  CheckCircle2, 
-  Clock, 
-  Calendar, 
-  FileText, 
-  Fuel,
-  X,
-  ExternalLink, 
-  Mail, 
-  Share2, 
-  Copy, 
-  Check, 
-  ArrowRight,
-  TrendingUp,
-  ShieldCheck
-} from 'lucide-react';
-import { DailySiteLog, SiteHealthStatus, Warehouse } from '../types';
+import { Calendar, FileText, X, ExternalLink, Mail, Copy, Check, ShieldCheck } from 'lucide-react';
 import { PageHeader } from './common/PageHeader';
 import { SiteServiceBoard } from './controlRoom/SiteServiceBoard';
+import { ComplianceView } from './controlRoom/ComplianceView';
+import { SummaryView } from './controlRoom/SummaryView';
 import { computeSiteStatuses, controlRoomServices, controlRoomSites, siteMatches, sitePocs } from '../lib/controlRoom/siteServiceStatus';
 
 /** One labelled fact in the drawer. A blank says where it would come from. */
@@ -36,6 +20,13 @@ const Detail: React.FC<{ label: string; value?: string; mono?: boolean }> = ({ l
   );
 };
 
+/** What each tab is for, in one line under the tabs. */
+const TAB_HELP = {
+  today: 'Every site and every service, done or pending right now.',
+  compliance: 'How reliably each site and service files over time, across every scheduled service.',
+  brief: 'The whole operation today on one page: numbers against yesterday, issues and sites not started.'
+} as const;
+
 interface DashboardOverviewProps {
   onNavigateTab: (tab: string) => void;
   onOpenChecklistForWarehouse: (warehouseId: string) => void;
@@ -50,8 +41,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
     currentUser,
     currentDate,
     dailySiteLogs,
-    getComplianceMatrix,
-    getBriefing,
     getSiteHistory,
     buildShareMailHtml,
     serviceRegistryRows,
@@ -70,15 +59,13 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
     () => controlRoomServices(serviceRegistryRows, operationalSheets),
     [serviceRegistryRows, operationalSheets]
   );
+  const controlRecords = useMemo(
+    () => ({ dailySiteLogs, dieselLogs, ebdgRows, submissions, sheetRecords }),
+    [dailySiteLogs, dieselLogs, ebdgRows, submissions, sheetRecords]
+  );
   const siteStatuses = useMemo(
-    () =>
-      computeSiteStatuses(
-        controlSites,
-        controlServices,
-        { dailySiteLogs, dieselLogs, ebdgRows, submissions, sheetRecords },
-        currentDate
-      ),
-    [controlSites, controlServices, dailySiteLogs, dieselLogs, ebdgRows, submissions, sheetRecords, currentDate]
+    () => computeSiteStatuses(controlSites, controlServices, controlRecords, currentDate),
+    [controlSites, controlServices, controlRecords, currentDate]
   );
   const dateLabel = new Date(`${currentDate}T00:00:00`).toLocaleDateString('en-IN', {
     weekday: 'short',
@@ -103,8 +90,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
   // Whether the board is counting the real network or the app's warehouse list.
   const usingMasterData = siteMasterRows.some(s => s.Active === 'Yes');
 
-  const complianceData = getComplianceMatrix(currentDate, 21);
-  const briefingData = getBriefing(currentDate);
 
   // Drawer site detail. Records and warehouses are matched by every name the
   // site goes by: the board's ids are Site_Codes, while logs and warehouses
@@ -195,7 +180,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
         }
       />
 
-      {/* TAB 1: TODAY — every Master Data site, every registry service, done or not */}
+      <p className="-mt-3 text-xs text-[var(--text-muted)]">{TAB_HELP[activeAdminTab]}</p>
+
+      {/* TAB 1: TODAY, every Master Data site, every registry service, done or not */}
       {activeAdminTab === 'today' && (
         <SiteServiceBoard
           statuses={siteStatuses}
@@ -206,126 +193,30 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
         />
       )}
 
-      {/* TAB 2: COMPLIANCE HEATMAP MATRIX (21 DAYS) */}
+      {/* TAB 2: COMPLIANCE, every scheduled service and site over 7, 14 or 30 days */}
       {activeAdminTab === 'compliance' && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6 animate-in fade-in duration-200">
-          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-4">
-            <div className="flex items-baseline gap-3">
-              <span className="text-6xl font-black font-mono text-teal-700">
-                {complianceData.overall}<span className="text-2xl font-normal text-slate-400 font-sans">%</span>
-              </span>
-              <div className="text-xs uppercase font-bold tracking-widest text-slate-400">
-                21-Day Network<br />Filing Rate
-              </div>
-            </div>
-            <div className="text-xs text-slate-500">
-              Sorted worst-first by historical compliance rate
-            </div>
-          </div>
-
-          {/* Compliance Matrix Rows */}
-          <div className="space-y-3 overflow-x-auto">
-            <div className="min-w-[640px] space-y-2">
-              <div className="grid grid-cols-12 text-[11px] font-bold text-slate-400 uppercase tracking-wider pb-1 border-b border-slate-100">
-                <span className="col-span-3">Facility</span>
-                <span className="col-span-7 flex justify-between">
-                  <span>{complianceData.dayLabels[0]}</span>
-                  <span>{complianceData.dayLabels[complianceData.dayLabels.length - 1]}</span>
-                </span>
-                <span className="col-span-2 text-right">Filing Rate</span>
-              </div>
-
-              {complianceData.rows.map(row => (
-                <div key={row.site} className="grid grid-cols-12 items-center gap-2 py-2 border-b border-slate-50 hover:bg-slate-50/50 rounded-lg px-1">
-                  <div className="col-span-3">
-                    <span className="font-bold text-xs text-slate-900">{row.site}</span>
-                    <span className="text-[11px] text-slate-400 block">{row.streak} day streak</span>
-                  </div>
-
-                  <div className="col-span-7 flex gap-1">
-                    {row.cells.map((cell, idx) => (
-                      <div
-                        key={idx}
-                        className={`flex-1 h-6 rounded-md transition hover:scale-125 ${
-                          cell === 'clear' ? 'bg-teal-500' :
-                          cell === 'partial' ? 'bg-amber-400' :
-                          cell === 'critical' ? 'bg-rose-500' :
-                          'bg-slate-200'
-                        }`}
-                        title={`${complianceData.dayLabels[idx]}: ${cell}`}
-                      />
-                    ))}
-                  </div>
-
-                  <div className="col-span-2 text-right">
-                    <span className={`text-sm font-black font-mono ${
-                      row.rate >= 90 ? 'text-teal-700' : row.rate >= 70 ? 'text-amber-600' : 'text-rose-600'
-                    }`}>
-                      {row.rate}%
-                    </span>
-                    <span className="text-[10px] text-slate-400 block">{row.filed}/{complianceData.days} days</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <ComplianceView
+          sites={controlSites}
+          services={controlServices}
+          records={controlRecords}
+          today={currentDate}
+          onOpenSite={setSelectedDrawerSite}
+        />
       )}
 
-      {/* TAB 3: EXECUTIVE DIRECTOR BRIEFING PROSE */}
+      {/* TAB 3: SUMMARY, the whole operation today, against yesterday */}
       {activeAdminTab === 'brief' && (
-        <div className="bg-[#FAF8F4] border border-[#E8E2D8] rounded-2xl p-8 space-y-6 shadow-sm animate-in fade-in duration-200 font-serif">
-          <div className="border-b-2 border-slate-900 pb-3 flex justify-between items-baseline flex-wrap gap-2">
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight font-sans">
-              The Daily Site Brief
-            </h2>
-            <span className="text-xs uppercase tracking-widest text-slate-500 font-sans">
-              {briefingData.dateLabel}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="md:col-span-2 space-y-4">
-              <p className="text-xl leading-relaxed text-slate-900 italic font-medium">
-                "{briefingData.lead}"
-              </p>
-
-              <div className="space-y-3 font-sans text-xs text-slate-700 leading-relaxed">
-                {briefingData.paragraphs.map(p => (
-                  <div key={p.site} className="p-3 bg-white/80 rounded-xl border border-[#E0D9CD]">
-                    <strong className="text-slate-900 font-bold">{p.site}:</strong> {p.text}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white/90 p-5 rounded-2xl border border-[#E0D9CD] font-sans space-y-3 text-xs">
-              <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-400 pb-2 border-b border-slate-200">
-                At a Glance
-              </h3>
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span>Facilities Reported</span>
-                <strong className="text-slate-900">{briefingData.totals.filed} / {briefingData.totals.expected}</strong>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100 text-rose-700">
-                <span>Critical Risk</span>
-                <strong>{briefingData.totals.critical}</strong>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100 text-amber-700">
-                <span>Partial Deviations</span>
-                <strong>{briefingData.totals.partial}</strong>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100 text-teal-700">
-                <span>All Clear</span>
-                <strong>{briefingData.totals.clear}</strong>
-              </div>
-              <div className="flex justify-between py-1 text-slate-500">
-                <span>Awaiting Reports</span>
-                <strong>{briefingData.totals.missing}</strong>
-              </div>
-            </div>
-          </div>
-        </div>
+        <SummaryView
+          sites={controlSites}
+          services={controlServices}
+          records={controlRecords}
+          dieselLogs={dieselLogs}
+          dailySiteLogs={dailySiteLogs}
+          today={currentDate}
+          dateLabel={dateLabel}
+          onOpenSite={setSelectedDrawerSite}
+          onOpenServiceHub={() => onNavigateTab('adminDashboard')}
+        />
       )}
 
       {/* Site Detail Drawer */}

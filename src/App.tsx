@@ -26,6 +26,17 @@ import { AccessDenied } from './components/common/AccessDenied';
 import { DemoModeBanner, StartupScreen } from './components/common/StartupScreen';
 import { capabilitiesFor } from './lib/permissions';
 import { usePendingWork } from './components/common/usePendingWork';
+import { WelcomeScreen } from './components/welcome/WelcomeScreen';
+import { welcomeSeenKey } from './lib/welcome/welcome';
+
+/** Whether this person has passed the welcome screen in this browser session. */
+const welcomeSeen = (userId: string): boolean => {
+  try {
+    return sessionStorage.getItem(welcomeSeenKey(userId)) === '1';
+  } catch {
+    return false;
+  }
+};
 
 const MainContent: React.FC = () => {
   const {
@@ -143,6 +154,34 @@ const MainContent: React.FC = () => {
   const isHomeView =
     (currentUser.role === 'SUPER_ADMIN' && currentView === 'dashboard') ||
     (currentUser.role === 'SITE_POC' && currentView === 'pocFiling');
+
+  // The welcome screen, once per person per session: on opening the app, and
+  // when a demo persona switch brings in someone who has not seen it yet.
+  const [welcomeFor, setWelcomeFor] = useState<string | null>(() => (welcomeSeen(currentUser.id) ? null : currentUser.id));
+  useEffect(() => {
+    setWelcomeFor(welcomeSeen(currentUser.id) ? null : currentUser.id);
+  }, [currentUser.id]);
+
+  const leaveWelcome = (view: string) => {
+    try {
+      sessionStorage.setItem(welcomeSeenKey(currentUser.id), '1');
+    } catch {
+      // Private mode: the welcome simply shows again next time.
+    }
+    setWelcomeFor(null);
+    setViewHistory([]);
+    setCurrentView(view);
+    window.scrollTo({ top: 0 });
+  };
+
+  if (welcomeFor === currentUser.id) {
+    return (
+      <>
+        <WelcomeScreen onContinue={leaveWelcome} />
+        <ToastNotification />
+      </>
+    );
+  }
 
   return (
     // 100dvh, not 100vh: on iOS Safari 100vh counts the address bar that is
@@ -313,7 +352,7 @@ const MainContent: React.FC = () => {
               {dataMode === 'demo' && <DemoModeBanner />}
             </span>
             <span>
-              Built by <span className="font-semibold text-slate-700">Sudhanshu Verma</span>
+              Developed by <span className="font-semibold text-slate-700">Sudhanshu Verma</span>
               <span className="mx-1.5 text-slate-300" aria-hidden>|</span>
               Emp ID <span className="font-mono text-slate-700">Z56684</span>
             </span>

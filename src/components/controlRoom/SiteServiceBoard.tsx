@@ -98,7 +98,7 @@ const SiteCard: React.FC<{ status: SiteStatus; highlight?: string; onOpen: () =>
             key={s.code}
             className={`flex items-center justify-between gap-2 text-xs rounded-md ${highlight === s.code ? 'bg-slate-50 -mx-1.5 px-1.5 py-0.5' : ''}`}
           >
-            <span className="truncate text-slate-700" title={`${s.name} — due ${cadenceHint(s.cadence)}`}>{s.name}</span>
+            <span className="truncate text-slate-700" title={`${s.name}, due ${cadenceHint(s.cadence)}`}>{s.name}</span>
             <ServiceChip s={s} />
           </li>
         ))}
@@ -185,7 +185,7 @@ export const SiteServiceBoard: React.FC<Props> = ({ statuses, services, dateLabe
           ))}
         </div>
         <span className="text-xs text-slate-500">
-          {dateLabel} · {usingMasterData ? 'Sites and services from Master Data' : 'Showing app warehouses — import Master Data for the full network'}
+          {dateLabel} · {usingMasterData ? 'Sites and services from Master Data' : 'Showing app warehouses. Import Master Data for the full network'}
         </span>
       </div>
 
@@ -236,7 +236,7 @@ export const SiteServiceBoard: React.FC<Props> = ({ statuses, services, dateLabe
                 type="button"
                 disabled={onRequest}
                 onClick={() => setServiceFilter(active ? '' : s.code)}
-                title={onRequest ? `${s.name} is filed on request — ${s.done} of ${s.total} sites filed today` : `${s.name}: done at ${s.done} of ${s.total} sites (${cadenceHint(s.cadence)})`}
+                title={onRequest ? `${s.name} is filed on request: ${s.done} of ${s.total} sites filed today` : `${s.name}: done at ${s.done} of ${s.total} sites (${cadenceHint(s.cadence)})`}
                 className={`shrink-0 w-44 text-left rounded-xl border px-3 py-2 transition ${
                   active ? 'border-slate-900 ring-1 ring-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-300'
                 } ${onRequest ? 'cursor-default' : 'cursor-pointer'}`}

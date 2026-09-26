@@ -87,13 +87,21 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   // The real people from POC Master, shared with the sidebar's picker.
   const personas = usePersonas();
-  const siteNameFor = (u: User) => sites.find(s => s.value === u.warehouseId)?.label ?? u.warehouseId ?? 'No site';
+  const siteNameFor = (u: User) => {
+    const name = sites.find(s => s.value === u.warehouseId)?.label ?? u.warehouseId ?? 'No site';
+    const more = (u.siteCodes?.length ?? 1) - 1;
+    return more > 0 && u.warehouseId ? `${name} +${more}` : name;
+  };
 
-  // The site in view, named. A POC is pinned to their own; everyone else
-  // sees whichever the selector holds. Master Data answers first, since it
-  // knows the sites the app has no warehouse row for.
+  // The site in view, named. A POC is pinned to their own sites (the context
+  // refuses anyone else's), so the one they picked is shown, else their first;
+  // everyone else sees whichever the selector holds. Master Data answers
+  // first, since it knows the sites the app has no warehouse row for.
   const activeSite = useMemo(() => {
-    const id = (currentUser.role === 'SITE_POC' && currentUser.warehouseId) || selectedWarehouseId;
+    const id =
+      currentUser.role === 'SITE_POC'
+        ? (selectedWarehouseId !== 'ALL' ? selectedWarehouseId : currentUser.warehouseId) || selectedWarehouseId
+        : selectedWarehouseId;
     const fromMaster = sites.find(s => s.value === id);
     if (fromMaster) return { name: fromMaster.label, code: fromMaster.note || fromMaster.label };
     const wh = warehouses.find(w => w.id === id) || warehouses[0];

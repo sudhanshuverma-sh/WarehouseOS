@@ -49,6 +49,15 @@ import {
   type MasterTab,
   type PendingEdits,
 } from '../lib/masterData/pendingEdits';
+import {
+  describePocPlan,
+  isTempAccessId,
+  nextAccessIds,
+  planPocAssignment,
+  pocFormErrors,
+  TEMP_ID_PREFIX,
+  type PocForm,
+} from '../lib/masterData/pocAssign';
 import { firePumpRecord, type FirePumpLog, type FirePumpSubmission, type FirePumpSubmitResult } from '../lib/firePump/records';
 import { scoreFirePump, visibleChecks, type FirePumpAnswers, type FirePumpKey } from '../lib/firePump/checks';
 import type { EbDgChannel, EbDgRow } from '../types/ebdg';
@@ -353,7 +362,8 @@ interface AppContextType {
   importMasterDataFromJson: (jsonText: string) => Promise<{ ok: boolean; message: string; counts?: { poc: number; site: number; service: number } }>;
   masterDataAppsScriptUrl: string;
   setMasterDataAppsScriptUrl: (url: string) => void;
-  assignPocMasterRow: (row: Partial<PocMaster>) => Promise<{ success: boolean; message: string }>;
+  /** One person to one or more sites: a POC_Master row per site. */
+  assignPocSites: (form: PocForm, sites: string[]) => Promise<{ success: boolean; message: string }>;
   /** Create or edit a Site_Master row. Validates first; never changes Site_Code on edit. */
   saveSiteMasterRow: (row: Partial<SiteMaster>, mode: EditMode, originalKey?: string) => Promise<MasterWriteResult>;
   /** Create or edit a Service_Registry row. Validates first; never changes Service_Code on edit. */
@@ -663,20 +673,85 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /**
-   * Assigns/edits a POC_Master row through the Apps Script bridge (upsert by
-   * Access_ID — blank Access_ID means "create new"). Fire-and-forget, same
-   * hidden-form-POST technique as pushDailyLogToSheet; requires
-   * masterDataAppsScriptUrl to be set (the gviz-only read path has no write
-   * counterpart — Google Sheets doesn't expose one without Apps Script).
+   * Assigns one person to one or more sites. POC_Master holds a row per site,
+   * so the form becomes new rows, updated rows and ended access, planned by
+   * lib/masterData/pocAssign (never a deleted row, never a guessed id).
+   *
+   * API: each row is saved through /master/pocs and shown as the database
+   * kept it. Sheets and demo: applied here at once (new rows carry a
+   * temporary id until a re-sync), and with the bridge linked, sent in ONE
+   * pop-up, opened before anything awaits so the browser allows it. The
+   * hidden-form POST cannot read a response, so that path says "sent".
    */
-  const assignPocMasterRow = async (row: Partial<PocMaster>) => {
-    if (!masterDataAppsScriptUrl) {
-      return { success: false, message: 'Deploy the Master Data Apps Script bridge first — writes need it even though reads alone don’t.' };
+  const assignPocSites = async (form: PocForm, sites: string[]): Promise<{ success: boolean; message: string }> => {
+    const errors = pocFormErrors(form, sites);
+    if (errors.length) return { success: false, message: errors[0] };
+
+    const whCodeFor = (code: string) => siteMasterRows.find(s => s.Site_Code === code)?.WH_Code ?? '';
+    const plan = planPocAssignment(pocMasterRows, form, sites, whCodeFor);
+    const writes = [...plan.creates, ...plan.updates, ...plan.deactivations];
+    if (!writes.length) return { success: true, message: 'Nothing to change.' };
+    const summary = describePocPlan(plan);
+    const now = new Date().toISOString();
+    const stamp = (r: PocMaster): PocMaster => ({ ...r, Last_Updated_By: currentUser.email, Last_Updated_At: now });
+
+    if (dataMode === 'api') {
+      const saved: PocMaster[] = [];
+      try {
+        for (const r of plan.creates) saved.push(await api.post<PocMaster>('/master/pocs', r));
+        for (const r of [...plan.updates, ...plan.deactivations]) {
+          saved.push(await api.patch<PocMaster>(`/master/pocs/${encodeURIComponent(r.Access_ID)}`, r));
+        }
+        return { success: true, message: `${summary} Saved for ${form.POC_Name.trim()}.` };
+      } catch (err) {
+        return { success: false, message: `Saved ${saved.length} of ${writes.length}: ${errorText(err)}` };
+      } finally {
+        if (saved.length) {
+          const byId = new Map(saved.map(r => [r.Access_ID, r]));
+          setPocMasterRows(prev => [...prev.map(r => byId.get(r.Access_ID) ?? r), ...saved.filter(r => !prev.some(p => p.Access_ID === r.Access_ID))]);
+        }
+      }
     }
-    // Sheets path: fire-and-forget. The hidden-form POST can't read a response,
-    // so this reports "sent", never "saved" — the two are not the same thing.
-    submitViaHiddenForm(masterDataAppsScriptUrl, { action: 'upsertPocMaster', row, actorEmail: currentUser.email });
-    return { success: true, message: `Sent to the sheet. Re-sync or re-paste in a few seconds to confirm it landed and see it in the tables.` };
+
+    // A row still waiting for the sheet's Access_ID would be written again as
+    // a new row; the sheet has to answer first.
+    if (masterDataAppsScriptUrl && writes.some(r => isTempAccessId(r.Access_ID))) {
+      return {
+        success: false,
+        message: `Some of ${form.POC_Name.trim()}'s sites are still waiting for their Access ID from the sheet. Re-sync Master Data, then edit them again.`,
+      };
+    }
+
+    // The sheet first, while this is still inside the click. One row keeps the
+    // action every deployed script knows; several need the batch action.
+    let sent: boolean | null = null;
+    if (masterDataAppsScriptUrl) {
+      const rows = writes.map(stamp);
+      sent = rows.length === 1
+        ? submitViaHiddenForm(masterDataAppsScriptUrl, { action: 'upsertPocMaster', row: rows[0], actorEmail: currentUser.email })
+        : submitViaHiddenForm(masterDataAppsScriptUrl, { action: 'upsertPocMasterRows', rows, actorEmail: currentUser.email });
+    }
+
+    // New rows: with the sheet linked it assigns the ids, so they are marked
+    // temporary until a re-sync; kept in this app only, they take the next
+    // free AC numbers, since there is nothing to collide with.
+    const changed = new Map([...plan.updates, ...plan.deactivations].map(r => [r.Access_ID, stamp(r)]));
+    const tag = Date.now().toString(36);
+    const localIds = nextAccessIds(pocMasterRows, plan.creates.length);
+    const added = plan.creates.map((r, n) =>
+      stamp({ ...r, Access_ID: masterDataAppsScriptUrl ? `${TEMP_ID_PREFIX}${tag}-${n + 1}` : localIds[n] })
+    );
+    setPocMasterRows(prev => [...prev.map(r => changed.get(r.Access_ID) ?? r), ...added]);
+
+    if (sent === null) {
+      return { success: true, message: `${summary} Saved in this app. To write it to the Google Sheet too, link the Master Data Apps Script URL in the Sync field above.` };
+    }
+    return {
+      success: true,
+      message: sent
+        ? `${summary} Sent to the Master Data sheet. Re-sync in a few seconds to confirm it landed.`
+        : `${summary} Saved in this app, but the browser blocked the pop-up that writes to the sheet. Allow pop-ups for this site, then save again.`,
+    };
   };
 
   /**
@@ -1068,7 +1143,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [notification]);
 
   const setSelectedWarehouseId = (id: string) => {
-    if (currentUser.role === 'SITE_POC' && currentUser.warehouseId && id !== currentUser.warehouseId) {
+    // A POC may move between any of their own sites (one grant per site),
+    // matched by every name a site goes by; never to anyone else's.
+    const own = [currentUser.warehouseId, ...(currentUser.siteCodes ?? [])].filter((v): v is string => !!v);
+    const isOwn =
+      own.includes(id) ||
+      controlRoomSites(siteMasterRows, warehouses).some((s) => siteMatches(s, id) && own.some((o) => siteMatches(s, o)));
+    if (currentUser.role === 'SITE_POC' && own.length > 0 && !isOwn) {
       setNotification({
         type: 'warning',
         message: `RBAC Restricted: As a SITE POC, you can only operate inside your assigned warehouse (${currentUser.warehouseId}).`
@@ -3180,7 +3261,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'currentUser');
     setNotification({
       type: 'info',
-      message: 'System database restored to default benchmark records.'
+      message: 'Demo data reset. Everything in this browser is back to the sample records.'
     });
   };
 
@@ -3895,7 +3976,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         importMasterDataFromJson,
         masterDataAppsScriptUrl,
         setMasterDataAppsScriptUrl,
-        assignPocMasterRow,
+        assignPocSites,
         saveSiteMasterRow,
         saveServiceRegistryRow,
         resetToDefaultData,
